@@ -1,0 +1,39 @@
+import { createAsyncStorage } from '@react-native-async-storage/async-storage';
+
+/**
+ * Small key-value store for preferences (language and the like). Secrets do NOT go here —
+ * the sign-in token lives in the keychain (see auth/sessionStorage.ts).
+ *
+ * AsyncStorage v3 replaced the old default export with named databases; this wrapper keeps that
+ * detail in one place. A storage failure must never crash the app, so reads fall back to
+ * null and writes are best-effort.
+ */
+const storage = createAsyncStorage('bongah');
+
+export const kv = {
+  async get(key: string): Promise<string | null> {
+    try {
+      return await storage.getItem(key);
+    } catch {
+      return null;
+    }
+  },
+  async set(key: string, value: string): Promise<void> {
+    try {
+      await storage.setItem(key, value);
+    } catch {
+      // Best effort: the preference just won't survive a restart.
+    }
+  },
+  async remove(key: string): Promise<void> {
+    try {
+      await storage.removeItem(key);
+    } catch {
+      // Best effort.
+    }
+  },
+};
+
+export const KV_KEYS = {
+  language: 'language',
+} as const;

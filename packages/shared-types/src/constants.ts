@@ -1,7 +1,8 @@
 // Enum values here MUST match the Prisma enums in apps/api/prisma/schema.prisma exactly:
 // they are what the API sends and accepts on the wire.
 
-export const LANGUAGES = ['fa', 'ps', 'en'] as const; // fa = Dari, ps = Pashto
+// prs = Dari (Afghan Persian), ps = Pashto. Both are written right-to-left.
+export const LANGUAGES = ['prs', 'ps'] as const;
 export const ROLES = ['USER', 'AGENCY', 'ADMIN'] as const;
 export const PROPERTY_TYPES = [
   'APARTMENT',
@@ -15,7 +16,9 @@ export const CURRENCIES = ['AFGHANI', 'USD'] as const;
 export const PROPERTY_STATUSES = ['ACTIVE', 'SOLD', 'ARCHIVED'] as const;
 export const SUBSCRIPTION_PACKAGES = ['MONTHLY', 'QUARTERLY', 'YEARLY'] as const;
 export const SUBSCRIPTION_STATUSES = ['ACTIVE', 'EXPIRED'] as const;
-export const TRANSACTION_PURPOSES = ['SUBSCRIPTION', 'LADDER', 'FEATURED_AD'] as const;
+export const TRANSACTION_PURPOSES = ['SUBSCRIPTION', 'LADDER', 'FEATURED_AD', 'MAP_LOCATION'] as const;
+/** Why an account may pin exact coordinates without paying per listing. */
+export const MAP_LOCATION_UNLIMITED_REASONS = ['AGENCY_SUBSCRIPTION', 'ADMIN'] as const;
 export const TRANSACTION_STATUSES = ['PENDING', 'SUCCESS', 'FAILED'] as const;
 
 export type Language = (typeof LANGUAGES)[number];
@@ -28,6 +31,7 @@ export type SubscriptionPackage = (typeof SUBSCRIPTION_PACKAGES)[number];
 export type SubscriptionStatus = (typeof SUBSCRIPTION_STATUSES)[number];
 export type TransactionPurpose = (typeof TRANSACTION_PURPOSES)[number];
 export type TransactionStatus = (typeof TRANSACTION_STATUSES)[number];
+export type MapLocationUnlimitedReason = (typeof MAP_LOCATION_UNLIMITED_REASONS)[number];
 
 /** Afghanistan's bounding box. A sanity check on map pins, not a border: it includes slivers of neighbours. */
 export const AFGHANISTAN_BOUNDS = {

@@ -7,6 +7,13 @@ import type { RegisterUserDto } from './dto/register-user.dto.js';
 export class UsersService {
   constructor(private readonly prisma: PrismaService) {}
 
+  /** The signed-in user's current record: the app refreshes the role and name from here. */
+  async me(userId: string): Promise<User> {
+    const row = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!row) throw new UnauthorizedException();
+    return toUser(row);
+  }
+
   /**
    * Completes the profile of the signed-in user. The account was already created by the first
    * OTP login; this only sets the name and avatar. Phone number and role are never taken from
@@ -24,12 +31,22 @@ export class UsersService {
         avatar: input.avatar,
       },
     });
-    return {
-      id: row.id,
-      phone_number: row.phoneNumber,
-      full_name: row.fullName,
-      role: row.role,
-      avatar: row.avatar,
-    };
+    return toUser(row);
   }
+}
+
+function toUser(row: {
+  id: string;
+  phoneNumber: string;
+  fullName: string | null;
+  role: User['role'];
+  avatar: string | null;
+}): User {
+  return {
+    id: row.id,
+    phone_number: row.phoneNumber,
+    full_name: row.fullName,
+    role: row.role,
+    avatar: row.avatar,
+  };
 }

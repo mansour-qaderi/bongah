@@ -1,7 +1,10 @@
 import {
   Body,
   Controller,
+  Get,
   Headers,
+  Param,
+  ParseUUIDPipe,
   HttpCode,
   HttpStatus,
   InternalServerErrorException,
@@ -19,7 +22,12 @@ import { CurrentUser } from '../auth/decorators/current-user.decorator.js';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard.js';
 import { ZodValidationPipe } from '../common/pipes/zod-validation.pipe.js';
 import { initiatePaymentSchema, type InitiatePaymentDto } from './dto/initiate-payment.dto.js';
-import type { PaymentInitiatedDto, WebhookAckDto } from './dto/payment-response.dto.js';
+import type {
+  PaymentInitiatedDto,
+  PaymentStatusDto,
+  PricingDto,
+  WebhookAckDto,
+} from './dto/payment-response.dto.js';
 import { HesabPayGateway } from './gateway/hesabpay-gateway.js';
 import { HesabpayService } from './hesabpay.service.js';
 
@@ -42,6 +50,23 @@ export class HesabpayController {
     @Body(new ZodValidationPipe(initiatePaymentSchema)) body: InitiatePaymentDto,
   ): Promise<PaymentInitiatedDto> {
     return this.hesabpay.initiate(user.id, body);
+  }
+
+  /** Current prices (public). */
+  @Get('pricing')
+  pricing(): PricingDto {
+    return this.hesabpay.getPricing();
+  }
+
+  /** Status of one of my payments. */
+  @Get('payments/:id')
+  @UseGuards(JwtAuthGuard)
+  @Throttle({ default: { limit: 60, ttl: 60_000 } })
+  payment(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<PaymentStatusDto> {
+    return this.hesabpay.getPayment(user.id, id);
   }
 
   /**

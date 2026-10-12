@@ -19,6 +19,7 @@ export function toPropertyDto(row: PropertyRow, now: Date): PropertyDto {
     bathrooms: row.bathrooms,
     province: row.province,
     district: row.district,
+    neighborhood: row.neighborhood,
     address: row.address,
     lat: row.lat,
     lng: row.lng,

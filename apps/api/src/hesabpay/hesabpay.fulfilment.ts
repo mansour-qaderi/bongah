@@ -1,11 +1,13 @@
 import { Logger } from '@nestjs/common';
 import {
+  MapLocationTokenSource,
   Prisma,
   PropertyStatus,
   SubscriptionStatus,
   TransactionPurpose,
   type Transaction,
 } from '../generated/prisma/client.js';
+import { grantMapLocationToken } from '../map-location/map-location.tokens.js';
 import { PACKAGE_MONTHS } from './hesabpay.constants.js';
 import { addDays, addMonths } from './hesabpay.dates.js';
 
@@ -29,6 +31,13 @@ export async function fulfil(
       return ladderProperty(db, payment, now);
     case TransactionPurpose.FEATURED_AD:
       return featureProperty(db, payment, featuredAdDays, now);
+    case TransactionPurpose.MAP_LOCATION:
+      // transaction_id is UNIQUE on tokens: this payment can only ever mint one.
+      return grantMapLocationToken(db, {
+        userId: payment.userId,
+        source: MapLocationTokenSource.PURCHASE,
+        transactionId: payment.id,
+      });
   }
 }
 

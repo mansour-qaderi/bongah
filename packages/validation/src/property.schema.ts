@@ -35,9 +35,11 @@ const propertyShape = {
   bathrooms: z.int().min(0).max(50).nullish(),
   province: placeName(60),
   district: placeName(80),
+  neighborhood: placeName(80),
   address: cleanText(3, 300),
-  lat: latitude,
-  lng: longitude,
+  /** Optional pin, and only allowed for accounts entitled to one (checked by the API, not here). */
+  lat: latitude.optional(),
+  lng: longitude.optional(),
   images: z.array(httpUrl).max(20).optional(),
 };
 
@@ -45,7 +47,12 @@ const propertyShape = {
  * POST /properties. Strict on purpose: fields the client may not set (status, is_featured,
  * laddered_at, user_id, agency_id) are rejected loudly instead of being silently dropped.
  */
-export const createPropertySchema = z.strictObject(propertyShape);
+export const createPropertySchema = z
+  .strictObject(propertyShape)
+  .refine((value) => (value.lat === undefined) === (value.lng === undefined), {
+    message: 'lat and lng must be sent together',
+    path: ['lat'],
+  });
 export type CreatePropertyInput = z.output<typeof createPropertySchema>;
 
 /** Statuses an owner can move a listing between. (Archiving is also DELETE /properties/:id.) */
@@ -95,6 +102,11 @@ export const listPropertiesQuerySchema = z
     ...paginationShape,
     province: placeName(60).optional(),
     district: placeName(80).optional(),
+    /** true: only listings with an exact pin (what the map shows). false: only those without. */
+    has_location: z
+      .enum(['true', 'false'])
+      .transform((value) => value === 'true')
+      .optional(),
     type: z.enum(PROPERTY_TYPES).optional(),
     deal_type: z.enum(DEAL_TYPES).optional(),
     min_price: queryMoney.optional(),
