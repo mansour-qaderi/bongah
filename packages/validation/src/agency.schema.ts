@@ -1,11 +1,17 @@
 import { z } from 'zod';
-import { afghanMobile } from './common';
+import { cleanText, httpUrl } from './common';
+import { latitude, longitude } from './property.schema';
 
-export const createAgencySchema = z.object({
-  name: z.string().trim().min(2).max(120),
-  phone: afghanMobile,
-  province: z.string().trim().min(2),
-  address: z.string().trim().max(300).optional(),
-  licenseNumber: z.string().trim().max(60).optional(),
+/**
+ * Registering a real-estate office (Rahnamaye Mamelat). The agency starts unverified;
+ * an admin reviews the license photo and sets `is_verified`.
+ */
+export const registerAgencySchema = z.strictObject({
+  agency_name: cleanText(2, 120),
+  license_photo: httpUrl,
+  address: cleanText(3, 300),
+  lat: latitude,
+  lng: longitude,
+  description: cleanText(1, 2000).nullish(),
 });
-export type CreateAgencyInput = z.infer<typeof createAgencySchema>;
+export type RegisterAgencyInput = z.output<typeof registerAgencySchema>;

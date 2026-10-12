@@ -1,0 +1,145 @@
+import { INestApplication } from '@nestjs/common';
+import { JwtService } from '@nestjs/jwt';
+import { Test } from '@nestjs/testing';
+import { ThrottlerGuard } from '@nestjs/throttler';
+import { createHmac, randomUUID } from 'node:crypto';
+import request from 'supertest';
+import { AppModule } from '../src/app.module.js';
+import { Role } from '../src/generated/prisma/client.js';
+import { PrismaService } from '../src/prisma/prisma.service.js';
+
+export const hasDb = Boolean(process.env.DATABASE_URL);
+
+export interface TestUser {
+  id: string;
+  phone: string;
+  /** A valid access token for this user. */
+  token: string;
+}
+
+/**
+ * Boots the real AppModule against the test database, the way main.ts does (rawBody on).
+ * Everything the tests create is tracked and removed in close().
+ */
+export class TestContext {
+  readonly userIds: string[] = [];
+
+  private constructor(
+    readonly app: INestApplication,
+    readonly prisma: PrismaService,
+    readonly jwt: JwtService,
+  ) {}
+
+  static async create(): Promise<TestContext> {
+    const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
+      // Many requests come from one IP in tests; the per-IP limiter is not what's under test here.
+      .overrideGuard(ThrottlerGuard)
+      .useValue({ canActivate: () => true })
+      .compile();
+    const app = moduleRef.createNestApplication({ rawBody: true });
+    await app.init();
+    return new TestContext(app, app.get(PrismaService), app.get(JwtService));
+  }
+
+  get http() {
+    return this.app.getHttpServer();
+  }
+
+  /** Creates a user straight in the database (bypassing OTP) and returns it with a token. */
+  async user(role: Role = Role.USER): Promise<TestUser> {
+    const tail = String(Math.floor(Math.random() * 1e7)).padStart(7, '0');
+    const phone = `+9370${tail}`;
+    const row = await this.prisma.user.create({ data: { phoneNumber: phone, role } });
+    this.userIds.push(row.id);
+    return { id: row.id, phone, token: await this.tokenFor(row.id, role) };
+  }
+
+  /** A token that claims `role`, whatever the database says. */
+  tokenFor(userId: string, role: Role): Promise<string> {
+    return this.jwt.signAsync({ sub: userId, role });
+  }
+
+  /** A user with role AGENCY and an agency profile; optionally with a currently active subscription. */
+  async agency(withSubscription: boolean): Promise<TestUser & { agencyId: string }> {
+    const user = await this.user(Role.AGENCY);
+    const agency = await this.prisma.agency.create({
+      data: {
+        userId: user.id,
+        agencyName: 'Test Agency',
+        licensePhoto: 'https://example.com/license.jpg',
+        address: 'Kabul',
+        lat: 34.5,
+        lng: 69.2,
+      },
+    });
+    if (withSubscription) {
+      await this.prisma.subscription.create({
+        data: {
+          agencyId: agency.id,
+          packageType: 'MONTHLY',
+          startDate: new Date(Date.now() - 86_400_000),
+          endDate: new Date(Date.now() + 30 * 86_400_000),
+        },
+      });
+    }
+    return { ...user, agencyId: agency.id };
+  }
+
+  /** Removes everything the test created, children before parents. */
+  async close(): Promise<void> {
+    const userIds = this.userIds;
+    const agencies = await this.prisma.agency.findMany({
+      where: { userId: { in: userIds } },
+      select: { id: true },
+    });
+    const agencyIds = agencies.map((a) => a.id);
+    await this.prisma.subscription.deleteMany({ where: { agencyId: { in: agencyIds } } });
+    await this.prisma.transaction.deleteMany({ where: { userId: { in: userIds } } });
+    await this.prisma.property.deleteMany({ where: { userId: { in: userIds } } });
+    await this.prisma.agency.deleteMany({ where: { id: { in: agencyIds } } });
+    await this.prisma.user.deleteMany({ where: { id: { in: userIds } } });
+    await this.app.close();
+  }
+
+  // Thin wrappers so specs read as requests.
+  get = (path: string, token?: string) => withAuth(request(this.http).get(path), token);
+  post = (path: string, body: object, token?: string) =>
+    withAuth(request(this.http).post(path).send(body), token);
+  patch = (path: string, body: object, token?: string) =>
+    withAuth(request(this.http).patch(path).send(body), token);
+  del = (path: string, token?: string) => withAuth(request(this.http).delete(path), token);
+}
+
+function withAuth<T extends request.Test>(req: T, token?: string): T {
+  return token ? (req.set('Authorization', `Bearer ${token}`) as T) : req;
+}
+
+/** A valid POST /properties body. `tag` makes the province unique so list tests see only their own rows. */
+export function propertyBody(overrides: Record<string, unknown> = {}) {
+  return {
+    title: 'Two bedroom apartment',
+    description: 'Bright apartment close to the market.',
+    type: 'APARTMENT',
+    deal_type: 'SALE',
+    price: 85000,
+    currency: 'USD',
+    area_sqm: 90,
+    bedrooms: 2,
+    bathrooms: 1,
+    province: 'Kabul',
+    district: 'Shar-e-Naw',
+    address: 'Street 4, near the park',
+    lat: 34.5333,
+    lng: 69.1667,
+    images: ['https://example.com/a.jpg'],
+    ...overrides,
+  };
+}
+
+/** A province name no other test (or real data) uses. */
+export const uniqueProvince = () => `Prov-${randomUUID().slice(0, 8)}`;
+
+/** Signs a webhook body the way the mock gateway expects. */
+export function signWebhook(rawBody: string, secret = process.env.HESABPAY_WEBHOOK_SECRET!): string {
+  return createHmac('sha256', secret).update(rawBody).digest('hex');
+}
