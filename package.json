@@ -1,0 +1,20 @@
+{
+  "name": "bongah",
+  "private": true,
+  "version": "1.0.0",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "engines": {
+    "node": ">=22.11"
+  },
+  "scripts": {
+    "build:packages": "pnpm --filter \"./packages/*\" run build",
+    "dev:packages": "pnpm --filter \"./packages/*\" --parallel run dev",
+    "dev:api": "pnpm --filter @bongah/api run start:dev",
+    "mobile": "pnpm --filter @bongah/mobile run start",
+    "android": "pnpm --filter @bongah/mobile run android",
+    "ios": "pnpm --filter @bongah/mobile run ios"
+  }
+}

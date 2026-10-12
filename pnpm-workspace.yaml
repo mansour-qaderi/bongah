@@ -1,0 +1,8 @@
+packages:
+  - packages/*
+  - apps/*
+allowBuilds:
+  '@prisma/engines': false
+  prisma: false
+minimumReleaseAgeExclude:
+  - '@nestjs/jwt@12.0.3'
