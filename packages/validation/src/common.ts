@@ -46,3 +46,46 @@ export const otpCode = z
   .string()
   .transform((value) => toAsciiDigits(value).replace(/\s/g, ''))
   .pipe(z.string().regex(new RegExp(`^\\d{${OTP_LENGTH}}$`), `OTP must be ${OTP_LENGTH} digits`));
+
+/**
+ * Province/district names are free text, so two spellings of the same place would otherwise
+ * never match in a filter. Dari/Pashto keyboards produce Arabic look-alike letters
+ * (ي ى ك) instead of the Persian ی ک, so fold those, apply NFKC and tidy whitespace.
+ * Storing and filtering both go through this, so they always agree.
+ */
+export function normalizePlaceName(input: string): string {
+  return input
+    .normalize('NFKC')
+    .replace(/[يى]/g, 'ی')
+    .replace(/ك/g, 'ک')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/** A province or district name, normalised with {@link normalizePlaceName}. */
+export const placeName = (max: number) =>
+  z
+    .string()
+    .transform(normalizePlaceName)
+    .pipe(z.string().min(2, 'Too short').max(max, `At most ${max} characters`));
+
+/** Trimmed text with internal whitespace runs collapsed (names, titles). */
+export const cleanText = (min: number, max: number) =>
+  z
+    .string()
+    .transform((value) => value.replace(/\s+/g, ' ').trim())
+    .pipe(z.string().min(min, `At least ${min} characters`).max(max, `At most ${max} characters`));
+
+/** An http(s) URL. Plain z.url() would also accept javascript: and data: URLs. */
+export const httpUrl = z.url({ protocol: /^https?$/ }).max(2048);
+
+/** Largest value the NUMERIC(14,2) money columns can hold. */
+export const MAX_MONEY = 999_999_999_999.99;
+
+/** A positive amount with at most 2 decimal places, as a JSON number. */
+export const moneyAmount = z
+  .number()
+  .positive()
+  .max(MAX_MONEY)
+  // String(n) is the shortest exact representation, so this is a precise decimal-places check.
+  .refine((value) => /^\d+(\.\d{1,2})?$/.test(String(value)), 'At most 2 decimal places');

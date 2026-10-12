@@ -1,19 +1,13 @@
 import { z } from 'zod';
-import { LANGUAGES } from '@bongah/shared-types';
-import { afghanMobile } from './common';
+import { cleanText, httpUrl } from './common';
 
-export const createUserSchema = z.object({
-  fullName: z.string().trim().min(2).max(100),
-  phone: afghanMobile,
-  email: z.email().optional(),
-  password: z.string().min(8).max(128),
-  role: z.enum(['customer', 'agent']).default('customer'), // admin roles are never self-assigned
-  preferredLanguage: z.enum(LANGUAGES).default('fa'),
+/**
+ * Completing the profile of a signed-in user. The account itself is created by the first
+ * successful OTP login (see auth.schema.ts); the phone number comes from the verified token and is
+ * never accepted from the body, and neither is `role`.
+ */
+export const registerUserSchema = z.strictObject({
+  full_name: cleanText(2, 100),
+  avatar: httpUrl.nullish(),
 });
-export type CreateUserInput = z.infer<typeof createUserSchema>;
-
-export const loginSchema = z.object({
-  phone: afghanMobile,
-  password: z.string().min(1),
-});
-export type LoginInput = z.infer<typeof loginSchema>;
+export type RegisterUserInput = z.output<typeof registerUserSchema>;

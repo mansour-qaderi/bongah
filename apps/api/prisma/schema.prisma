@@ -34,6 +34,7 @@ enum PropertyType {
   HOUSE_HAWILI
   LAND
   OFFICE_SHOP
+  GARDEN_VILLA
 
   @@map("property_type")
 }
@@ -129,40 +130,47 @@ model Agency {
   user          User           @relation(fields: [userId], references: [id], onDelete: Restrict)
   properties    Property[]
   subscriptions Subscription[]
+  transactions  Transaction[]
 
   @@map("agencies")
 }
 
 model Property {
-  id          String         @id @default(uuid()) @db.Uuid
-  userId      String         @map("user_id") @db.Uuid
-  agencyId    String?        @map("agency_id") @db.Uuid
-  title       String
-  description String
-  type        PropertyType
-  dealType    DealType       @map("deal_type")
-  price       Decimal        @db.Decimal(14, 2)
-  currency    Currency
-  areaSqm     Float          @map("area_sqm")
-  bedrooms    Int?
-  bathrooms   Int?
-  province    String
-  district    String
-  address     String
-  lat         Float
-  lng         Float
-  images      String[]       @default([])
-  status      PropertyStatus @default(ACTIVE)
-  isFeatured  Boolean        @default(false) @map("is_featured")
-  /// "Ladder" (نردبان): set to now() when the owner pays to bump the listing.
-  /// Listing order = COALESCE(laddered_at, created_at) DESC.
-  ladderedAt  DateTime?      @map("laddered_at") @db.Timestamptz(3)
-  createdAt   DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt   DateTime       @updatedAt @map("updated_at") @db.Timestamptz(3)
+  id            String         @id @default(uuid()) @db.Uuid
+  userId        String         @map("user_id") @db.Uuid
+  agencyId      String?        @map("agency_id") @db.Uuid
+  title         String
+  description   String
+  type          PropertyType
+  dealType      DealType       @map("deal_type")
+  price         Decimal        @db.Decimal(14, 2)
+  currency      Currency
+  areaSqm       Float          @map("area_sqm")
+  bedrooms      Int?
+  bathrooms     Int?
+  province      String
+  district      String
+  address       String
+  lat           Float
+  lng           Float
+  images        String[]       @default([])
+  status        PropertyStatus @default(ACTIVE)
+  isFeatured    Boolean        @default(false) @map("is_featured")
+  /// Position in search results (newest first). Set to the creation time when the listing is
+  /// created and to now() when the owner pays for a "Ladder" (نردبان) bump, so ordering by
+  /// this one column is enough (Prisma cannot ORDER BY COALESCE). Null only on legacy rows.
+  ladderedAt    DateTime?      @map("laddered_at") @db.Timestamptz(3)
+  /// Paid "featured" promotion: the badge shows while is_featured is true AND this is in the future.
+  /// is_featured alone goes stale at expiry, so readers must check both (see toPropertyDto in src/property/property.mapper.ts).
+  featuredUntil DateTime?      @map("featured_until") @db.Timestamptz(3)
+  createdAt     DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt     DateTime       @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   user   User    @relation(fields: [userId], references: [id], onDelete: Restrict)
   // If an agency is removed its listings stay with their owner.
   agency Agency? @relation(fields: [agencyId], references: [id], onDelete: SetNull)
+
+  transactions Transaction[]
 
   // Postgres does not index foreign keys automatically.
   @@index([userId, createdAt]) // "1 free listing per month" quota check
@@ -173,14 +181,18 @@ model Property {
 }
 
 model Subscription {
-  id          String              @id @default(uuid()) @db.Uuid
-  agencyId    String              @map("agency_id") @db.Uuid
-  packageType SubscriptionPackage @map("package_type")
-  startDate   DateTime            @map("start_date") @db.Timestamptz(3)
-  endDate     DateTime            @map("end_date") @db.Timestamptz(3)
-  status      SubscriptionStatus  @default(ACTIVE)
+  id            String              @id @default(uuid()) @db.Uuid
+  agencyId      String              @map("agency_id") @db.Uuid
+  packageType   SubscriptionPackage @map("package_type")
+  startDate     DateTime            @map("start_date") @db.Timestamptz(3)
+  endDate       DateTime            @map("end_date") @db.Timestamptz(3)
+  status        SubscriptionStatus  @default(ACTIVE)
+  /// The payment that bought this subscription (null for admin grants / free trials).
+  /// UNIQUE: one payment can never create two subscriptions, whatever the application does.
+  transactionId String?             @unique @map("transaction_id") @db.Uuid
 
-  agency Agency @relation(fields: [agencyId], references: [id], onDelete: Restrict)
+  agency      Agency       @relation(fields: [agencyId], references: [id], onDelete: Restrict)
+  transaction Transaction? @relation(fields: [transactionId], references: [id], onDelete: Restrict)
 
   @@index([agencyId, status, endDate])
   @@map("subscriptions")
@@ -195,12 +207,26 @@ model Transaction {
   hesabpayTxId String             @unique @map("hesabpay_tx_id")
   purpose      TransactionPurpose
   status       TransactionStatus  @default(PENDING)
-  createdAt    DateTime           @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt    DateTime           @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  user User @relation(fields: [userId], references: [id], onDelete: Restrict)
+  // What is being paid for, recorded at initiation. The webhook reads this to fulfil the order,
+  // so a payment confirmation never has to be trusted for anything but "paid / not paid".
+  /// SUBSCRIPTION: the agency and package being bought.
+  agencyId    String?              @map("agency_id") @db.Uuid
+  packageType SubscriptionPackage? @map("package_type")
+  /// LADDER / FEATURED_AD: the listing being promoted.
+  propertyId  String?              @map("property_id") @db.Uuid
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  user         User          @relation(fields: [userId], references: [id], onDelete: Restrict)
+  agency       Agency?       @relation(fields: [agencyId], references: [id], onDelete: Restrict)
+  property     Property?     @relation(fields: [propertyId], references: [id], onDelete: Restrict)
+  subscription Subscription?
 
   @@index([userId, createdAt])
+  @@index([agencyId])
+  @@index([propertyId])
   @@map("transactions")
 }
 

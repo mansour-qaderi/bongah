@@ -1,61 +1,95 @@
 import type {
-  Currency, Language, ListingType, PropertyStatus,
-  PropertyType, TransactionStatus, UserRole,
+  Currency,
+  DealType,
+  PropertyStatus,
+  PropertyType,
+  Role,
+  SubscriptionPackage,
+  SubscriptionStatus,
+  TransactionPurpose,
+  TransactionStatus,
 } from './constants';
 
-/** Dates are ISO-8601 strings: these are wire types, not DB entities. */
-interface Timestamps {
-  createdAt: string;
-  updatedAt: string;
+// These are API wire types, not database entities: field names are snake_case exactly as
+// the REST API sends them, and dates are ISO-8601 strings.
+
+export interface User {
+  id: string;
+  phone_number: string;
+  full_name: string | null;
+  role: Role;
+  avatar: string | null;
 }
 
-export interface User extends Timestamps {
+export interface Agency {
   id: string;
-  fullName: string;
-  phone: string;
-  email?: string;
-  role: UserRole;
-  preferredLanguage: Language;
-  agencyId?: string;
+  user_id: string;
+  agency_name: string;
+  license_photo: string;
+  address: string;
+  lat: number;
+  lng: number;
+  description: string | null;
+  is_verified: boolean;
+  created_at: string;
+  updated_at: string;
 }
 
-export interface Agency extends Timestamps {
+export interface Property {
   id: string;
-  name: string;
-  ownerId: string;
-  phone: string;
-  province: string;
-  address?: string;
-  licenseNumber?: string;
-}
-
-export interface Property extends Timestamps {
-  id: string;
-  agencyId: string;
+  user_id: string;
+  agency_id: string | null;
   title: string;
   description: string;
-  listingType: ListingType;
-  propertyType: PropertyType;
-  status: PropertyStatus;
+  type: PropertyType;
+  deal_type: DealType;
+  /** Up to 2 decimals. Safe as a JSON number (the column holds at most 14 digits). */
   price: number;
   currency: Currency;
-  areaSqm: number;
-  bedrooms?: number;
-  bathrooms?: number;
+  area_sqm: number;
+  bedrooms: number | null;
+  bathrooms: number | null;
   province: string;
-  district?: string;
-  address?: string;
-  imageUrls: string[];
+  district: string;
+  address: string;
+  lat: number;
+  lng: number;
+  images: string[];
+  status: PropertyStatus;
+  /** True only while a paid featured promotion is running. */
+  is_featured: boolean;
+  featured_until: string | null;
+  laddered_at: string | null;
+  created_at: string;
+  updated_at: string;
 }
 
-export interface Transaction extends Timestamps {
+export interface Pagination {
+  page: number;
+  limit: number;
+  total: number;
+  total_pages: number;
+}
+
+export interface Paginated<T> {
+  data: T[];
+  meta: Pagination;
+}
+
+export interface Subscription {
   id: string;
-  userId: string;
-  agencyId?: string;
-  propertyId?: string;
+  agency_id: string;
+  package_type: SubscriptionPackage;
+  start_date: string;
+  end_date: string;
+  status: SubscriptionStatus;
+}
+
+export interface Transaction {
+  id: string;
+  purpose: TransactionPurpose;
+  status: TransactionStatus;
   amount: number;
   currency: Currency;
-  status: TransactionStatus;
-  provider: 'hesabpay';
-  providerReference?: string;
+  created_at: string;
 }
