@@ -5,8 +5,6 @@ const agencyBody = (overrides: Record<string, unknown> = {}) => ({
   agency_name: 'Noor Real Estate',
   license_photo: 'https://example.com/license.jpg',
   address: 'Shar-e-Naw, Kabul',
-  lat: 34.5333,
-  lng: 69.1667,
   description: 'Sales and rentals since 2012',
   ...overrides,
 });
@@ -19,6 +17,25 @@ describe.skipIf(!hasDb)('Registration (e2e)', () => {
   });
   afterAll(async () => {
     await ctx.close();
+  });
+
+  describe('GET /users/me', () => {
+    it('needs a token', async () => {
+      await ctx.get('/users/me').expect(401);
+    });
+
+    it('returns the current record, including a role that changed after the token was issued', async () => {
+      const user = await ctx.user();
+      expect((await ctx.get('/users/me', user.token).expect(200)).body).toEqual({
+        id: user.id,
+        phone_number: user.phone,
+        full_name: null,
+        role: 'USER',
+        avatar: null,
+      });
+      await ctx.post('/agencies/register', agencyBody(), user.token).expect(201);
+      expect((await ctx.get('/users/me', user.token).expect(200)).body.role).toBe('AGENCY');
+    });
   });
 
   describe('POST /users/register', () => {
@@ -72,7 +89,8 @@ describe.skipIf(!hasDb)('Registration (e2e)', () => {
         user_id: user.id,
         agency_name: 'Noor Real Estate',
         is_verified: false,
-        lat: 34.5333,
+        lat: null, // the office pin comes later, with a subscription
+        lng: null,
       });
       expect((await ctx.prisma.user.findUniqueOrThrow({ where: { id: user.id } })).role).toBe(Role.AGENCY);
     });
@@ -96,7 +114,7 @@ describe.skipIf(!hasDb)('Registration (e2e)', () => {
       const user = await ctx.user();
       for (const bad of [
         agencyBody({ license_photo: 'javascript:alert(1)' }),
-        agencyBody({ lat: 10, lng: 10 }),
+        agencyBody({ lat: 34.5, lng: 69.1 }), // a pin cannot be set at registration
         agencyBody({ agency_name: 'X' }),
         agencyBody({ is_verified: true }),
         agencyBody({ user_id: user.id }),

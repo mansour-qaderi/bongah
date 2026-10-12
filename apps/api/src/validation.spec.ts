@@ -5,6 +5,7 @@ import {
   normalizePlaceName,
   registerAgencySchema,
   registerUserSchema,
+  setAgencyLocationSchema,
   updatePropertySchema,
 } from '@bongah/validation';
 
@@ -18,6 +19,7 @@ const valid = {
   area_sqm: 90,
   province: 'Kabul',
   district: 'Shar-e-Naw',
+  neighborhood: 'Qala-e-Fathullah',
   address: 'Street 4',
   lat: 34.5,
   lng: 69.1,
@@ -51,6 +53,8 @@ describe('createPropertySchema', () => {
     ['bedrooms', { bedrooms: -1 }],
     ['images.1', { images: ['https://ok.example/a.jpg', 'data:text/html,hi'] }],
     ['title', { title: 'ab' }],
+    ['neighborhood', { neighborhood: 'x' }],
+    ['lat', { lat: null }],
     ['', { surprise: 1 }],
   ])('rejects bad %s', (field, patch) => {
     const r = createPropertySchema.safeParse({ ...valid, ...patch });
@@ -65,6 +69,16 @@ describe('createPropertySchema', () => {
       expect(listPropertiesQuerySchema.safeParse({ type }).success).toBe(true);
     }
     expect(createPropertySchema.safeParse({ ...valid, type: 'garden_villa' }).success).toBe(false);
+  });
+
+  it('treats the map pin as optional but never half a pin', () => {
+    const { lat: _lat, lng: _lng, ...noPin } = valid;
+    expect(createPropertySchema.safeParse(noPin).success).toBe(true);
+    expect(createPropertySchema.safeParse({ ...noPin, lat: 34.5 }).success).toBe(false);
+    expect(createPropertySchema.safeParse({ ...noPin, lng: 69.1 }).success).toBe(false);
+    // The neighbourhood is mandatory: it is what a listing without a pin is located by.
+    const { neighborhood: _n, ...noNeighborhood } = valid;
+    expect(createPropertySchema.safeParse(noNeighborhood).success).toBe(false);
   });
 
   it('allows null/absent rooms and leaves images undefined (the service defaults it)', () => {
@@ -92,6 +106,8 @@ describe('updatePropertySchema', () => {
 describe('listPropertiesQuerySchema', () => {
   it('applies pagination defaults and converts numbers', () => {
     expect(listPropertiesQuerySchema.parse({})).toEqual({ page: 1, limit: 20 });
+    expect(listPropertiesQuerySchema.parse({ has_location: 'true' })).toMatchObject({ has_location: true });
+    expect(listPropertiesQuerySchema.parse({ has_location: 'false' })).toMatchObject({ has_location: false });
     expect(listPropertiesQuerySchema.parse({ min_price: '10.5', currency: 'USD', page: '3' })).toMatchObject({ min_price: 10.5, page: 3 });
   });
   it.each([
@@ -104,6 +120,8 @@ describe('listPropertiesQuerySchema', () => {
     [{ min_price: '1.234', currency: 'USD' }],
     [{ province: ['a', 'b'] }],
     [{ extra: '1' }],
+    [{ has_location: 'yes' }],
+    [{ has_location: '1' }],
   ])('rejects %j', (query) => {
     expect(listPropertiesQuerySchema.safeParse(query).success).toBe(false);
   });
@@ -114,9 +132,10 @@ describe('registration and payment schemas', () => {
     expect(registerUserSchema.parse({ full_name: ' Ahmad  Zia ' })).toEqual({ full_name: 'Ahmad Zia' });
     expect(registerUserSchema.safeParse({ full_name: 'Ahmad Zia', role: 'ADMIN' }).success).toBe(false);
   });
-  it('registerAgencySchema validates the licence URL and coordinates', () => {
-    const agency = { agency_name: 'Noor', license_photo: 'https://x.test/l.jpg', address: 'Kabul city', lat: 34.5, lng: 69.1 };
+  it('registerAgencySchema validates the licence URL and refuses a pin (that needs a subscription)', () => {
+    const agency = { agency_name: 'Noor', license_photo: 'https://x.test/l.jpg', address: 'Kabul city' };
     expect(registerAgencySchema.safeParse(agency).success).toBe(true);
+    expect(registerAgencySchema.safeParse({ ...agency, lat: 34.5, lng: 69.1 }).success).toBe(false);
     expect(registerAgencySchema.safeParse({ ...agency, license_photo: 'file:///etc/passwd' }).success).toBe(false);
     expect(registerAgencySchema.safeParse({ ...agency, is_verified: true }).success).toBe(false);
   });
@@ -124,5 +143,16 @@ describe('registration and payment schemas', () => {
     expect(initiatePaymentSchema.safeParse({ purpose: 'SUBSCRIPTION', package_type: 'YEARLY' }).success).toBe(true);
     expect(initiatePaymentSchema.safeParse({ purpose: 'SUBSCRIPTION', package_type: 'YEARLY', amount: 1 }).success).toBe(false);
     expect(initiatePaymentSchema.safeParse({ purpose: 'LADDER', property_id: 'x' }).success).toBe(false);
+  });
+  it('initiatePaymentSchema takes a map location add-on with nothing else', () => {
+    expect(initiatePaymentSchema.safeParse({ purpose: 'MAP_LOCATION' }).success).toBe(true);
+    expect(initiatePaymentSchema.safeParse({ purpose: 'MAP_LOCATION', amount: 1 }).success).toBe(false);
+    expect(initiatePaymentSchema.safeParse({ purpose: 'MAP_LOCATION', property_id: crypto.randomUUID() }).success).toBe(false);
+  });
+  it('setAgencyLocationSchema needs both coordinates inside Afghanistan', () => {
+    expect(setAgencyLocationSchema.safeParse({ lat: 34.5, lng: 69.1 }).success).toBe(true);
+    expect(setAgencyLocationSchema.safeParse({ lat: 34.5 }).success).toBe(false);
+    expect(setAgencyLocationSchema.safeParse({ lat: 51.5, lng: -0.12 }).success).toBe(false);
+    expect(setAgencyLocationSchema.safeParse({ lat: 34.5, lng: 69.1, agency_id: 'x' }).success).toBe(false);
   });
 });

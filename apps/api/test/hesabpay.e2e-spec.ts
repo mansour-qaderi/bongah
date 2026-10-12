@@ -1,7 +1,7 @@
 import { BadGatewayException } from '@nestjs/common';
 import request from 'supertest';
 import { HesabPayGateway } from '../src/hesabpay/gateway/hesabpay-gateway.js';
-import { hasDb, propertyBody, signWebhook, TestContext, uniqueProvince, type TestUser } from './helpers.js';
+import { hasDb, PIN, propertyBody, signWebhook, TestContext, uniqueProvince, type TestUser } from './helpers.js';
 
 const DAY = 86_400_000;
 
@@ -126,6 +126,40 @@ describe.skipIf(!hasDb)('HesabPay (e2e)', () => {
       );
       await subscribe(agency).expect(502);
       expect(await ctx.prisma.transaction.count({ where: { userId: agency.id } })).toBe(0);
+    });
+  });
+
+  describe('GET /hesabpay/pricing', () => {
+    it('is public and reports the configured prices', async () => {
+      const res = await ctx.get('/hesabpay/pricing').expect(200);
+      expect(res.body).toEqual({
+        currency: 'AFGHANI',
+        subscription: { MONTHLY: 1000, QUARTERLY: 2700, YEARLY: 9600 },
+        ladder: 50,
+        featured_ad: 100.5,
+        map_location: 30,
+        featured_ad_days: 7,
+      });
+    });
+  });
+
+  describe('GET /hesabpay/payments/:id', () => {
+    it('shows the owner their payment status, which follows the webhook', async () => {
+      const agency = await ctx.agency(false);
+      const { id, sessionId } = await start(agency, { purpose: 'SUBSCRIPTION', package_type: 'MONTHLY' });
+      const before = await ctx.get(`/hesabpay/payments/${id}`, agency.token).expect(200);
+      expect(before.body).toMatchObject({ id, status: 'PENDING', purpose: 'SUBSCRIPTION', amount: 1000, currency: 'AFGHANI' });
+
+      await confirm(sessionId).expect(200);
+      expect((await ctx.get(`/hesabpay/payments/${id}`, agency.token).expect(200)).body.status).toBe('SUCCESS');
+    });
+
+    it("treats someone else's payment as missing, and needs a token and a valid id", async () => {
+      const [agency, stranger] = [await ctx.agency(false), await ctx.user()];
+      const { id } = await start(agency, { purpose: 'SUBSCRIPTION', package_type: 'MONTHLY' });
+      await ctx.get(`/hesabpay/payments/${id}`, stranger.token).expect(404);
+      await ctx.get(`/hesabpay/payments/${id}`).expect(401);
+      await ctx.get('/hesabpay/payments/nope', agency.token).expect(400);
     });
   });
 
@@ -363,6 +397,89 @@ describe.skipIf(!hasDb)('HesabPay (e2e)', () => {
       await confirm(sessionId).expect(200);
       expect(await status(id)).toBe('SUCCESS');
       expect((await ctx.prisma.property.findUniqueOrThrow({ where: { id: listing.id } })).ladderedAt).toEqual(before);
+    });
+  });
+
+  describe('MAP_LOCATION add-on', () => {
+    const tokensOf = (userId: string) => ctx.prisma.mapLocationToken.findMany({ where: { userId } });
+    const buy = (user: TestUser) => start(user, { purpose: 'MAP_LOCATION' });
+
+    it('records a PENDING purchase at the configured price and delivers nothing until it is paid', async () => {
+      const user = await ctx.user();
+      const res = await pay(user, { purpose: 'MAP_LOCATION' }).expect(201);
+      expect(res.body).toMatchObject({ purpose: 'MAP_LOCATION', status: 'PENDING', amount: 30, currency: 'AFGHANI' });
+      expect(await tokensOf(user.id)).toHaveLength(0);
+    });
+
+    it('does not take a property id or an amount', async () => {
+      const user = await ctx.user();
+      await pay(user, { purpose: 'MAP_LOCATION', amount: 1 }).expect(400);
+      await pay(user, { purpose: 'MAP_LOCATION', property_id: '00000000-0000-4000-8000-000000000000' }).expect(400);
+    });
+
+    it('grants exactly one token when the payment succeeds, and the payment is linked to it', async () => {
+      const user = await ctx.user();
+      const { id, sessionId } = await buy(user);
+      await confirm(sessionId).expect(200);
+
+      expect(await status(id)).toBe('SUCCESS');
+      const tokens = await tokensOf(user.id);
+      expect(tokens).toHaveLength(1);
+      expect(tokens[0]).toMatchObject({ source: 'PURCHASE', transactionId: id, propertyId: null, consumedAt: null });
+      expect((await ctx.get('/map-location/status', user.token).expect(200)).body.tokens_available).toBe(1);
+    });
+
+    it('grants one token however many times the webhook arrives, even simultaneously', async () => {
+      const user = await ctx.user();
+      const { sessionId } = await buy(user);
+      const results = await Promise.all(Array.from({ length: 5 }, () => confirm(sessionId)));
+      expect(results.map((r) => r.status)).toEqual([200, 200, 200, 200, 200]);
+      await confirm(sessionId).expect(200);
+      expect(await tokensOf(user.id)).toHaveLength(1);
+    });
+
+    it('grants nothing for a failed payment or a mismatched amount', async () => {
+      const user = await ctx.user();
+      const failed = await buy(user);
+      await webhook({ transaction_id: failed.sessionId, status: 'FAILED' }).expect(200);
+      const wrong = await buy(user);
+      await confirm(wrong.sessionId, { amount: '1' }).expect(200);
+      expect(await status(failed.id)).toBe('FAILED');
+      expect(await status(wrong.id)).toBe('PENDING');
+      expect(await tokensOf(user.id)).toHaveLength(0);
+    });
+
+    it('lets each paying user keep their own tokens', async () => {
+      const [a, b] = [await ctx.user(), await ctx.user()];
+      await confirm((await buy(a)).sessionId).expect(200);
+      await confirm((await buy(a)).sessionId).expect(200);
+      expect(await tokensOf(a.id)).toHaveLength(2);
+      expect(await tokensOf(b.id)).toHaveLength(0);
+    });
+
+    it('refuses to sell the add-on to accounts that already pin for free', async () => {
+      const subscribed = await ctx.agency(true);
+      const admin = await ctx.user('ADMIN');
+      for (const buyer of [subscribed, admin]) {
+        const res = await pay(buyer, { purpose: 'MAP_LOCATION' }).expect(409);
+        expect(res.body.code).toBe('MAP_LOCATION_ALREADY_UNLIMITED');
+      }
+      expect(await ctx.prisma.transaction.count({ where: { userId: { in: [subscribed.id, admin.id] } } })).toBe(0);
+    });
+
+    it('sells it to an agency whose subscription has lapsed, and to one that never subscribed', async () => {
+      for (const agency of [await ctx.lapsedAgency(), await ctx.agency(false)]) {
+        await pay(agency, { purpose: 'MAP_LOCATION' }).expect(201);
+      }
+    });
+
+    it('lets a user pay, then publish a listing with an exact pin', async () => {
+      const user = await ctx.user();
+      await ctx.post('/properties', propertyBody({ ...PIN }), user.token).expect(403);
+      await confirm((await buy(user)).sessionId).expect(200);
+      const res = await ctx.post('/properties', propertyBody({ ...PIN }), user.token).expect(201);
+      expect(res.body).toMatchObject(PIN);
+      expect((await ctx.get('/map-location/status', user.token).expect(200)).body.tokens_available).toBe(0);
     });
   });
 });

@@ -17,6 +17,8 @@ export interface HesabPaySettings {
     subscription: Record<SubscriptionPackage, string>;
     ladder: string;
     featuredAd: string;
+    /** One exact map pin on one listing, for accounts without an agency subscription. */
+    mapLocation: string;
   };
   featuredAdDays: number;
 }
@@ -30,6 +32,7 @@ const MOCK_DEFAULT_PRICES = {
   HESABPAY_PRICE_SUBSCRIPTION_YEARLY: '9600',
   HESABPAY_PRICE_LADDER: '50',
   HESABPAY_PRICE_FEATURED_AD: '100',
+  HESABPAY_PRICE_MAP_LOCATION: '30',
 } as const;
 
 const PRICE_PATTERN = /^\d{1,12}(\.\d{1,2})?$/;
@@ -97,6 +100,7 @@ export function readHesabPaySettings(config: ConfigService): HesabPaySettings {
       subscription,
       ladder: price('HESABPAY_PRICE_LADDER'),
       featuredAd: price('HESABPAY_PRICE_FEATURED_AD'),
+      mapLocation: price('HESABPAY_PRICE_MAP_LOCATION'),
     },
     featuredAdDays,
   };

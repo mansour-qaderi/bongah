@@ -1,97 +1,119 @@
-This is a new [**React Native**](https://reactnative.dev) project, bootstrapped using [`@react-native-community/cli`](https://github.com/react-native-community/cli).
+# Bongah mobile app
 
-# Getting Started
+React Native 0.87 (bare CLI) app for Bongah (رهنمای معاملات و املاک). It is **right-to-left in
+both supported languages**: Dari (`prs`) and Pashto (`ps`).
 
-> **Note**: Make sure you have completed the [Set Up Your Environment](https://reactnative.dev/docs/set-up-your-environment) guide before proceeding.
+## Run it
 
-## Step 1: Start Metro
-
-First, you will need to run **Metro**, the JavaScript build tool for React Native.
-
-To start the Metro dev server, run the following command from the root of your React Native project:
+From the repository root:
 
 ```sh
-# Using npm
-npm start
-
-# OR using Yarn
-yarn start
+pnpm install
+pnpm build:packages          # the app imports the compiled @bongah/shared-types and @bongah/validation
+pnpm --filter @bongah/api db:migrate && pnpm --filter @bongah/api db:generate   # API database (once)
+pnpm --filter @bongah/api start:dev   # API on http://localhost:3000
+pnpm --filter @bongah/mobile start    # Metro
+pnpm --filter @bongah/mobile android  # or: ios (macOS only; run `bundle exec pod install` in ios/ first)
 ```
 
-## Step 2: Build and run your app
+- **API address** — `src/config.ts`. The Android emulator reaches your computer at `10.0.2.2`,
+  the iOS simulator at `localhost`. On a physical phone set `DEV_API_HOST` to your computer's LAN
+  address. Release builds use `PRODUCTION_API_URL` (must be HTTPS).
+- **Maps** — OpenStreetMap tiles drawn by [MapLibre Native](https://maplibre.org/) (`@maplibre/maplibre-react-native`).
+  There is **no Google Maps key, no Mapbox token and no account** to set up. MapLibre needs React
+  Native's new architecture (on by default in 0.87) and a native rebuild: `pnpm install`, then
+  `bundle exec pod install` in `ios/`, then run the app again.
+- **Map tiles** — `MAP_TILE_URL` in `src/config.ts` (default: the public OpenStreetMap server). OSM's
+  [tile usage policy](https://operations.osmfoundation.org/policies/tiles/) allows light use only, so
+  before a public launch point it at a paid or self-hosted raster tile service (MapTiler, Stadia,
+  your own server). Keep `MAP_ATTRIBUTION` matching whichever provider you use; the app draws it on every map.
+- With the mock SMS gateway the API returns `dev_otp`, and the OTP screen shows it (debug builds only).
 
-With Metro running, open a new terminal window/pane from the root of your React Native project, and use one of the following commands to build and run your Android or iOS app:
-
-### Android
+## Checks
 
 ```sh
-# Using npm
-npm run android
-
-# OR using Yarn
-yarn android
+pnpm --filter @bongah/mobile typecheck
+pnpm --filter @bongah/mobile lint
+pnpm --filter @bongah/mobile test
 ```
 
-### iOS
+## Folder structure
 
-For iOS, remember to install CocoaPods dependencies (this only needs to be run on first clone or after updating native deps).
-
-The first time you create a new project, run the Ruby bundler to install CocoaPods itself:
-
-```sh
-bundle install
+```
+App.tsx                      providers: i18n gate → React Query → Auth → Navigation
+index.js                     forces RTL, then registers the app
+src/
+  config.ts                  API URL, timeouts, payment polling
+  theme/                     colours, spacing, Arabic-script line heights
+  i18n/
+    index.ts                 i18next setup, saved/device language, changeLanguage()
+    rtl.ts                   I18nManager.allowRTL(true) + forceRTL(true)
+    format.ts                Persian digits, prices, jerib ⇄ m², Kabul-time dates
+    useFormat.ts             formatting bound to the current language
+    languages.ts             language metadata
+    locales/prs.json         Dari strings   (typed keys: a wrong t('…') key fails tsc)
+    locales/ps.json          Pashto strings (a unit test keeps both files in sync)
+  api/
+    client.ts                fetch wrapper: timeouts, ApiError, bearer token, 401 → sign out
+    endpoints.ts             one function per API endpoint
+    errors.ts                ApiError → message in the user's language
+    hooks.ts                 React Query client, query keys, list/detail hooks
+  auth/
+    sessionStorage.ts        JWT in the platform keychain
+    AuthContext.tsx          sign in/out, session restore, role refresh (GET /users/me)
+  storage/kv.ts              preferences (language) in AsyncStorage v3
+  constants/provinces.ts     34 provinces: Dari/Pashto names, centres, quick-pick cities
+  map/                       MapLibre/OSM: style.ts (tile style), geo.ts (camera, [lng,lat] helpers), BaseMap, PinMarker
+  navigation/
+    RootNavigator.tsx        stack: Tabs, PropertyDetails, AddProperty, SetLocation, Checkout, Auth (modal)
+    MainTabs.tsx             Home · My listings · Account
+    AuthNavigator.tsx        Phone → Otp → ProfileSetup
+    useRequireAuth.ts        "sign in first" gate for contact / add / pay
+    types.ts                 route params
+  components/                Button, TextField, Chip, PropertyCard, FilterSheet, ProvincePicker,
+                             PropertyMap, LocationPicker, PropertyLocationMap, PinSection, OptionCard, …
+  screens/
+    auth/                    PhoneScreen, OtpScreen, ProfileSetupScreen
+    home/HomeScreen          province quick-picks + filters, list ⇄ map, infinite scroll
+    property/                PropertyDetailsScreen, AddPropertyScreen, SetLocationScreen (add/move a pin)
+    payments/CheckoutScreen  subscription / ladder / featured / map pin → HesabPay → status polling
+    my/MyListingsScreen      own listings: promote, archive, add or move the map pin
+    account/AccountScreen    language switch, profile, sign out
+__tests__/                   unit + render tests      test-utils/  small test helpers
 ```
 
-Then, and every time you update your native dependencies, run:
+## Map pins and who pays for them
 
-```sh
-bundle exec pod install
-```
+Every listing has province, district and neighborhood **text**. The exact map pin (`lat`/`lng`) is
+a paid extra:
 
-For more information, please visit [CocoaPods Getting Started guide](https://guides.cocoapods.org/using/getting-started.html).
+- **Agencies with a running subscription** (and admins) pin any number of listings for free.
+- **Everyone else** buys a "map location" add-on through HesabPay (`Checkout`, tab _map_), which
+  gives one prepaid pin. The first pin on a listing spends it; moving that pin later is free.
+- The app asks the API (`GET /map-location/status`) and shows the map picker only to people who
+  may use it; otherwise it shows the price and a buy button. The API enforces the same rule, so a
+  stale screen gets `MAP_LOCATION_REQUIRED` and is sent to the purchase.
+- Referral credits are not built: there is no referral system yet. The API has a token source
+  for them, ready for when it exists.
 
-```sh
-# Using npm
-npm run ios
+## How right-to-left works
 
-# OR using Yarn
-yarn ios
-```
+Both languages are RTL, so the layout direction never changes with the language; switching
+language only swaps strings (no restart).
 
-If everything is set up correctly, you should see your new app running in the Android Emulator, iOS Simulator, or your connected device.
+React Native applies `forceRTL` on the **next** process start, so the native entry points also
+switch RTL on before React Native loads (`MainApplication.kt`, `AppDelegate.swift`); the JS call
+in `index.js` is the safety net. In debug builds a console warning appears if the layout is not RTL.
 
-This is one way to run your app — you can also build it directly from Android Studio or Xcode.
+Rules for new UI: use `flexDirection: 'row'` (it flips by itself), `marginStart/End`,
+`paddingStart/End`, `start/end` — never `left`/`right` for layout. Wrap phone numbers, codes and
+URLs in a `TextField` with `ltr`.
 
-## Step 3: Modify your app
+## What is not built yet
 
-Now that you have successfully run the app, let's make changes!
-
-Open `App.tsx` in your text editor of choice and make some changes. When you save, your app will automatically update and reflect these changes — this is powered by [Fast Refresh](https://reactnative.dev/docs/fast-refresh).
-
-When you want to forcefully reload, for example to reset the state of your app, you can perform a full reload:
-
-- **Android**: Press the <kbd>R</kbd> key twice or select **"Reload"** from the **Dev Menu**, accessed via <kbd>Ctrl</kbd> + <kbd>M</kbd> (Windows/Linux) or <kbd>Cmd ⌘</kbd> + <kbd>M</kbd> (macOS).
-- **iOS**: Press <kbd>R</kbd> in iOS Simulator.
-
-## Congratulations! :tada:
-
-You've successfully run and modified your React Native App. :partying_face:
-
-### Now what?
-
-- If you want to add this new React Native code to an existing application, check out the [Integration guide](https://reactnative.dev/docs/integration-with-existing-apps).
-- If you're curious to learn more about React Native, check out the [docs](https://reactnative.dev/docs/getting-started).
-
-# Troubleshooting
-
-If you're having issues getting the above steps to work, see the [Troubleshooting](https://reactnative.dev/docs/troubleshooting) page.
-
-# Learn More
-
-To learn more about React Native, take a look at the following resources:
-
-- [React Native Website](https://reactnative.dev) - learn more about React Native.
-- [Getting Started](https://reactnative.dev/docs/environment-setup) - an **overview** of React Native and how setup your environment.
-- [Learn the Basics](https://reactnative.dev/docs/getting-started) - a **guided tour** of the React Native **basics**.
-- [Blog](https://reactnative.dev/blog) - read the latest official React Native **Blog** posts.
-- [`@facebook/react-native`](https://github.com/facebook/react-native) - the Open Source; GitHub **repository** for React Native.
+- Photo upload — the form accepts image **links** only (the API has no upload endpoint yet).
+- Agency registration (name, licence, address), the agency office-pin screen (the API has
+  `PUT /agencies/me/location`; no screen uses it yet) and the agency CRM/branding pages.
+- Referral credits for map pins (no referral system exists).
+- Solar Hijri dates — dates show in the Gregorian calendar with Persian digits.
+- Districts are free text (the API stores free-text districts).

@@ -1,8 +1,16 @@
-import { ConflictException, ForbiddenException, Injectable, UnauthorizedException } from '@nestjs/common';
+import {
+  ConflictException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+  UnauthorizedException,
+} from '@nestjs/common';
 import type { Agency } from '@bongah/shared-types';
-import { Prisma, Role } from '../generated/prisma/client.js';
+import { Prisma, Role, type Agency as AgencyRow } from '../generated/prisma/client.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import type { RegisterAgencyDto } from './dto/register-agency.dto.js';
+import type { SetAgencyLocationDto } from './dto/set-agency-location.dto.js';
+import { findActiveSubscription } from './subscription.js';
 
 @Injectable()
 export class AgenciesService {
@@ -30,8 +38,6 @@ export class AgenciesService {
             agencyName: input.agency_name,
             licensePhoto: input.license_photo,
             address: input.address,
-            lat: input.lat,
-            lng: input.lng,
             description: input.description ?? null,
           },
         });
@@ -39,19 +45,7 @@ export class AgenciesService {
         return agency;
       });
 
-      return {
-        id: row.id,
-        user_id: row.userId,
-        agency_name: row.agencyName,
-        license_photo: row.licensePhoto,
-        address: row.address,
-        lat: row.lat,
-        lng: row.lng,
-        description: row.description,
-        is_verified: row.isVerified,
-        created_at: row.createdAt.toISOString(),
-        updated_at: row.updatedAt.toISOString(),
-      };
+      return toAgencyDto(row);
     } catch (error) {
       // agencies.user_id is UNIQUE: a second registration for the same user lands here.
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
@@ -60,4 +54,49 @@ export class AgenciesService {
       throw error;
     }
   }
+
+  /**
+   * Places (or moves) the office's exact pin. Included in the subscription: it needs an active
+   * one, with no per-pin fee. After the subscription lapses the stored pin stays, but it can't be
+   * changed until the agency renews.
+   */
+  async setLocation(userId: string, input: SetAgencyLocationDto): Promise<Agency> {
+    const now = new Date();
+    return this.prisma.$transaction(async (tx) => {
+      const agency = await tx.agency.findUnique({ where: { userId } });
+      if (!agency) {
+        throw new NotFoundException({
+          message: 'Register your agency first.',
+          code: 'AGENCY_PROFILE_REQUIRED',
+        });
+      }
+      if (!(await findActiveSubscription(tx, agency.id, now))) {
+        throw new ForbiddenException({
+          message: 'An active subscription is required to set the office location.',
+          code: 'SUBSCRIPTION_REQUIRED',
+        });
+      }
+      const row = await tx.agency.update({
+        where: { id: agency.id },
+        data: { lat: input.lat, lng: input.lng },
+      });
+      return toAgencyDto(row);
+    });
+  }
+}
+
+function toAgencyDto(row: AgencyRow): Agency {
+  return {
+    id: row.id,
+    user_id: row.userId,
+    agency_name: row.agencyName,
+    license_photo: row.licensePhoto,
+    address: row.address,
+    lat: row.lat,
+    lng: row.lng,
+    description: row.description,
+    is_verified: row.isVerified,
+    created_at: row.createdAt.toISOString(),
+    updated_at: row.updatedAt.toISOString(),
+  };
 }

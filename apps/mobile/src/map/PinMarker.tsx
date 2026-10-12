@@ -1,0 +1,34 @@
+import React from 'react';
+import { StyleSheet, View } from 'react-native';
+import { colors } from '../theme';
+
+/** The dot that marks a property. Anchored at its centre, so it sits exactly on the point. */
+export default function PinMarker({
+  selected = false,
+}: {
+  selected?: boolean;
+}) {
+  return (
+    <View
+      style={[styles.dot, selected ? styles.selected : null]}
+      accessibilityLabel="pin"
+    />
+  );
+}
+
+const styles = StyleSheet.create({
+  dot: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: colors.primary,
+    borderWidth: 3,
+    borderColor: colors.surface,
+    elevation: 3,
+    shadowColor: '#000',
+    shadowOpacity: 0.3,
+    shadowRadius: 3,
+    shadowOffset: { width: 0, height: 1 },
+  },
+  selected: { backgroundColor: colors.accent },
+});

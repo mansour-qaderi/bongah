@@ -8,6 +8,7 @@ import { UsersModule } from './users/users.module.js';
 import { AgenciesModule } from './agencies/agencies.module.js';
 import { PropertyModule } from './property/property.module.js';
 import { HesabpayModule } from './hesabpay/hesabpay.module.js';
+import { MapLocationModule } from './map-location/map-location.module.js';
 
 @Module({
   imports: [
@@ -16,6 +17,7 @@ import { HesabpayModule } from './hesabpay/hesabpay.module.js';
     AuthModule,
     UsersModule,
     AgenciesModule,
+    MapLocationModule,
     PropertyModule,
     HesabpayModule,
   ],

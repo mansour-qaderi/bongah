@@ -67,9 +67,7 @@ export class TestContext {
         userId: user.id,
         agencyName: 'Test Agency',
         licensePhoto: 'https://example.com/license.jpg',
-        address: 'Kabul',
-        lat: 34.5,
-        lng: 69.2,
+        address: 'Kabul', // no office pin: that is a subscription feature
       },
     });
     if (withSubscription) {
@@ -85,6 +83,27 @@ export class TestContext {
     return { ...user, agencyId: agency.id };
   }
 
+  /** An agency whose only subscription ran out yesterday (still marked ACTIVE, as the status column is not swept). */
+  async lapsedAgency(): Promise<TestUser & { agencyId: string }> {
+    const agency = await this.agency(false);
+    await this.prisma.subscription.create({
+      data: {
+        agencyId: agency.agencyId,
+        packageType: 'MONTHLY',
+        startDate: new Date(Date.now() - 31 * 86_400_000),
+        endDate: new Date(Date.now() - 86_400_000),
+      },
+    });
+    return agency;
+  }
+
+  /** Gives a user `count` unspent map location tokens (without going through a payment). */
+  async giveTokens(userId: string, count: number, source: 'REFERRAL' | 'ADMIN_GRANT' = 'ADMIN_GRANT') {
+    await this.prisma.mapLocationToken.createMany({
+      data: Array.from({ length: count }, () => ({ userId, source })),
+    });
+  }
+
   /** Removes everything the test created, children before parents. */
   async close(): Promise<void> {
     const userIds = this.userIds;
@@ -94,6 +113,8 @@ export class TestContext {
     });
     const agencyIds = agencies.map((a) => a.id);
     await this.prisma.subscription.deleteMany({ where: { agencyId: { in: agencyIds } } });
+    // Tokens point at both payments and listings, so they go first.
+    await this.prisma.mapLocationToken.deleteMany({ where: { userId: { in: userIds } } });
     await this.prisma.transaction.deleteMany({ where: { userId: { in: userIds } } });
     await this.prisma.property.deleteMany({ where: { userId: { in: userIds } } });
     await this.prisma.agency.deleteMany({ where: { id: { in: agencyIds } } });
@@ -105,6 +126,8 @@ export class TestContext {
   get = (path: string, token?: string) => withAuth(request(this.http).get(path), token);
   post = (path: string, body: object, token?: string) =>
     withAuth(request(this.http).post(path).send(body), token);
+  put = (path: string, body: object, token?: string) =>
+    withAuth(request(this.http).put(path).send(body), token);
   patch = (path: string, body: object, token?: string) =>
     withAuth(request(this.http).patch(path).send(body), token);
   del = (path: string, token?: string) => withAuth(request(this.http).delete(path), token);
@@ -114,7 +137,10 @@ function withAuth<T extends request.Test>(req: T, token?: string): T {
   return token ? (req.set('Authorization', `Bearer ${token}`) as T) : req;
 }
 
-/** A valid POST /properties body. `tag` makes the province unique so list tests see only their own rows. */
+/** The pin used by tests that need one. */
+export const PIN = { lat: 34.5333, lng: 69.1667 };
+
+/** A valid POST /properties body WITHOUT a map pin (add `...PIN` to pin it). `tag` makes the province unique so list tests see only their own rows. */
 export function propertyBody(overrides: Record<string, unknown> = {}) {
   return {
     title: 'Two bedroom apartment',
@@ -128,9 +154,8 @@ export function propertyBody(overrides: Record<string, unknown> = {}) {
     bathrooms: 1,
     province: 'Kabul',
     district: 'Shar-e-Naw',
+    neighborhood: 'Qala-e-Fathullah',
     address: 'Street 4, near the park',
-    lat: 34.5333,
-    lng: 69.1667,
     images: ['https://example.com/a.jpg'],
     ...overrides,
   };

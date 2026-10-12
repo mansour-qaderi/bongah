@@ -81,6 +81,7 @@ enum TransactionPurpose {
   SUBSCRIPTION
   LADDER
   FEATURED_AD
+  MAP_LOCATION
 
   @@map("transaction_purpose")
 }
@@ -91,6 +92,16 @@ enum TransactionStatus {
   FAILED
 
   @@map("transaction_status")
+}
+
+/// How a map location token came to exist. REFERRAL and ADMIN_GRANT have no endpoint yet; the
+/// grant helper in src/map-location/map-location.tokens.ts is what a referral module will call.
+enum MapLocationTokenSource {
+  PURCHASE
+  REFERRAL
+  ADMIN_GRANT
+
+  @@map("map_location_token_source")
 }
 
 // ───────────────────────────── Models ─────────────────────────────
@@ -106,9 +117,10 @@ model User {
   createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  agency       Agency?
-  properties   Property[]
-  transactions Transaction[]
+  agency            Agency?
+  properties        Property[]
+  transactions      Transaction[]
+  mapLocationTokens MapLocationToken[]
 
   @@map("users")
 }
@@ -120,8 +132,10 @@ model Agency {
   agencyName   String   @map("agency_name")
   licensePhoto String   @map("license_photo")
   address      String
-  lat          Float
-  lng          Float
+  /// Exact office pin. Null until the agency places it, which needs an active subscription.
+  /// lat and lng are both set or both null (CHECK constraint in the migration).
+  lat          Float?
+  lng          Float?
   description  String?
   isVerified   Boolean  @default(false) @map("is_verified")
   createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
@@ -150,9 +164,13 @@ model Property {
   bathrooms     Int?
   province      String
   district      String
+  /// Neighbourhood (محله / ولسوالی گذر) as free text. Null only on listings created before it existed.
+  neighborhood  String?
   address       String
-  lat           Float
-  lng           Float
+  /// Exact map pin. Null for listings without one: placing a pin needs an active agency
+  /// subscription or a map location token (see src/map-location). Both set or both null.
+  lat           Float?
+  lng           Float?
   images        String[]       @default([])
   status        PropertyStatus @default(ACTIVE)
   isFeatured    Boolean        @default(false) @map("is_featured")
@@ -170,7 +188,8 @@ model Property {
   // If an agency is removed its listings stay with their owner.
   agency Agency? @relation(fields: [agencyId], references: [id], onDelete: SetNull)
 
-  transactions Transaction[]
+  transactions     Transaction[]
+  mapLocationToken MapLocationToken?
 
   // Postgres does not index foreign keys automatically.
   @@index([userId, createdAt]) // "1 free listing per month" quota check
@@ -223,11 +242,36 @@ model Transaction {
   agency       Agency?       @relation(fields: [agencyId], references: [id], onDelete: Restrict)
   property     Property?     @relation(fields: [propertyId], references: [id], onDelete: Restrict)
   subscription Subscription?
+  /// MAP_LOCATION: the token this payment bought.
+  mapLocationToken MapLocationToken?
 
   @@index([userId, createdAt])
   @@index([agencyId])
   @@index([propertyId])
   @@map("transactions")
+}
+
+/// A prepaid right to put ONE exact map pin on ONE listing, for users who are not on an agency
+/// subscription. Spent (consumed_at + property_id set together) when a listing gets its pin.
+/// Moving the pin of a listing that already has one costs nothing.
+model MapLocationToken {
+  id            String                 @id @default(uuid()) @db.Uuid
+  userId        String                 @map("user_id") @db.Uuid
+  source        MapLocationTokenSource
+  /// The payment that bought it (PURCHASE only). UNIQUE: one payment can never mint two tokens.
+  transactionId String?                @unique @map("transaction_id") @db.Uuid
+  /// The listing it was spent on. UNIQUE: a listing can never consume two tokens.
+  propertyId    String?                @unique @map("property_id") @db.Uuid
+  consumedAt    DateTime?              @map("consumed_at") @db.Timestamptz(3)
+  createdAt     DateTime               @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  user        User         @relation(fields: [userId], references: [id], onDelete: Restrict)
+  transaction Transaction? @relation(fields: [transactionId], references: [id], onDelete: Restrict)
+  property    Property?    @relation(fields: [propertyId], references: [id], onDelete: Restrict)
+
+  // "How many unspent tokens does this user have" and "take the oldest one".
+  @@index([userId, consumedAt])
+  @@map("map_location_tokens")
 }
 
 /// A phone-login one-time passcode. Only a keyed hash of the code is stored, never the code.

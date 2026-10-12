@@ -24,7 +24,11 @@ import {
   type ListPropertiesDto,
   type PaginationDto,
 } from './dto/list-properties.dto.js';
-import type { PropertyDto, PropertyPageDto } from './dto/property-response.dto.js';
+import type {
+  PropertyContactDto,
+  PropertyDto,
+  PropertyPageDto,
+} from './dto/property-response.dto.js';
 import { updatePropertySchema, type UpdatePropertyDto } from './dto/update-property.dto.js';
 import { PropertyService } from './property.service.js';
 
@@ -53,6 +57,14 @@ export class PropertyController {
   @Get(':id')
   findOne(@Param('id', ParseUUIDPipe) id: string): Promise<PropertyDto> {
     return this.properties.findOne(id);
+  }
+
+  /** The owner's phone number. Needs a signed-in user and is rate limited against bulk scraping. */
+  @Get(':id/contact')
+  @UseGuards(JwtAuthGuard, ThrottlerGuard)
+  @Throttle({ default: { limit: 30, ttl: 60_000 } })
+  contact(@Param('id', ParseUUIDPipe) id: string): Promise<PropertyContactDto> {
+    return this.properties.getContact(id);
   }
 
   @Post()

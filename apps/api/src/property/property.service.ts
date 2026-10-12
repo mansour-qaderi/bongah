@@ -5,12 +5,15 @@ import {
   NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
-import { Prisma, PropertyStatus, Role, SubscriptionStatus } from '../generated/prisma/client.js';
+import { findActiveSubscription } from '../agencies/subscription.js';
+import { Prisma, PropertyStatus, Role } from '../generated/prisma/client.js';
+import { MapLocationService } from '../map-location/map-location.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import type { CreatePropertyDto } from './dto/create-property.dto.js';
 import type { ListPropertiesDto, PaginationDto } from './dto/list-properties.dto.js';
 import type { PropertyDto, PropertyPageDto } from './dto/property-response.dto.js';
 import type { UpdatePropertyDto } from './dto/update-property.dto.js';
+import type { PropertyContactDto } from './dto/property-response.dto.js';
 import { FREE_LISTINGS_PER_MONTH } from './property.constants.js';
 import { toPropertyDto } from './property.mapper.js';
 import { kabulMonthStart, nextKabulMonthStart } from './property.time.js';
@@ -26,7 +29,10 @@ const LISTING_ORDER: Prisma.PropertyOrderByWithRelationInput[] = [
 export class PropertyService {
   private readonly logger = new Logger(PropertyService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly mapLocation: MapLocationService,
+  ) {}
 
   /** Public search: active listings only. */
   async list(query: ListPropertiesDto): Promise<PropertyPageDto> {
@@ -37,6 +43,8 @@ export class PropertyService {
       district: query.district,
       type: query.type,
       dealType: query.deal_type,
+      // true: listings with an exact pin (the map); false: those without; omitted: all.
+      ...(query.has_location === undefined ? {} : { lat: query.has_location ? { not: null } : null }),
       // The schema guarantees a currency whenever a price bound is present.
       currency: query.currency,
       ...(hasPriceRange ? { price: { gte: query.min_price, lte: query.max_price } } : {}),
@@ -59,11 +67,33 @@ export class PropertyService {
   }
 
   /**
+   * Who to call about a listing. Deliberately a separate, signed-in-only call: the public listing
+   * and search responses never carry phone numbers, so they can't be scraped in bulk.
+   */
+  async getContact(id: string): Promise<PropertyContactDto> {
+    const row = await this.prisma.property.findFirst({
+      where: { id, status: { not: PropertyStatus.ARCHIVED } },
+      select: {
+        user: { select: { fullName: true, phoneNumber: true } },
+        agency: { select: { agencyName: true } },
+      },
+    });
+    if (!row) throw new NotFoundException('Property not found.');
+    return {
+      full_name: row.user.fullName,
+      phone_number: row.user.phoneNumber,
+      agency_name: row.agency?.agencyName ?? null,
+    };
+  }
+
+  /**
    * Creates a listing, enforcing who may publish:
    *  - USER:   FREE_LISTINGS_PER_MONTH per Kabul calendar month. Every row created this month counts,
    *            whatever its status, so archiving or deleting a listing can't be used to get another.
    *  - AGENCY: needs an agency profile and a currently active subscription; no monthly cap.
    *  - ADMIN:  unrestricted.
+   * Exact coordinates (lat/lng) are optional and are accepted only from an active agency, an admin,
+   * or a user who spends a prepaid Map Location token on this listing (403 MAP_LOCATION_REQUIRED).
    *
    * The role is read from the database (the JWT's copy may be days old), and the user row is
    * locked for the transaction, so two simultaneous requests can't both pass the quota check.
@@ -103,16 +133,7 @@ export class PropertyService {
               code: 'AGENCY_PROFILE_REQUIRED',
             });
           }
-          const subscription = await tx.subscription.findFirst({
-            where: {
-              agencyId: agency.id,
-              status: SubscriptionStatus.ACTIVE,
-              startDate: { lte: now },
-              endDate: { gt: now },
-            },
-            select: { id: true },
-          });
-          if (!subscription) {
+          if (!(await findActiveSubscription(tx, agency.id, now))) {
             throw new ForbiddenException({
               message: 'An active subscription is required to publish listings.',
               code: 'SUBSCRIPTION_REQUIRED',
@@ -126,7 +147,7 @@ export class PropertyService {
       }
 
       const { deal_type, area_sqm, bedrooms, bathrooms, images, ...rest } = input;
-      return tx.property.create({
+      const created = await tx.property.create({
         data: {
           ...rest,
           userId,
@@ -141,27 +162,49 @@ export class PropertyService {
           ladderedAt: now,
         },
       });
+      // An exact pin is a paid feature (agency subscription or a prepaid token). Charged in this
+      // same transaction, so a refusal also undoes the listing: nothing is published unpinned
+      // by surprise and no free monthly listing is used up.
+      if (input.lat !== undefined) {
+        await this.mapLocation.chargeForPin(tx, userId, users[0].role, created.id, now);
+      }
+      return created;
     });
 
     return toPropertyDto(row, now);
   }
 
-  /** Edits a listing. Only its owner (or an admin) may. */
+  /**
+   * Edits a listing. Only its owner (or an admin) may.
+   *
+   * Giving a listing its FIRST pin is the paid step (same rule as on create). Moving a pin that is
+   * already there is free. The listing row is locked while this runs, so two simultaneous edits
+   * can't both see "no pin yet" and spend two tokens on one listing.
+   */
   async update(userId: string, id: string, input: UpdatePropertyDto): Promise<PropertyDto> {
-    const existing = await this.prisma.property.findUnique({ where: { id } });
-    if (!existing) throw new NotFoundException('Property not found.');
-    await this.assertCanModify(userId, existing.userId);
-
+    const now = new Date();
     const { deal_type, area_sqm, ...rest } = input;
-    const row = await this.prisma.property.update({
-      where: { id },
-      data: {
-        ...rest,
-        ...(deal_type !== undefined ? { dealType: deal_type } : {}),
-        ...(area_sqm !== undefined ? { areaSqm: area_sqm } : {}),
-      },
+
+    const row = await this.prisma.$transaction(async (tx) => {
+      const locked = await tx.$queryRaw<{ user_id: string; lat: number | null }[]>`
+        SELECT user_id, lat FROM properties WHERE id = ${id}::uuid FOR UPDATE`;
+      if (locked.length === 0) throw new NotFoundException('Property not found.');
+      const actorRole = await this.assertCanModify(tx, userId, locked[0].user_id);
+
+      if (input.lat !== undefined && locked[0].lat === null) {
+        await this.mapLocation.chargeForPin(tx, userId, actorRole, id, now);
+      }
+
+      return tx.property.update({
+        where: { id },
+        data: {
+          ...rest,
+          ...(deal_type !== undefined ? { dealType: deal_type } : {}),
+          ...(area_sqm !== undefined ? { areaSqm: area_sqm } : {}),
+        },
+      });
     });
-    return toPropertyDto(row, new Date());
+    return toPropertyDto(row, now);
   }
 
   /**
@@ -171,21 +214,24 @@ export class PropertyService {
   async archive(userId: string, id: string): Promise<void> {
     const existing = await this.prisma.property.findUnique({ where: { id } });
     if (!existing) throw new NotFoundException('Property not found.');
-    await this.assertCanModify(userId, existing.userId);
+    await this.assertCanModify(this.prisma, userId, existing.userId);
     await this.prisma.property.update({ where: { id }, data: { status: PropertyStatus.ARCHIVED } });
   }
 
-  private async assertCanModify(actorId: string, ownerId: string): Promise<void> {
-    if (actorId === ownerId) return;
+  /** Throws unless the actor owns the listing or is an admin. Returns the actor's role as stored in the database. */
+  private async assertCanModify(
+    db: Prisma.TransactionClient,
+    actorId: string,
+    ownerId: string,
+  ): Promise<Role> {
     // Read from the database, not the JWT: a demoted admin must lose access immediately.
-    const actor = await this.prisma.user.findUnique({
-      where: { id: actorId },
-      select: { role: true },
-    });
-    if (actor?.role !== Role.ADMIN) {
+    const actor = await db.user.findUnique({ where: { id: actorId }, select: { role: true } });
+    if (!actor) throw new UnauthorizedException();
+    if (actorId !== ownerId && actor.role !== Role.ADMIN) {
       this.logger.warn(`User ${actorId} tried to modify a listing owned by ${ownerId}`);
       throw new ForbiddenException('You can only change your own listings.');
     }
+    return actor.role;
   }
 
   private async page(where: Prisma.PropertyWhereInput, p: PaginationDto): Promise<PropertyPageDto> {

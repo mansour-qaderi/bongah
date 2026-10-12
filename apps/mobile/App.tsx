@@ -1,45 +1,68 @@
-/**
- * Sample React Native App
- * https://github.com/facebook/react-native
- *
- * @format
- */
+import React, { useEffect, useState } from 'react';
+import { AppState, StatusBar } from 'react-native';
+import { DefaultTheme, NavigationContainer } from '@react-navigation/native';
+import { QueryClientProvider, focusManager } from '@tanstack/react-query';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { queryClient } from './src/api/hooks';
+import { AuthProvider } from './src/auth/AuthContext';
+import { LoadingView } from './src/components/States';
+import { initI18n } from './src/i18n';
+import { isRtlActive } from './src/i18n/rtl';
+import RootNavigator from './src/navigation/RootNavigator';
+import { colors } from './src/theme';
 
-import { NewAppScreen } from '@react-native/new-app-screen';
-import { StatusBar, StyleSheet, useColorScheme, View } from 'react-native';
-import {
-  SafeAreaProvider,
-  useSafeAreaInsets,
-} from 'react-native-safe-area-context';
+const navigationTheme = {
+  ...DefaultTheme,
+  colors: {
+    ...DefaultTheme.colors,
+    primary: colors.primary,
+    background: colors.background,
+    card: colors.surface,
+    text: colors.text,
+    border: colors.border,
+  },
+};
 
-function App() {
-  const isDarkMode = useColorScheme() === 'dark';
+export default function App() {
+  const [ready, setReady] = useState(false);
+
+  // Translations must be loaded before anything that calls t() renders.
+  useEffect(() => {
+    initI18n().then(() => setReady(true));
+  }, []);
+
+  // Tell React Query when the app returns to the foreground, so a payment that finished in
+  // the HesabPay page is noticed as soon as the user comes back.
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', state => {
+      focusManager.setFocused(state === 'active');
+    });
+    return () => subscription.remove();
+  }, []);
+
+  useEffect(() => {
+    if (__DEV__ && !isRtlActive()) {
+      console.warn(
+        'Bongah: the layout is not right-to-left. Fully close and reopen the app once; ' +
+          'if it persists, the native RTL setup (MainApplication.kt / AppDelegate.swift) is missing.',
+      );
+    }
+  }, []);
 
   return (
     <SafeAreaProvider>
-      <StatusBar barStyle={isDarkMode ? 'light-content' : 'dark-content'} />
-      <AppContent />
+      <StatusBar barStyle="dark-content" />
+      {ready ? (
+        <QueryClientProvider client={queryClient}>
+          <AuthProvider>
+            <NavigationContainer theme={navigationTheme}>
+              <RootNavigator />
+            </NavigationContainer>
+          </AuthProvider>
+        </QueryClientProvider>
+      ) : (
+        <LoadingView />
+      )}
     </SafeAreaProvider>
   );
 }
-
-function AppContent() {
-  const safeAreaInsets = useSafeAreaInsets();
-
-  return (
-    <View style={styles.container}>
-      <NewAppScreen
-        templateFileName="App.tsx"
-        safeAreaInsets={safeAreaInsets}
-      />
-    </View>
-  );
-}
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-});
-
-export default App;

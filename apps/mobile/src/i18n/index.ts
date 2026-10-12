@@ -1,39 +1,49 @@
 import i18n from 'i18next';
 import { initReactI18next } from 'react-i18next';
-import { I18nManager } from 'react-native';
 import type { Language } from '@bongah/shared-types';
-import fa from './locales/fa.json';
+import { KV_KEYS, kv } from '../storage/kv';
+import { DEFAULT_LANGUAGE, isLanguage } from './languages';
+import prs from './locales/prs.json';
 import ps from './locales/ps.json';
-import en from './locales/en.json';
 
-// fa = Dari, ps = Pashto
-export const LANGUAGE_META: Record<Language, { label: string; rtl: boolean }> = {
-  fa: { label: 'دری', rtl: true },
-  ps: { label: 'پښتو', rtl: true },
-  en: { label: 'English', rtl: false },
-};
+export { LANGUAGE_META, DEFAULT_LANGUAGE, isLanguage } from './languages';
 
-i18n.use(initReactI18next).init({
-  resources: {
-    fa: { translation: fa },
-    ps: { translation: ps },
-    en: { translation: en },
-  },
-  lng: 'fa',
-  fallbackLng: 'fa',
-  interpolation: { escapeValue: false },
-});
+/** Pashto if the phone is set to Pashto, otherwise Dari (the app's default). */
+function deviceLanguage(): Language {
+  try {
+    const locale = Intl.DateTimeFormat().resolvedOptions().locale.toLowerCase();
+    if (locale.startsWith('ps')) return 'ps';
+  } catch {
+    // Intl unavailable: fall through to the default.
+  }
+  return DEFAULT_LANGUAGE;
+}
 
 /**
- * Switches language and the layout direction.
- * Returns true when the app must be reloaded for the direction change to apply.
+ * Starts i18next. Call once, and wait for it, before rendering anything translated.
+ * The language is the one the user picked last time, else the phone's language, else Dari.
  */
-export function setLanguage(lang: Language): boolean {
-  i18n.changeLanguage(lang);
-  const rtl = LANGUAGE_META[lang].rtl;
-  I18nManager.allowRTL(rtl);
-  I18nManager.forceRTL(rtl);
-  return I18nManager.isRTL !== rtl;
+export async function initI18n(): Promise<Language> {
+  const saved = await kv.get(KV_KEYS.language);
+  const language = isLanguage(saved) ? saved : deviceLanguage();
+
+  await i18n.use(initReactI18next).init({
+    resources: { prs: { translation: prs }, ps: { translation: ps } },
+    lng: language,
+    fallbackLng: DEFAULT_LANGUAGE,
+    interpolation: { escapeValue: false }, // React already escapes
+    returnNull: false,
+  });
+  return language;
 }
+
+/** Both languages are RTL, so switching never needs a restart: only the strings change. */
+export async function changeLanguage(language: Language): Promise<void> {
+  await i18n.changeLanguage(language);
+  await kv.set(KV_KEYS.language, language);
+}
+
+export const currentLanguage = (): Language =>
+  isLanguage(i18n.language) ? i18n.language : DEFAULT_LANGUAGE;
 
 export default i18n;

@@ -1,4 +1,5 @@
 import {
+  ConflictException,
   ForbiddenException,
   Inject,
   Injectable,
@@ -15,9 +16,10 @@ import {
   TransactionStatus,
   type Transaction,
 } from '../generated/prisma/client.js';
+import { unlimitedMapLocationReason } from '../map-location/map-location.access.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import type { InitiatePaymentDto } from './dto/initiate-payment.dto.js';
-import type { PaymentInitiatedDto } from './dto/payment-response.dto.js';
+import type { PaymentInitiatedDto, PaymentStatusDto, PricingDto } from './dto/payment-response.dto.js';
 import { HesabPayGateway, type VerifiedWebhookEvent } from './gateway/hesabpay-gateway.js';
 import { HESABPAY_SETTINGS, type HesabPaySettings } from './hesabpay.config.js';
 import { fulfil } from './hesabpay.fulfilment.js';
@@ -79,6 +81,38 @@ export class HesabpayService {
       currency: this.settings.currency,
       created_at: payment.createdAt.toISOString(),
       payment_url: session.paymentUrl,
+    };
+  }
+
+  /** What each purchase costs right now. Public: the prices are not secret and the UI shows them before paying. */
+  getPricing(): PricingDto {
+    const { prices, currency, featuredAdDays } = this.settings;
+    return {
+      currency,
+      subscription: {
+        MONTHLY: Number(prices.subscription.MONTHLY),
+        QUARTERLY: Number(prices.subscription.QUARTERLY),
+        YEARLY: Number(prices.subscription.YEARLY),
+      },
+      ladder: Number(prices.ladder),
+      featured_ad: Number(prices.featuredAd),
+      map_location: Number(prices.mapLocation),
+      featured_ad_days: featuredAdDays,
+    };
+  }
+
+  /** The state of one of the caller's own payments (the app polls this after sending the user to pay). */
+  async getPayment(userId: string, id: string): Promise<PaymentStatusDto> {
+    // Someone else's payment looks exactly like a missing one.
+    const payment = await this.prisma.transaction.findFirst({ where: { id, userId } });
+    if (!payment) throw new NotFoundException('Payment not found.');
+    return {
+      id: payment.id,
+      purpose: payment.purpose,
+      status: payment.status,
+      amount: payment.amount.toNumber(),
+      currency: this.settings.currency,
+      created_at: payment.createdAt.toISOString(),
     };
   }
 
@@ -160,6 +194,25 @@ export class HesabpayService {
           description: `Bongah agency subscription (${input.package_type})`,
           agencyId: user.agency.id,
           packageType: input.package_type,
+        };
+      }
+      case 'MAP_LOCATION': {
+        const user = await this.prisma.user.findUnique({
+          where: { id: userId },
+          select: { role: true },
+        });
+        if (!user) throw new UnauthorizedException();
+        // Active agencies and admins already pin for free; taking their money would buy nothing.
+        if (await unlimitedMapLocationReason(this.prisma, userId, user.role, new Date())) {
+          throw new ConflictException({
+            message: 'Your account already includes unlimited map locations.',
+            code: 'MAP_LOCATION_ALREADY_UNLIMITED',
+          });
+        }
+        return {
+          purpose: TransactionPurpose.MAP_LOCATION,
+          amount: this.settings.prices.mapLocation,
+          description: 'Bongah map location add-on',
         };
       }
       case 'LADDER':
