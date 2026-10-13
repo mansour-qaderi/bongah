@@ -6,7 +6,7 @@ import {
   useQueryClient,
   type InfiniteData,
 } from '@tanstack/react-query';
-import type { Paginated, Property } from '@bongah/shared-types';
+import type { Language, Paginated, Property } from '@bongah/shared-types';
 import { ApiError } from './client';
 import {
   getAgencyDashboard,
@@ -16,6 +16,7 @@ import {
   getPricing,
   getProperty,
   getReferralSummary,
+  getWelcomeQuote,
   listConversations,
   listMyProperties,
   listProperties,
@@ -59,6 +60,7 @@ export const queryKeys = {
   messages: (conversationId: string) => ['chat', 'messages', conversationId] as const,
   chatCapabilities: ['chat', 'capabilities'] as const,
   templates: ['chat', 'templates'] as const,
+  welcomeQuote: (language: string) => ['welcome-quote', language] as const,
 };
 
 const nextPage = (last: Paginated<Property>) =>
@@ -110,6 +112,23 @@ export function useAgencyDashboard(enabled: boolean) {
     enabled,
     // Views and subscription days move on their own, so never trust an old answer.
     staleTime: 0,
+  });
+}
+
+/**
+ * The text of the first-launch welcome card. "Nothing to show" (404) is an answer, not a failure, so it is not
+ * retried; the card then uses the app's built-in text.
+ */
+export function useWelcomeQuote(language: Language, enabled: boolean) {
+  return useQuery({
+    queryKey: queryKeys.welcomeQuote(language),
+    queryFn: () => getWelcomeQuote(language),
+    enabled,
+    retry: (count, error) =>
+      count < 1 && !(error instanceof ApiError && error.status === 404),
+    // The card is shown once per account, and re-reading it would only change the text under the reader.
+    staleTime: Infinity,
+    gcTime: 0,
   });
 }
 

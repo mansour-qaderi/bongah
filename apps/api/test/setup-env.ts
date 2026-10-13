@@ -26,3 +26,7 @@ process.env.REFERRAL_MAX_REWARDED_INVITES = '3';
 process.env.REFERRAL_CONTACT_CREDITS = '2';
 process.env.CONTACT_DAILY_FREE_LIMIT = '3';
 process.env.REFERRAL_LINK_TEMPLATE = 'https://bongah.test/invite/{code}';
+
+// Push: nothing leaves the process, and the clock must not fire the 08:00 job in the middle of a test run.
+process.env.PUSH_PROVIDER = 'mock';
+process.env.SCHEDULER_ENABLED = 'false';

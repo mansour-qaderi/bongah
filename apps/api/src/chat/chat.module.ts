@@ -32,6 +32,6 @@ import { DiskChatImageStorage } from './images/disk-chat-image.storage.js';
     ChatImagesService,
     ChatGateway,
   ],
-  exports: [ChatService],
+  exports: [ChatService, ChatEventsBus],
 })
 export class ChatModule {}

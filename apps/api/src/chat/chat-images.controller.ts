@@ -1,5 +1,4 @@
 import {
-  BadRequestException,
   Controller,
   Get,
   Param,
@@ -15,7 +14,8 @@ import type { ChatImageUploaded } from '@bongah/shared-types';
 import type { AuthenticatedUser } from '../auth/auth.types.js';
 import { CurrentUser } from '../auth/decorators/current-user.decorator.js';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard.js';
-import { ChatImagesService, tooLarge } from './chat-images.service.js';
+import { readBody, tooLarge } from '../common/upload.js';
+import { ChatImagesService } from './chat-images.service.js';
 
 /**
  * Chat pictures. The upload is the raw file as the request body (Content-Type: image/jpeg ...),
@@ -60,32 +60,4 @@ export class ChatImagesController {
       .type(contentType)
       .send(data);
   }
-}
-
-/** Reads the request body, giving up (without buffering the rest) as soon as it exceeds `max` bytes. */
-function readBody(req: Request, max: number): Promise<Buffer> {
-  return new Promise((resolve, reject) => {
-    const chunks: Buffer[] = [];
-    let size = 0;
-    let done = false;
-    const finish = (error: Error | null, result?: Buffer) => {
-      if (done) return;
-      done = true;
-      req.removeAllListeners('data');
-      if (error) reject(error);
-      else resolve(result ?? Buffer.alloc(0));
-    };
-
-    req.on('data', (chunk: Buffer) => {
-      size += chunk.length;
-      if (size > max) {
-        finish(tooLarge(max));
-        req.resume(); // drain and discard the rest so the response can be sent
-        return;
-      }
-      chunks.push(chunk);
-    });
-    req.on('end', () => finish(null, Buffer.concat(chunks)));
-    req.on('error', () => finish(new BadRequestException('The upload was interrupted.')));
-  });
 }

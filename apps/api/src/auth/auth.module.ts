@@ -6,6 +6,7 @@ import { readJwtSettings } from './auth.config.js';
 import { AuthController } from './auth.controller.js';
 import { AuthService } from './auth.service.js';
 import { JwtAuthGuard } from './guards/jwt-auth.guard.js';
+import { RolesGuard } from './guards/roles.guard.js';
 import { MockSmsGateway } from './sms/mock-sms.gateway.js';
 import { SmsGateway } from './sms/sms-gateway.js';
 
@@ -29,6 +30,7 @@ import { SmsGateway } from './sms/sms-gateway.js';
   providers: [
     AuthService,
     JwtAuthGuard,
+    RolesGuard,
     {
       provide: SmsGateway,
       inject: [ConfigService],
@@ -47,7 +49,7 @@ import { SmsGateway } from './sms/sms-gateway.js';
       },
     },
   ],
-  // Export the guard and JwtModule so other modules can protect their routes.
-  exports: [AuthService, JwtAuthGuard, JwtModule],
+  // Export the guards and JwtModule so other modules can protect their routes.
+  exports: [AuthService, JwtAuthGuard, RolesGuard, JwtModule],
 })
 export class AuthModule {}

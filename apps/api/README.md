@@ -31,6 +31,20 @@
 $ yarn install
 ```
 
+## Admin accounts
+
+Admins are created from the command line only; no API request can make one. Build once, then:
+
+```bash
+pnpm build
+pnpm admin:promote 0700123456   # makes this number an admin (creates the account if it does not exist)
+pnpm admin:demote  0700123456   # back to a regular account
+```
+
+The admin then signs in with that phone number and the usual SMS code. Every request re-reads the role
+from the database, so a demotion or a ban takes effect on the very next request. Both commands are
+written to the admin audit log (with no actor).
+
 ## Compile and run the project
 
 ```bash

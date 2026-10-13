@@ -8,6 +8,8 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
+import type { Paginated, PaymentSummary, Receipt } from '@bongah/shared-types';
+import type { PaginationQuery } from '@bongah/validation';
 import {
   Prisma,
   Role,
@@ -24,6 +26,8 @@ import type { PaymentInitiatedDto, PaymentStatusDto, PricingDto } from './dto/pa
 import { HesabPayGateway, type VerifiedWebhookEvent } from './gateway/hesabpay-gateway.js';
 import { HESABPAY_SETTINGS, type HesabPaySettings } from './hesabpay.config.js';
 import { fulfil } from './hesabpay.fulfilment.js';
+import { paymentInclude, toPaymentSummary } from './hesabpay.mapper.js';
+import { PricingService } from './pricing.service.js';
 
 /** What a payment request resolves to once the caller's right to make it is checked. */
 interface PaymentTarget {
@@ -44,6 +48,7 @@ export class HesabpayService {
     private readonly prisma: PrismaService,
     private readonly gateway: HesabPayGateway,
     private readonly promotion: PromotionService,
+    private readonly pricing: PricingService,
     @Inject(HESABPAY_SETTINGS) private readonly settings: HesabPaySettings,
   ) {}
 
@@ -89,21 +94,64 @@ export class HesabpayService {
   }
 
   /** What each purchase costs right now. Public: the prices are not secret and the UI shows them before paying. */
-  getPricing(): PricingDto {
-    const { prices, currency, featuredAdDays, contactCreditsPerPack } = this.settings;
+  async getPricing(): Promise<PricingDto> {
+    return this.pricing.toWire(await this.pricing.effective());
+  }
+
+  /** The caller's own payments, newest first, with the receipt number of the ones that succeeded. */
+  async listPayments(userId: string, page: PaginationQuery): Promise<Paginated<PaymentSummary>> {
+    const where = { userId };
+    const [rows, total] = await this.prisma.$transaction([
+      this.prisma.transaction.findMany({
+        where,
+        include: paymentInclude,
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        skip: (page.page - 1) * page.limit,
+        take: page.limit,
+      }),
+      this.prisma.transaction.count({ where }),
+    ]);
     return {
-      currency,
-      subscription: {
-        MONTHLY: Number(prices.subscription.MONTHLY),
-        QUARTERLY: Number(prices.subscription.QUARTERLY),
-        YEARLY: Number(prices.subscription.YEARLY),
+      data: rows.map(toPaymentSummary),
+      meta: { page: page.page, limit: page.limit, total, total_pages: Math.ceil(total / page.limit) },
+    };
+  }
+
+  /**
+   * The digital receipt of one of the caller's payments. Only a payment that succeeded has one (409
+   * RECEIPT_NOT_AVAILABLE otherwise); someone else's payment looks exactly like a missing one.
+   */
+  async getReceipt(userId: string, id: string): Promise<Receipt> {
+    const payment = await this.prisma.transaction.findFirst({
+      where: { id, userId },
+      include: {
+        ...paymentInclude,
+        user: { select: { fullName: true, phoneNumber: true, agency: { select: { agencyName: true } } } },
       },
-      ladder: Number(prices.ladder),
-      featured_ad: Number(prices.featuredAd),
-      map_location: Number(prices.mapLocation),
-      featured_ad_days: featuredAdDays,
-      contact_credits: Number(prices.contactCredits),
-      contact_credits_per_pack: contactCreditsPerPack,
+    });
+    if (!payment) throw new NotFoundException('Payment not found.');
+    if (payment.status !== TransactionStatus.SUCCESS || !payment.receiptNumber || !payment.paidAt) {
+      throw new ConflictException({
+        message: 'Only a successful payment has a receipt.',
+        code: 'RECEIPT_NOT_AVAILABLE',
+      });
+    }
+    return {
+      receipt_number: payment.receiptNumber,
+      payment_id: payment.id,
+      issued_at: payment.paidAt.toISOString(),
+      purpose: payment.purpose,
+      package_type: payment.packageType,
+      quantity: payment.quantity,
+      property: payment.property,
+      amount: payment.amount.toNumber(),
+      currency: payment.currency as Receipt['currency'],
+      payer: {
+        full_name: payment.user.fullName,
+        phone_number: payment.user.phoneNumber,
+        agency_name: payment.user.agency?.agencyName ?? null,
+      },
+      reference: payment.hesabpayTxId,
     };
   }
 
@@ -160,12 +208,16 @@ export class HesabpayService {
     }
 
     await this.prisma.$transaction(async (db) => {
-      const claimed = await db.transaction.updateMany({
-        where: { id: payment.id, status: TransactionStatus.PENDING },
-        data: { status: TransactionStatus.SUCCESS },
-      });
-      if (claimed.count !== 1) return; // another delivery of the same webhook won the race
-      await fulfil(db, payment, this.settings.featuredAdDays, new Date(), this.promotion);
+      // One statement flips the status AND issues the receipt (the database's CHECK constraint allows
+      // a receipt only on a successful payment), and only the delivery that wins the PENDING -> SUCCESS race
+      // gets a count of 1. The receipt number comes from a sequence, so a lost race never burns a duplicate.
+      const now = new Date();
+      const claimed = await db.$executeRaw`
+        UPDATE transactions
+           SET status = 'SUCCESS', paid_at = ${now}, updated_at = ${now}, receipt_number = next_receipt_number()
+         WHERE id = ${payment.id}::uuid AND status = 'PENDING'`;
+      if (claimed !== 1) return; // another delivery of the same webhook won the race
+      await fulfil(db, payment, this.settings.featuredAdDays, now, this.promotion);
     });
     this.logger.log(`Payment ${payment.id} (${payment.purpose}) fulfilled`);
   }
@@ -181,6 +233,8 @@ export class HesabpayService {
   }
 
   private async resolveTarget(userId: string, input: InitiatePaymentDto): Promise<PaymentTarget> {
+    // Read once: the price quoted below and the quantity recorded with it come from the same moment.
+    const prices = await this.pricing.effective();
     switch (input.purpose) {
       case 'SUBSCRIPTION': {
         const user = await this.prisma.user.findUnique({
@@ -196,7 +250,7 @@ export class HesabpayService {
         }
         return {
           purpose: TransactionPurpose.SUBSCRIPTION,
-          amount: this.settings.prices.subscription[input.package_type],
+          amount: prices[`SUBSCRIPTION_${input.package_type}`].price,
           description: `Bongah agency subscription (${input.package_type})`,
           agencyId: user.agency.id,
           packageType: input.package_type,
@@ -217,7 +271,7 @@ export class HesabpayService {
         }
         return {
           purpose: TransactionPurpose.MAP_LOCATION,
-          amount: this.settings.prices.mapLocation,
+          amount: prices.MAP_LOCATION.price,
           description: 'Bongah map location add-on',
         };
       }
@@ -236,9 +290,9 @@ export class HesabpayService {
         }
         return {
           purpose: TransactionPurpose.CONTACT_CREDITS,
-          amount: this.settings.prices.contactCredits,
-          description: `Bongah contact reveal credits (${this.settings.contactCreditsPerPack})`,
-          quantity: this.settings.contactCreditsPerPack,
+          amount: prices.CONTACT_CREDITS.price,
+          description: `Bongah contact reveal credits (${prices.CONTACT_CREDITS.quantity})`,
+          quantity: prices.CONTACT_CREDITS.quantity ?? this.settings.contactCreditsPerPack,
         };
       }
       case 'LADDER':
@@ -247,9 +301,11 @@ export class HesabpayService {
         const ladder = input.purpose === 'LADDER';
         return {
           purpose: ladder ? TransactionPurpose.LADDER : TransactionPurpose.FEATURED_AD,
-          amount: ladder ? this.settings.prices.ladder : this.settings.prices.featuredAd,
+          amount: ladder ? prices.LADDER.price : prices.FEATURED_AD.price,
           description: ladder ? 'Bongah listing ladder' : 'Bongah featured listing',
           propertyId: input.property_id,
+          // Featured days are recorded with the payment, like a credit pack's size.
+          quantity: ladder ? undefined : (prices.FEATURED_AD.quantity ?? this.settings.featuredAdDays),
         };
       }
     }

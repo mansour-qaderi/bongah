@@ -62,3 +62,39 @@ jest.mock('react-native-image-picker', () => ({
   launchImageLibrary: jest.fn(async () => ({ didCancel: true })),
   launchCamera: jest.fn(async () => ({ didCancel: true })),
 }));
+
+// Firebase Cloud Messaging is native. The stand-in answers like a phone that allows notifications and has a token;
+// a test changes `__state` (permission, token, what the prompt answers) or calls `__emitTokenRefresh`.
+jest.mock('@react-native-firebase/messaging', () => {
+  const AuthorizationStatus = {
+    NOT_DETERMINED: -1,
+    DENIED: 0,
+    AUTHORIZED: 1,
+    PROVISIONAL: 2,
+    EPHEMERAL: 3,
+  };
+  const state = {
+    token: 'fcm-token-1',
+    permission: AuthorizationStatus.AUTHORIZED,
+    // What the permission prompt answers; null: the same as the current permission.
+    promptAnswer: null,
+  };
+  const refreshListeners = new Set();
+  return {
+    __esModule: true,
+    AuthorizationStatus,
+    getMessaging: jest.fn(() => ({})),
+    getToken: jest.fn(async () => state.token),
+    hasPermission: jest.fn(async () => state.permission),
+    requestPermission: jest.fn(async () => {
+      if (state.promptAnswer !== null) state.permission = state.promptAnswer;
+      return state.permission;
+    }),
+    onTokenRefresh: jest.fn((_messaging, listener) => {
+      refreshListeners.add(listener);
+      return () => refreshListeners.delete(listener);
+    }),
+    __state: state,
+    __emitTokenRefresh: token => refreshListeners.forEach(listener => listener(token)),
+  };
+});

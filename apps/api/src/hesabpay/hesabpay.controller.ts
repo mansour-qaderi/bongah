@@ -10,6 +10,7 @@ import {
   InternalServerErrorException,
   Logger,
   Post,
+  Query,
   Req,
   UseGuards,
   type RawBodyRequest,
@@ -20,6 +21,8 @@ import type { Request } from 'express';
 import type { AuthenticatedUser } from '../auth/auth.types.js';
 import { CurrentUser } from '../auth/decorators/current-user.decorator.js';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard.js';
+import type { Paginated, PaymentSummary, Receipt } from '@bongah/shared-types';
+import { paginationQuerySchema, type PaginationQuery } from '@bongah/validation';
 import { ZodValidationPipe } from '../common/pipes/zod-validation.pipe.js';
 import { initiatePaymentSchema, type InitiatePaymentDto } from './dto/initiate-payment.dto.js';
 import type {
@@ -54,8 +57,19 @@ export class HesabpayController {
 
   /** Current prices (public). */
   @Get('pricing')
-  pricing(): PricingDto {
+  pricing(): Promise<PricingDto> {
     return this.hesabpay.getPricing();
+  }
+
+  /** My payments, newest first (the wallet's payment history). */
+  @Get('payments')
+  @UseGuards(JwtAuthGuard)
+  @Throttle({ default: { limit: 60, ttl: 60_000 } })
+  payments(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query(new ZodValidationPipe(paginationQuerySchema)) query: PaginationQuery,
+  ): Promise<Paginated<PaymentSummary>> {
+    return this.hesabpay.listPayments(user.id, query);
   }
 
   /** Status of one of my payments. */
@@ -67,6 +81,17 @@ export class HesabpayController {
     @Param('id', ParseUUIDPipe) id: string,
   ): Promise<PaymentStatusDto> {
     return this.hesabpay.getPayment(user.id, id);
+  }
+
+  /** The digital receipt of one of my successful payments. */
+  @Get('payments/:id/receipt')
+  @UseGuards(JwtAuthGuard)
+  @Throttle({ default: { limit: 60, ttl: 60_000 } })
+  receipt(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<Receipt> {
+    return this.hesabpay.getReceipt(user.id, id);
   }
 
   /**

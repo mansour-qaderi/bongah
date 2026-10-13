@@ -103,7 +103,7 @@ export class ChatService {
    */
   async openConversation(buyerId: string, propertyId: string): Promise<ChatConversation> {
     const property = await this.prisma.property.findFirst({
-      where: { id: propertyId, status: { not: PropertyStatus.ARCHIVED } },
+      where: { id: propertyId, status: { not: PropertyStatus.ARCHIVED }, user: { bannedAt: null } },
       select: { id: true, userId: true, agencyId: true },
     });
     if (!property) throw new NotFoundException('Property not found.');
@@ -199,7 +199,19 @@ export class ChatService {
       });
     }
 
-    const data = await this.prepareMessage(senderId, conversationId, input);
+    let data: Prisma.MessageUncheckedCreateInput;
+    try {
+      data = await this.prepareMessage(senderId, conversationId, input);
+    } catch (error) {
+      // A retry that overlaps the original: the original committed after the check above but before
+      // the picture was looked at, so the picture already "belongs" to a message. If that message is
+      // this very one (same sender, same client_id), a retry must get it back, not a 409.
+      if (error instanceof ConflictException) {
+        const winner = await this.findByClientId(conversationId, senderId, input.client_id);
+        if (winner) return toChatMessage(winner);
+      }
+      throw error;
+    }
 
     let stored: { message: MessageRow; autoReply: MessageRow | null };
     try {

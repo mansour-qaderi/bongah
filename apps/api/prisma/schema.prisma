@@ -153,6 +153,89 @@ enum ContactCreditSource {
   @@map("contact_credit_source")
 }
 
+/// Where an agency stands with the Bongah team's review of its business documents (the license photo).
+/// `agencies.is_verified` is true exactly when this is VERIFIED (CHECK constraint in the migration).
+enum AgencyVerificationStatus {
+  PENDING
+  VERIFIED
+  REJECTED
+
+  @@map("agency_verification_status")
+}
+
+/// What an abuse report is about. A report about a listing also records the listing's owner.
+enum AbuseTargetType {
+  USER
+  PROPERTY
+
+  @@map("abuse_target_type")
+}
+
+enum AbuseReason {
+  SCAM
+  FAKE_LISTING
+  HARASSMENT
+  SPAM
+  WRONG_INFORMATION
+  OTHER
+
+  @@map("abuse_reason")
+}
+
+enum AbuseReportStatus {
+  OPEN
+  RESOLVED
+  DISMISSED
+
+  @@map("abuse_report_status")
+}
+
+/// Where in the app a banner shows.
+enum BannerPlacement {
+  HOME_TOP
+  SEARCH_TOP
+
+  @@map("banner_placement")
+}
+
+/// The paid products whose price an admin can change. A row in pricing_overrides replaces the
+/// price (and pack size / days) that the HESABPAY_* environment settings give.
+enum PricingKey {
+  SUBSCRIPTION_MONTHLY
+  SUBSCRIPTION_QUARTERLY
+  SUBSCRIPTION_YEARLY
+  LADDER
+  FEATURED_AD
+  MAP_LOCATION
+  CONTACT_CREDITS
+
+  @@map("pricing_key")
+}
+
+/// What a quote template is for: shown once in the welcome card, or pushed on a morning.
+enum QuoteCategory {
+  WELCOME_ONBOARDING
+  MORNING_NOTIFICATION
+
+  @@map("quote_category")
+}
+
+enum PushPlatform {
+  ANDROID
+  IOS
+
+  @@map("push_platform")
+}
+
+/// CLAIMED = a run reserved this user's push for the day; SENT / FAILED = what the push provider said.
+enum MorningPushStatus {
+  CLAIMED
+  SENT
+  FAILED
+
+  @@map("morning_push_status")
+}
+
 // ───────────────────────────── Models ─────────────────────────────
 
 model User {
@@ -169,6 +252,17 @@ model User {
   /// Who invited this user. Set once, at signup, and never changed.
   /// A user cannot refer themselves (CHECK constraint in the migration).
   referredById String?  @map("referred_by_id") @db.Uuid
+  /// Set while the account is banned (an admin's decision). A banned account cannot sign in, its API
+  /// requests and chat connections are refused, and its listings are hidden from everyone else.
+  /// Nothing is deleted, so unbanning restores everything.
+  bannedAt    DateTime? @map("banned_at") @db.Timestamptz(3)
+  banReason   String?   @map("ban_reason")
+  /// The last successful OTP login. "Active users" on the admin overview means signed in recently.
+  lastLoginAt DateTime? @map("last_login_at") @db.Timestamptz(3)
+  /// Preference: the morning quote push. On by default; the phone's own notification permission is the real gate.
+  enableDailyMotivation Boolean @default(true) @map("enable_daily_motivation")
+  /// False until the user has been shown the welcome card once. Only ever goes false -> true.
+  hasSeenWelcome        Boolean @default(false) @map("has_seen_welcome")
   createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
 
@@ -198,7 +292,22 @@ model User {
   /// Credits granted to others because this user signed up with their code.
   contactCreditsEarnedFrom UserCredit[]    @relation("CreditInvitee")
 
+  // Moderation and the admin panel.
+  reportsFiled       AbuseReport[]   @relation("ReportReporter")
+  reportsAgainst     AbuseReport[]   @relation("ReportTargetUser")
+  reportsResolved    AbuseReport[]   @relation("ReportResolver")
+  agenciesReviewed   Agency[]        @relation("AgencyReviewer")
+  auditEntries       AdminAuditLog[]
+  bannersCreated     Banner[]
+  pricingUpdates     PricingOverride[]
+  propertyImages     PropertyImage[]
+
+  // Notifications.
+  pushDevices        PushDevice[]
+  morningPushes      MorningPushSend[]
+
   @@index([referredById])
+  @@index([lastLoginAt])
   @@map("users")
 }
 
@@ -214,16 +323,26 @@ model Agency {
   lat          Float?
   lng          Float?
   description  String?
+  /// Always equals (verification_status = VERIFIED): a CHECK constraint keeps the two in step. Change
+  /// it only through AdminAgenciesService.review. Shown as the "verified" badge; it does not gate any feature.
   isVerified   Boolean  @default(false) @map("is_verified")
+  verificationStatus AgencyVerificationStatus @default(PENDING) @map("verification_status")
+  /// When an admin last decided (null while PENDING) and who. Null reviewer = approved before the admin panel existed.
+  reviewedAt   DateTime? @map("reviewed_at") @db.Timestamptz(3)
+  reviewedById String?  @map("reviewed_by_id") @db.Uuid
+  /// Why the documents were refused; set exactly when REJECTED. Shown to the agency so it can fix and resubmit.
+  rejectionReason String? @map("rejection_reason")
   createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   user          User           @relation(fields: [userId], references: [id], onDelete: Restrict)
+  reviewedBy    User?          @relation("AgencyReviewer", fields: [reviewedById], references: [id], onDelete: Restrict)
   properties    Property[]
   subscriptions Subscription[]
   transactions  Transaction[]
   conversations Conversation[]
 
+  @@index([verificationStatus, createdAt]) // the admin review queue
   @@map("agencies")
 }
 
@@ -263,6 +382,10 @@ model Property {
   /// Only ever changed by one raw `view_count = view_count + 1` statement (PropertyService.recordView):
   /// a Prisma update would also move updated_at, which means "the listing was edited".
   viewCount     Int            @default(0) @map("view_count")
+  /// Set when an admin took the listing down (moderation). It is also ARCHIVED, and its owner cannot
+  /// bring it back: only an admin clears this. removed_by_admin_at and removal_reason are set together.
+  removedByAdminAt DateTime?   @map("removed_by_admin_at") @db.Timestamptz(3)
+  removalReason String?        @map("removal_reason")
   createdAt     DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt     DateTime       @updatedAt @map("updated_at") @db.Timestamptz(3)
 
@@ -275,6 +398,9 @@ model Property {
   rewards          Reward[]
   conversations    Conversation[]
   contactUnlocks   ContactUnlockLog[]
+  viewDays         PropertyViewDay[]
+  abuseReports     AbuseReport[]
+  banners          Banner[]
 
   // Postgres does not index foreign keys automatically.
   @@index([userId, createdAt]) // "1 free listing per month" quota check
@@ -321,7 +447,13 @@ model Transaction {
   propertyId  String?              @map("property_id") @db.Uuid
   /// CONTACT_CREDITS: how many credits this payment buys. Recorded at initiation so a later price
   /// or pack-size change cannot make the buyer receive something other than what they were quoted.
+  /// FEATURED_AD: how many days of featured badge this payment buys (recorded for the same reason).
   quantity    Int?
+
+  /// Set together with status SUCCESS (CHECK constraint in the migration), by the same statement
+  /// that flips the status: the number printed on the digital receipt, and when the payment was confirmed.
+  receiptNumber String?  @unique @map("receipt_number")
+  paidAt        DateTime? @map("paid_at") @db.Timestamptz(3)
 
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
@@ -338,6 +470,7 @@ model Transaction {
   @@index([userId, createdAt])
   @@index([agencyId])
   @@index([propertyId])
+  @@index([status, createdAt]) // the admin transaction log
   @@map("transactions")
 }
 
@@ -558,4 +691,184 @@ model OtpCode {
 
   @@index([phoneNumber, createdAt])
   @@map("otp_codes")
+}
+
+/// How many times a listing was opened on one Kabul calendar day (the agency analytics chart).
+/// Written by the same statement that bumps properties.view_count, so the two cannot drift apart
+/// from now on. Views before this table existed are in view_count only.
+model PropertyViewDay {
+  propertyId String   @map("property_id") @db.Uuid
+  /// The Kabul-local date (UTC+4:30).
+  day        DateTime @db.Date
+  count      Int
+
+  property Property @relation(fields: [propertyId], references: [id], onDelete: Restrict)
+
+  @@id([propertyId, day])
+  @@index([day])
+  @@map("property_view_days")
+}
+
+/// A signed-in user's complaint about another account or a listing. An admin works the OPEN ones in the
+/// moderation queue. For a PROPERTY report, `target_user_id` is the listing's owner when it was filed.
+model AbuseReport {
+  id               String            @id @default(uuid()) @db.Uuid
+  reporterId       String            @map("reporter_id") @db.Uuid
+  targetType       AbuseTargetType   @map("target_type")
+  targetUserId     String            @map("target_user_id") @db.Uuid
+  /// Set exactly for PROPERTY reports (CHECK constraint in the migration).
+  targetPropertyId String?           @map("target_property_id") @db.Uuid
+  reason           AbuseReason
+  details          String?
+  status           AbuseReportStatus @default(OPEN)
+  /// Set together with resolved_at when the report leaves OPEN.
+  resolvedById     String?           @map("resolved_by_id") @db.Uuid
+  resolutionNote   String?           @map("resolution_note")
+  resolvedAt       DateTime?         @map("resolved_at") @db.Timestamptz(3)
+  createdAt        DateTime          @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  reporter       User      @relation("ReportReporter", fields: [reporterId], references: [id], onDelete: Restrict)
+  targetUser     User      @relation("ReportTargetUser", fields: [targetUserId], references: [id], onDelete: Restrict)
+  targetProperty Property? @relation(fields: [targetPropertyId], references: [id], onDelete: Restrict)
+  resolvedBy     User?     @relation("ReportResolver", fields: [resolvedById], references: [id], onDelete: Restrict)
+
+  @@index([status, createdAt])
+  @@index([targetUserId, status])
+  @@index([targetPropertyId])
+  @@index([reporterId])
+  @@map("abuse_reports")
+}
+
+/// What an admin did, for accountability. Append-only by convention (nothing in the app updates or
+/// deletes rows). `actor_id` is null for actions taken from the command line (promote-admin).
+model AdminAuditLog {
+  id         String   @id @default(uuid()) @db.Uuid
+  actorId    String?  @map("actor_id") @db.Uuid
+  /// e.g. USER_BANNED, AGENCY_VERIFIED: the AUDIT_ACTIONS list in src/admin/admin-audit.ts.
+  action     String
+  /// What it was done to: "user", "property", "agency", "banner", "pricing", "report".
+  targetType String   @map("target_type")
+  targetId   String?  @map("target_id")
+  /// Small facts that explain it (the reason given, the old and new price). Never secrets.
+  metadata   Json?
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  actor User? @relation(fields: [actorId], references: [id], onDelete: Restrict)
+
+  @@index([createdAt])
+  @@index([targetType, targetId])
+  @@index([actorId, createdAt])
+  @@map("admin_audit_logs")
+}
+
+/// A promotional banner the app shows (home / search). Only the ones that are active and inside their
+/// optional time window are served. At most one of link_property_id and link_url is set.
+model Banner {
+  id             String          @id @default(uuid()) @db.Uuid
+  title          String
+  imageUrl       String          @map("image_url")
+  linkPropertyId String?         @map("link_property_id") @db.Uuid
+  linkUrl        String?         @map("link_url")
+  placement      BannerPlacement
+  /// Lower first.
+  sortOrder      Int             @default(0) @map("sort_order")
+  isActive       Boolean         @default(true) @map("is_active")
+  startsAt       DateTime?       @map("starts_at") @db.Timestamptz(3)
+  endsAt         DateTime?       @map("ends_at") @db.Timestamptz(3)
+  createdById    String          @map("created_by_id") @db.Uuid
+  createdAt      DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime        @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  createdBy    User      @relation(fields: [createdById], references: [id], onDelete: Restrict)
+  linkProperty Property? @relation(fields: [linkPropertyId], references: [id], onDelete: Restrict)
+
+  @@index([placement, isActive, sortOrder])
+  @@map("banners")
+}
+
+/// An admin's price for one paid product. No row = the HESABPAY_* environment default applies.
+/// `quantity` is the number of featured days (FEATURED_AD) or credits per pack (CONTACT_CREDITS); null = the
+/// environment default. The currency is not stored here: it is the one currency of the HesabPay account.
+model PricingOverride {
+  key         PricingKey @id
+  price       Decimal    @db.Decimal(14, 2)
+  quantity    Int?
+  updatedById String     @map("updated_by_id") @db.Uuid
+  updatedAt   DateTime   @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  updatedBy User @relation(fields: [updatedById], references: [id], onDelete: Restrict)
+
+  @@map("pricing_overrides")
+}
+
+/// A listing picture uploaded through the API (POST /property-images). The bytes live in the property
+/// image store (disk now; see src/property-images/); listings reference a picture by its public URL in
+/// `properties.images`, like any other image link.
+model PropertyImage {
+  id          String   @id @default(uuid()) @db.Uuid
+  uploaderId  String   @map("uploader_id") @db.Uuid
+  contentType String   @map("content_type")
+  byteSize    Int      @map("byte_size")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  uploader User @relation(fields: [uploaderId], references: [id], onDelete: Restrict)
+
+  @@index([uploaderId, createdAt])
+  @@map("property_images")
+}
+
+/// A quote template an admin manages. WELCOME_ONBOARDING quotes are shown once in the first-launch card;
+/// MORNING_NOTIFICATION quotes are what the 08:00 push says. `language` is the language the text is written in
+/// (prs = Dari, ps = Pashto); CHECK constraints in the migration keep it to those two and the text to 1-500 characters.
+model DailyQuote {
+  id        String        @id @default(uuid()) @db.Uuid
+  text      String
+  category  QuoteCategory
+  language  String        @default("prs")
+  isActive  Boolean       @default(true) @map("is_active")
+  createdAt DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime      @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  morningPushes MorningPushSend[]
+
+  @@index([category, language, isActive])
+  @@map("daily_quotes")
+}
+
+/// A phone that can receive pushes for a user. The token is unique: a token that moves to another account
+/// (someone signs in on the same phone) is re-pointed, never duplicated. `language` is the app language on that phone.
+model PushDevice {
+  id         String       @id @default(uuid()) @db.Uuid
+  userId     String       @map("user_id") @db.Uuid
+  token      String       @unique
+  platform   PushPlatform
+  language   String       @default("prs")
+  createdAt  DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+  lastSeenAt DateTime     @default(now()) @map("last_seen_at") @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("push_devices")
+}
+
+/// One row per user per Kabul day that the morning run reserved. The primary key is what makes the run
+/// safe to repeat and safe on several servers: only the run that inserts the row sends. Rows older than
+/// 30 days are deleted by the run itself.
+model MorningPushSend {
+  /// The Kabul calendar day.
+  day       DateTime          @db.Date
+  userId    String            @map("user_id") @db.Uuid
+  quoteId   String?           @map("quote_id") @db.Uuid
+  status    MorningPushStatus @default(CLAIMED)
+  /// Why a push failed (provider error code); null otherwise.
+  error     String?
+  createdAt DateTime          @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  user  User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  quote DailyQuote? @relation(fields: [quoteId], references: [id], onDelete: SetNull)
+
+  @@id([day, userId])
+  @@index([day, status])
+  @@map("morning_push_sends")
 }

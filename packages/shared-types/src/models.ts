@@ -1,12 +1,20 @@
 import type {
+  AbuseReason,
+  AbuseReportStatus,
+  AbuseTargetType,
+  AgencyVerificationStatus,
+  BannerPlacement,
   Currency,
   DealType,
   ContactUnlockMethod,
   MapLocationUnlimitedReason,
   MessageType,
+  Language,
   PerkReason,
+  PricingKey,
   PropertyStatus,
   PropertyType,
+  QuoteCategory,
   RewardReason,
   RewardType,
   Role,
@@ -25,6 +33,10 @@ export interface User {
   full_name: string | null;
   role: Role;
   avatar: string | null;
+  /** The morning quote push is wanted. (The phone's notification permission is separate.) */
+  enable_daily_motivation: boolean;
+  /** The welcome card has been shown to this user. Goes false -> true once and never back. */
+  has_seen_welcome: boolean;
 }
 
 export interface Agency {
@@ -37,7 +49,11 @@ export interface Agency {
   lat: number | null;
   lng: number | null;
   description: string | null;
+  /** True exactly when `verification_status` is VERIFIED. */
   is_verified: boolean;
+  verification_status: AgencyVerificationStatus;
+  /** Why the documents were refused (REJECTED only), so the agency can fix them and resubmit. */
+  rejection_reason: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -125,6 +141,8 @@ export interface AgencyDashboard {
     id: string;
     agency_name: string;
     is_verified: boolean;
+    verification_status: AgencyVerificationStatus;
+    rejection_reason: string | null;
   };
   stats: {
     /** Listings the agency still has: active and sold. Archived ("deleted") ones are not counted. */
@@ -420,3 +438,333 @@ export interface ChatReadEvent {
 export type ChatSendAck =
   | { ok: true; message: ChatMessage }
   | { ok: false; code: string; message: string; status: number; retry_after?: number };
+
+// ───────────── Wallet, payments and receipts ─────────────
+
+/** One payment as the payer sees it (the payment list and the wallet). */
+export interface PaymentSummary extends Transaction {
+  paid_at: string | null;
+  /** Set exactly when the payment succeeded. */
+  receipt_number: string | null;
+  package_type: SubscriptionPackage | null;
+  /** Contact credits bought, or days of featured badge bought. */
+  quantity: number | null;
+  property_title: string | null;
+}
+
+/** GET /hesabpay/payments/:id/receipt: what the app shows (and shares) as the digital receipt. */
+export interface Receipt {
+  receipt_number: string;
+  payment_id: string;
+  /** When the payment was confirmed. */
+  issued_at: string;
+  purpose: TransactionPurpose;
+  package_type: SubscriptionPackage | null;
+  quantity: number | null;
+  property: { id: string; title: string } | null;
+  amount: number;
+  currency: Currency;
+  payer: { full_name: string | null; phone_number: string; agency_name: string | null };
+  /** HesabPay's own reference for the payment, for support questions. */
+  reference: string;
+}
+
+/** A subscription bought in advance, starting when the running one ends. */
+export interface QueuedSubscription {
+  package_type: SubscriptionPackage;
+  starts_at: string;
+  ends_at: string;
+}
+
+export interface WalletSubscription {
+  is_active: boolean;
+  package_type: SubscriptionPackage | null;
+  /** When the running plan started; null when not active. */
+  started_at: string | null;
+  /** When publishing rights end, counting plans bought in advance; null when not active. */
+  ends_at: string | null;
+  /** Whole days left, rounded up. 0 when not active. */
+  remaining_days: number;
+  /** Seconds left (for a live countdown); 0 when not active. Count down from `Wallet.server_time`, not the phone's clock. */
+  remaining_seconds: number;
+  queued: QueuedSubscription[];
+}
+
+/** GET /wallet: everything the signed-in user has bought or earned, in one call. */
+export interface Wallet {
+  /** The server's clock when this was computed, so a countdown does not depend on the phone's clock. */
+  server_time: string;
+  /** Null for accounts without an agency profile. */
+  subscription: WalletSubscription | null;
+  map_location: MapLocationStatus;
+  contact_credits: number;
+  contact_unlimited: boolean;
+  ladder_tokens: number;
+  /** The five newest payments. */
+  recent_payments: PaymentSummary[];
+}
+
+// ───────────── Agency analytics ─────────────
+
+export interface AgencyAnalyticsDay {
+  /** Kabul calendar date, YYYY-MM-DD. */
+  day: string;
+  views: number;
+  leads: number;
+  phone_reveals: number;
+}
+
+export interface AgencyListingStats {
+  id: string;
+  title: string;
+  status: PropertyStatus;
+  views: number;
+  leads: number;
+  phone_reveals: number;
+}
+
+/**
+ * GET /agencies/me/analytics. Days are Kabul calendar days; `series` has one entry per day, zeros included.
+ *  - views: times the agency's listings were opened (counted per day since daily counts began);
+ *  - leads: people who started a chat about a listing and sent at least one message;
+ *  - phone_reveals: times someone unlocked the agency's phone number from one of its listings.
+ */
+export interface AgencyAnalytics {
+  range: { from: string; to: string; days: number };
+  totals: { views: number; leads: number; phone_reveals: number };
+  series: AgencyAnalyticsDay[];
+  /** The listings with the most activity in the range (at most 20), busiest first. */
+  listings: AgencyListingStats[];
+  /** Every view the agency's listings ever got, including those counted before daily numbers existed. */
+  lifetime_views: number;
+}
+
+// ───────────── Property pictures and bulk operations ─────────────
+
+export interface PropertyImageUploaded {
+  id: string;
+  /** Absolute public URL: put it in a listing's `images`. */
+  url: string;
+  content_type: string;
+  byte_size: number;
+  created_at: string;
+}
+
+export interface PropertyImageItem extends PropertyImageUploaded {
+  /** The caller's listings that use this picture. */
+  used_by_property_ids: string[];
+}
+
+/** The answer for one row of a bulk request. `index` is the row's position in the request. */
+export type BulkRowResult<T> =
+  | { index: number; ok: true; property: T }
+  | { index: number; ok: false; code: string; message: string; errors?: { field: string; message: string }[] };
+
+export interface BulkResponse<T> {
+  total: number;
+  succeeded: number;
+  failed: number;
+  results: BulkRowResult<T>[];
+}
+
+// ───────────── Moderation ─────────────
+
+/** A person as an admin sees them in lists and reports. */
+export interface AdminPerson {
+  id: string;
+  full_name: string | null;
+  phone_number: string;
+  banned_at: string | null;
+}
+
+export interface AbuseReportItem {
+  id: string;
+  status: AbuseReportStatus;
+  target_type: AbuseTargetType;
+  reason: AbuseReason;
+  details: string | null;
+  created_at: string;
+  reporter: AdminPerson;
+  /** The reported account (for a listing report: the listing's owner when it was filed). */
+  target_user: AdminPerson;
+  target_property: { id: string; title: string; status: PropertyStatus; removed_by_admin_at: string | null } | null;
+  resolved_at: string | null;
+  resolved_by: string | null;
+  resolution_note: string | null;
+}
+
+export interface AdminUserItem extends AdminPerson {
+  role: Role;
+  ban_reason: string | null;
+  last_login_at: string | null;
+  created_at: string;
+  agency: { id: string; agency_name: string; verification_status: AgencyVerificationStatus } | null;
+  open_reports_against: number;
+}
+
+export interface AdminUserDetail extends AdminUserItem {
+  listings: { active: number; sold: number; archived: number };
+  reports_filed: number;
+  reports_against: number;
+}
+
+export interface AdminAgencyItem {
+  id: string;
+  agency_name: string;
+  license_photo: string;
+  address: string;
+  description: string | null;
+  verification_status: AgencyVerificationStatus;
+  is_verified: boolean;
+  rejection_reason: string | null;
+  reviewed_at: string | null;
+  created_at: string;
+  owner: AdminPerson;
+  subscription_active: boolean;
+}
+
+export interface AdminPropertyItem extends Property {
+  view_count: number;
+  removed_by_admin_at: string | null;
+  removal_reason: string | null;
+  owner: AdminPerson;
+}
+
+export interface AdminTransactionItem extends PaymentSummary {
+  /** HesabPay's id for the payment session. */
+  hesabpay_tx_id: string;
+  user: AdminPerson;
+  agency_name: string | null;
+}
+
+export interface AdminAuditEntry {
+  id: string;
+  action: string;
+  target_type: string;
+  target_id: string | null;
+  metadata: Record<string, unknown> | null;
+  created_at: string;
+  /** Null for actions taken from the command line. */
+  actor: AdminPerson | null;
+}
+
+// ───────────── Banners and prices ─────────────
+
+export interface Banner {
+  id: string;
+  title: string;
+  image_url: string;
+  link_property_id: string | null;
+  link_url: string | null;
+  placement: BannerPlacement;
+  sort_order: number;
+  is_active: boolean;
+  starts_at: string | null;
+  ends_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+/** One paid product in the admin price list. `price`/`quantity` are what customers pay now. */
+export interface PricingEntry {
+  key: PricingKey;
+  price: number;
+  /** Featured days (FEATURED_AD) or credits per pack (CONTACT_CREDITS); null for the others. */
+  quantity: number | null;
+  /** True when an admin changed it; false when the environment default applies. */
+  overridden: boolean;
+  default_price: number;
+  default_quantity: number | null;
+  updated_at: string | null;
+}
+
+// ───────────── Admin overview ─────────────
+
+export interface MoneyByCurrency {
+  currency: Currency;
+  total: number;
+}
+
+/** GET /admin/analytics/overview. Money is never added across currencies: every figure is per currency. */
+export interface AdminOverview {
+  generated_at: string;
+  range: { from: string; to: string; days: number };
+  revenue: {
+    all_time: MoneyByCurrency[];
+    in_range: MoneyByCurrency[];
+    by_purpose: { purpose: TransactionPurpose; currency: Currency; total: number; count: number }[];
+    /** Only days that had revenue. */
+    daily: { day: string; currency: Currency; total: number }[];
+  };
+  payments: {
+    /** In the range. */
+    succeeded: number;
+    failed: number;
+    pending: number;
+    /** Payments still PENDING after an hour, ever: unpaid, or paid but the confirmation never matched. */
+    pending_over_one_hour: number;
+  };
+  listings: {
+    active: number;
+    sold: number;
+    archived: number;
+    featured_now: number;
+    new_in_range: number;
+    removed_by_admin: number;
+  };
+  users: {
+    total: number;
+    by_role: Record<Role, number>;
+    new_in_range: number;
+    /** Signed in during the last 30 days. */
+    active_30d: number;
+    banned: number;
+    /** One entry per day of the range, zeros included. */
+    daily_signups: { day: string; count: number }[];
+  };
+  agencies: { with_active_subscription: number; verified: number };
+  moderation: { open_reports: number; pending_verifications: number };
+}
+
+/** The answer to POST /reports. */
+export interface ReportFiled {
+  id: string;
+  status: AbuseReportStatus;
+  created_at: string;
+}
+
+// ───────────── Welcome card and morning quotes ─────────────
+
+/** An admin's quote template. */
+export interface DailyQuote {
+  id: string;
+  text: string;
+  category: QuoteCategory;
+  language: Language;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+/** What the app shows in the welcome card (GET /quotes/welcome). */
+export interface WelcomeQuote {
+  id: string;
+  text: string;
+  language: Language;
+}
+
+/** One Kabul day of the morning push, for the admin screen. */
+export interface MorningPushDay {
+  /** YYYY-MM-DD, Kabul. */
+  day: string;
+  claimed: number;
+  sent: number;
+  failed: number;
+}
+
+/** POST /admin/notifications/test */
+export interface TestPushResult {
+  devices: number;
+  delivered: number;
+  failed: number;
+}

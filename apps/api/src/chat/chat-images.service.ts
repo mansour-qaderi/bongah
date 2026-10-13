@@ -3,7 +3,6 @@ import {
   Inject,
   Injectable,
   NotFoundException,
-  PayloadTooLargeException,
   UnsupportedMediaTypeException,
 } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
@@ -11,6 +10,7 @@ import { CHAT_IMAGE_TYPES, type ChatImageType, type ChatImageUploaded } from '@b
 import { PerksService } from '../perks/perks.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { CHAT_SETTINGS, type ChatSettings } from './chat.config.js';
+import { tooLarge } from '../common/upload.js';
 import { chatImagePath } from './chat.mapper.js';
 import { CHAT_IMAGE_STORAGE, type ChatImageStorage } from './images/chat-image.storage.js';
 import { sniffImageType } from './images/image-signature.js';
@@ -98,12 +98,4 @@ export class ChatImagesService {
     if (!data) throw new NotFoundException('Picture not found.');
     return { contentType: image.contentType, data };
   }
-}
-
-export function tooLarge(maxBytes: number): PayloadTooLargeException {
-  return new PayloadTooLargeException({
-    message: `The picture is larger than ${(maxBytes / 1_000_000).toFixed(1)} MB.`,
-    code: 'IMAGE_TOO_LARGE',
-    max_bytes: maxBytes,
-  });
 }

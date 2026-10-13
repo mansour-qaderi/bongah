@@ -23,3 +23,10 @@ export const setAgencyLocationSchema = z.strictObject({
   lng: longitude,
 });
 export type SetAgencyLocationInput = z.output<typeof setAgencyLocationSchema>;
+
+/**
+ * PUT /agencies/me/license: send a new license photo after a rejection (or to replace an old one).
+ * The review starts over: the agency goes back to PENDING.
+ */
+export const resubmitLicenseSchema = z.strictObject({ license_photo: httpUrl });
+export type ResubmitLicenseInput = z.output<typeof resubmitLicenseSchema>;

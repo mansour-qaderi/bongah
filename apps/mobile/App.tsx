@@ -10,6 +10,7 @@ import { LoadingView } from './src/components/States';
 import { initI18n } from './src/i18n';
 import { isRtlActive } from './src/i18n/rtl';
 import RootNavigator from './src/navigation/RootNavigator';
+import PushRegistrar from './src/push/PushRegistrar';
 import { colors } from './src/theme';
 
 const navigationTheme = {
@@ -57,6 +58,7 @@ export default function App() {
         <QueryClientProvider client={queryClient}>
           <AuthProvider>
             <ChatProvider>
+              <PushRegistrar />
               <NavigationContainer theme={navigationTheme}>
                 <RootNavigator />
               </NavigationContainer>

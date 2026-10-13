@@ -36,4 +36,9 @@ export const kv = {
 
 export const KV_KEYS = {
   language: 'language',
+  /**
+   * "This person has been shown the welcome card on this phone." A backup for the server's flag: if saving the
+   * flag fails (offline), the card still does not come back on every launch.
+   */
+  welcomeSeen: (userId: string) => `welcome_seen:${userId}`,
 } as const;

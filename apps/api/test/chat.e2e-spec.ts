@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import request from 'supertest';
 import type { Socket } from 'socket.io-client';
 import type { ChatConversation, ChatMessage, ChatSendAck } from '@bongah/shared-types';
+import { ChatService } from '../src/chat/chat.service.js';
 import { hasDb, TestContext, type TestUser } from './helpers.js';
 
 /** Bytes that start like a real JPEG, padded to `size`. */
@@ -369,6 +370,28 @@ describe.skipIf(!hasDb)('Chat (e2e)', () => {
       const results = await Promise.all(Array.from({ length: 3 }, () => send(buyer, id, message)));
       expect(results.map((r) => r.status)).toEqual([201, 201, 201]);
       expect(new Set(results.map((r) => r.body.id)).size).toBe(1);
+    });
+
+    it('answers a retry that overlaps the original with the stored message, not a 409', async () => {
+      // The race, made deterministic: the retry's first look at the client_id finds nothing (the original had not
+      // committed yet), then the original commits, and only then does the retry look at the picture.
+      const { buyer, id } = await world();
+      const up = (await upload(buyer, jpeg()).expect(201)).body;
+      const message = { type: 'IMAGE', client_id: randomUUID(), image_id: up.id };
+      const original = (await send(buyer, id, message).expect(201)).body as ChatMessage;
+
+      const service = ctx.app.get(ChatService) as unknown as { findByClientId: (...args: unknown[]) => Promise<unknown> };
+      const spy = vi.spyOn(service, 'findByClientId').mockResolvedValueOnce(null);
+      try {
+        const retry = await send(buyer, id, message).expect(201);
+        expect(retry.body.id).toBe(original.id);
+        expect(spy).toHaveBeenCalledTimes(2); // the blind pre-check, then the look-up after the 409
+      } finally {
+        spy.mockRestore();
+      }
+      // A DIFFERENT message trying to reuse the picture is still refused.
+      const other = await send(buyer, id, { ...message, client_id: randomUUID() }).expect(409);
+      expect(other.body.code).toBe('IMAGE_ALREADY_SENT');
     });
   });
 

@@ -73,14 +73,14 @@ export type UpdatePropertyInput = z.output<typeof updatePropertySchema>;
 // ───────────────────────── Query strings ─────────────────────────
 // Query values are always strings. Parse them strictly (no Number('0x10'), no '' -> 0).
 
-const queryInt = (min: number, max: number) =>
+export const queryInt = (min: number, max: number) =>
   z
     .string()
     .regex(/^\d{1,9}$/, 'Must be a whole number')
     .transform(Number)
     .pipe(z.number().int().min(min).max(max));
 
-const queryMoney = z
+export const queryMoney = z
   .string()
   .regex(/^\d{1,12}(\.\d{1,2})?$/, 'Must be a number with at most 2 decimals')
   .transform(Number);
@@ -88,7 +88,7 @@ const queryMoney = z
 export const MAX_PAGE_SIZE = 50;
 export const DEFAULT_PAGE_SIZE = 20;
 
-const paginationShape = {
+export const paginationShape = {
   page: queryInt(1, 100_000).default(1),
   limit: queryInt(1, MAX_PAGE_SIZE).default(DEFAULT_PAGE_SIZE),
 };

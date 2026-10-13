@@ -1,4 +1,4 @@
-import { kabulDayKey, nextKabulMidnight } from './contact.time.js';
+import { kabulDayKey, kabulDayList, kabulDayStart, nextKabulMidnight } from './contact.time.js';
 
 const iso = (d: Date) => d.toISOString();
 
@@ -27,5 +27,36 @@ describe('Kabul day boundaries', () => {
   it('rolls over month and year ends', () => {
     expect(iso(kabulDayKey(new Date('2026-12-31T20:00:00Z')))).toBe('2027-01-01T00:00:00.000Z');
     expect(iso(nextKabulMidnight(new Date('2026-12-31T20:00:00Z')))).toBe('2027-01-01T19:30:00.000Z');
+  });
+});
+
+describe('Kabul day lists and starts', () => {
+  it('lists the last N days oldest first, ending on the given day', () => {
+    const last = kabulDayKey(new Date('2026-10-13T12:00:00Z'));
+    expect(kabulDayList(last, 3)).toEqual(['2026-10-11', '2026-10-12', '2026-10-13']);
+    expect(kabulDayList(last, 1)).toEqual(['2026-10-13']);
+  });
+
+  it('crosses month and year ends, and a leap day', () => {
+    expect(kabulDayList(kabulDayKey(new Date('2027-01-02T12:00:00Z')), 4)).toEqual([
+      '2026-12-30',
+      '2026-12-31',
+      '2027-01-01',
+      '2027-01-02',
+    ]);
+    expect(kabulDayList(kabulDayKey(new Date('2028-03-01T12:00:00Z')), 3)).toEqual(['2028-02-28', '2028-02-29', '2028-03-01']);
+  });
+
+  it('starts a Kabul day at 19:30 UTC of the day before', () => {
+    expect(iso(kabulDayStart('2026-10-13'))).toBe('2026-10-12T19:30:00.000Z');
+    expect(iso(kabulDayStart('2026-01-01'))).toBe('2025-12-31T19:30:00.000Z');
+  });
+
+  it('agrees with kabulDayKey: the start of a day is the first instant that belongs to it', () => {
+    for (const day of ['2026-03-10', '2026-10-13', '2028-02-29']) {
+      const start = kabulDayStart(day);
+      expect(kabulDayKey(start).toISOString().slice(0, 10)).toBe(day);
+      expect(kabulDayKey(new Date(start.getTime() - 1)).toISOString().slice(0, 10)).not.toBe(day);
+    }
   });
 });

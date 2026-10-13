@@ -15,6 +15,7 @@ import { formatPhone } from '../../i18n/format';
 import { useFormat } from '../../i18n/useFormat';
 import type { RootStackParamList, TabParamList } from '../../navigation/types';
 import { colors, radius, spacing } from '../../theme';
+import MorningMessagesCard from './MorningMessagesCard';
 
 type Props = CompositeScreenProps<
   BottomTabScreenProps<TabParamList, 'Account'>,
@@ -66,6 +67,8 @@ export default function AccountScreen({ navigation }: Props) {
           {row(t('account.role'), t(`role.${user.role}`))}
         </View>
       ) : null}
+
+      {user ? <MorningMessagesCard /> : null}
 
       {user ? (
         <Button

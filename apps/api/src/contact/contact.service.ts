@@ -124,7 +124,7 @@ export class ContactService {
 
   private async findListing(db: Prisma.TransactionClient, propertyId: string): Promise<Listing> {
     const row = await db.property.findFirst({
-      where: { id: propertyId, status: { not: PropertyStatus.ARCHIVED } },
+      where: { id: propertyId, status: { not: PropertyStatus.ARCHIVED }, user: { bannedAt: null } },
       select: {
         id: true,
         userId: true,

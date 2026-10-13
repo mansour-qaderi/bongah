@@ -22,7 +22,9 @@ import {
   OTP_TTL_SECONDS,
 } from './auth.constants.js';
 import type { JwtPayload } from './auth.types.js';
-import type { AuthUserDto, SendOtpResponse, VerifyOtpResponse } from './dto/auth-response.dto.js';
+import { accountBanned } from './guards/jwt-auth.guard.js';
+import { toUser } from '../users/user.mapper.js';
+import type { SendOtpResponse, VerifyOtpResponse } from './dto/auth-response.dto.js';
 import { SmsGateway } from './sms/sms-gateway.js';
 import { readReferralSettings } from '../referral/referral.config.js';
 import { findReferrerId, grantSignupRewards } from '../referral/referral.signup.js';
@@ -167,7 +169,12 @@ export class AuthService {
     });
     if (consumed.count !== 1) throw invalidCode();
 
-    const { user, isNewUser, referralApplied } = await this.findOrCreateUser(phone, referrerId);
+    const found = await this.findOrCreateUser(phone, referrerId);
+    const { isNewUser, referralApplied } = found;
+    // A suspended account cannot sign in. (Checked after the code is proven, so this endpoint cannot
+    // be used to find out which numbers are banned.)
+    if (found.user.bannedAt) throw accountBanned();
+    const user = await this.prisma.user.update({ where: { id: found.user.id }, data: { lastLoginAt: now } });
 
     const payload: JwtPayload = { sub: user.id, role: user.role };
     return {
@@ -176,7 +183,7 @@ export class AuthService {
       expires_in: this.accessTokenTtlSeconds,
       is_new_user: isNewUser,
       referral_applied: referralApplied,
-      user: toAuthUser(user),
+      user: toUser(user),
     };
   }
 
@@ -253,14 +260,4 @@ function tooManyRequests(message: string, retryAfterSeconds: number): HttpExcept
     },
     HttpStatus.TOO_MANY_REQUESTS,
   );
-}
-
-function toAuthUser(user: User): AuthUserDto {
-  return {
-    id: user.id,
-    phone_number: user.phoneNumber,
-    full_name: user.fullName,
-    role: user.role,
-    avatar: user.avatar,
-  };
 }

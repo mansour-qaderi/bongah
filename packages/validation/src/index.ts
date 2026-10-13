@@ -7,3 +7,7 @@ export * from './payment.schema';
 export * from './referral.schema';
 export * from './chat.schema';
 export * from './contact.schema';
+export * from './moderation.schema';
+export * from './admin.schema';
+export * from './bulk.schema';
+export * from './notification.schema';
