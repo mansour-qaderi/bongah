@@ -18,6 +18,7 @@ import {
   typingSchema,
 } from '@bongah/validation';
 import type { JwtPayload } from '../auth/auth.types.js';
+import { PrismaService } from '../prisma/prisma.service.js';
 import { ChatEventsBus, type ChatEvent } from './chat.events.js';
 import { ChatService } from './chat.service.js';
 
@@ -61,6 +62,7 @@ export class ChatGateway implements OnGatewayInit, OnGatewayConnection, OnModule
     private readonly jwt: JwtService,
     private readonly chat: ChatService,
     private readonly bus: ChatEventsBus,
+    private readonly prisma: PrismaService,
   ) {}
 
   afterInit(server: Server): void {
@@ -158,6 +160,9 @@ export class ChatGateway implements OnGatewayInit, OnGatewayConnection, OnModule
     if (typeof token !== 'string' || token === '') throw new Error('no token');
 
     const payload = await this.jwt.verifyAsync<JwtPayload & { exp?: number }>(token);
+    // The same rule as the HTTP guard: the account must exist and must not be banned.
+    const account = await this.prisma.user.findUnique({ where: { id: payload.sub }, select: { bannedAt: true } });
+    if (!account || account.bannedAt) throw new Error('refused');
     socket.data.identity = {
       userId: payload.sub,
       expiresAt: payload.exp ? payload.exp * 1000 : null,
@@ -175,6 +180,11 @@ export class ChatGateway implements OnGatewayInit, OnGatewayConnection, OnModule
   }
 
   private push(event: ChatEvent): void {
+    if (event.kind === 'disconnect') {
+      // A ban closes the person's chat connections now; reconnecting is refused at the handshake.
+      this.server.in(userRoom(event.userId)).disconnectSockets(true);
+      return;
+    }
     const rooms = [...new Set(event.participantIds)].map(userRoom);
     if (event.kind === 'message') this.server.to(rooms).emit(CHAT_EVENTS.newMessage, event.message);
     else this.server.to(rooms).emit(CHAT_EVENTS.read, event.event);

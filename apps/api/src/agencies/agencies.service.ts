@@ -8,18 +8,17 @@ import {
 import type { Agency, AgencyDashboard } from '@bongah/shared-types';
 import {
   Prisma,
+  AgencyVerificationStatus,
   PropertyStatus,
   Role,
-  SubscriptionStatus,
   type Agency as AgencyRow,
 } from '../generated/prisma/client.js';
 import { isFeaturedAt } from '../property/property.mapper.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import type { RegisterAgencyDto } from './dto/register-agency.dto.js';
 import type { SetAgencyLocationDto } from './dto/set-agency-location.dto.js';
-import { findActiveSubscription, subscriptionCoveredUntil } from './subscription.js';
+import { DAY_MS, findActiveSubscription, summariseSubscription } from './subscription.js';
 
-const DAY_MS = 24 * 60 * 60 * 1000;
 const DASHBOARD_TOP_LISTINGS = 5;
 
 @Injectable()
@@ -95,6 +94,29 @@ export class AgenciesService {
   }
 
   /**
+   * Sends a new license photo for review. The agency goes back to PENDING (and loses the verified badge
+   * until an admin approves the new document): the badge vouches for the document on file, so a
+   * replaced document has to be looked at again. Also how a rejected agency resubmits.
+   */
+  async resubmitLicense(userId: string, licensePhoto: string): Promise<Agency> {
+    const updated = await this.prisma.agency.updateMany({
+      where: { userId },
+      data: {
+        licensePhoto,
+        verificationStatus: AgencyVerificationStatus.PENDING,
+        isVerified: false,
+        reviewedAt: null,
+        reviewedById: null,
+        rejectionReason: null,
+      },
+    });
+    if (updated.count === 0) {
+      throw new NotFoundException({ message: 'Register your agency first.', code: 'AGENCY_PROFILE_REQUIRED' });
+    }
+    return toAgencyDto(await this.prisma.agency.findUniqueOrThrow({ where: { userId } }));
+  }
+
+  /**
    * The numbers on the agency's home screen. "The agency's listings" are the ones published
    * under its agency profile (properties.agency_id); anything the owner posted as a regular user
    * before registering the agency stays out of these figures.
@@ -103,7 +125,7 @@ export class AgenciesService {
     const now = new Date();
     const agency = await this.prisma.agency.findUnique({
       where: { userId },
-      select: { id: true, agencyName: true, isVerified: true },
+      select: { id: true, agencyName: true, isVerified: true, verificationStatus: true, rejectionReason: true },
     });
     if (!agency) {
       throw new NotFoundException({
@@ -112,7 +134,7 @@ export class AgenciesService {
       });
     }
 
-    const [byStatus, featuredListings, topListings, running] = await Promise.all([
+    const [byStatus, featuredListings, topListings, plan] = await Promise.all([
       this.prisma.property.groupBy({
         by: ['status'],
         where: { agencyId: agency.id },
@@ -142,7 +164,7 @@ export class AgenciesService {
           ladderedAt: true,
         },
       }),
-      findActiveSubscription(this.prisma, agency.id, now),
+      summariseSubscription(this.prisma, agency.id, now),
     ]);
 
     const countOf = (status: PropertyStatus) =>
@@ -155,23 +177,23 @@ export class AgenciesService {
       ends_at: null,
       remaining_days: 0,
     };
-    if (running) {
-      // Plans bought in advance start when the running one ends: they extend the access.
-      const later = await this.prisma.subscription.findMany({
-        where: { agencyId: agency.id, status: SubscriptionStatus.ACTIVE, endDate: { gt: running.endDate } },
-        select: { startDate: true, endDate: true },
-      });
-      const until = subscriptionCoveredUntil(running.endDate, later);
+    if (plan.running && plan.until) {
       subscription = {
         is_active: true,
-        package_type: running.packageType,
-        ends_at: until.toISOString(),
-        remaining_days: Math.ceil((until.getTime() - now.getTime()) / DAY_MS),
+        package_type: plan.running.packageType,
+        ends_at: plan.until.toISOString(),
+        remaining_days: Math.ceil((plan.until.getTime() - now.getTime()) / DAY_MS),
       };
     }
 
     return {
-      agency: { id: agency.id, agency_name: agency.agencyName, is_verified: agency.isVerified },
+      agency: {
+        id: agency.id,
+        agency_name: agency.agencyName,
+        is_verified: agency.isVerified,
+        verification_status: agency.verificationStatus,
+        rejection_reason: agency.rejectionReason,
+      },
       stats: {
         total_properties: countOf(PropertyStatus.ACTIVE) + countOf(PropertyStatus.SOLD),
         active_listings: countOf(PropertyStatus.ACTIVE),
@@ -204,6 +226,8 @@ function toAgencyDto(row: AgencyRow): Agency {
     lng: row.lng,
     description: row.description,
     is_verified: row.isVerified,
+    verification_status: row.verificationStatus,
+    rejection_reason: row.rejectionReason,
     created_at: row.createdAt.toISOString(),
     updated_at: row.updatedAt.toISOString(),
   };

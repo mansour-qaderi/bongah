@@ -195,6 +195,39 @@ export class TestContext {
     });
   }
 
+  /** An ADMIN account (created directly: no API can grant the role). */
+  admin(): Promise<TestUser> {
+    return this.user(Role.ADMIN);
+  }
+
+  /**
+   * Pays for something the way the app does: starts the payment, then HesabPay's signed webhook
+   * confirms it (unless `confirm` is false). Returns the payment's id.
+   */
+  async pay(user: TestUser, body: object, confirm = true): Promise<string> {
+    const started = await this.post('/hesabpay/payments', body, user.token).expect(201);
+    if (confirm) await this.confirmPayment(started.body.id as string);
+    return started.body.id as string;
+  }
+
+  /** Sends HesabPay's SUCCESS webhook for one of our payments. */
+  async confirmPayment(paymentId: string): Promise<void> {
+    const tx = await this.prisma.transaction.findUniqueOrThrow({ where: { id: paymentId } });
+    const raw = JSON.stringify({ transaction_id: tx.hesabpayTxId, status: 'SUCCESS' });
+    await request(this.http)
+      .post('/hesabpay/webhook')
+      .set('content-type', 'application/json')
+      .set('x-hesabpay-signature', signWebhook(raw))
+      .send(raw)
+      .expect(200);
+  }
+
+  /** Uploads raw picture bytes (the way the app does) to `path`, e.g. /property-images. */
+  upload(path: string, user: { token: string } | null, bytes: Buffer, type = 'image/jpeg') {
+    const req = request(this.http).post(path).set('Content-Type', type);
+    return (user ? req.set('Authorization', `Bearer ${user.token}`) : req).send(bytes);
+  }
+
   /** Removes everything the test created, children before parents. */
   async close(): Promise<void> {
     for (const socket of this.sockets) socket.close();
@@ -219,6 +252,20 @@ export class TestContext {
     // Rewards point at users and listings; invited users point at their inviter.
     await this.prisma.reward.deleteMany({ where: { OR: [{ userId: { in: userIds } }, { inviteeId: { in: userIds } }] } });
     await this.prisma.user.updateMany({ where: { id: { in: userIds } }, data: { referredById: null } });
+    // Moderation, banners, prices, audit lines and uploaded pictures point at users and listings.
+    await this.prisma.abuseReport.deleteMany({
+      where: { OR: [{ reporterId: { in: userIds } }, { targetUserId: { in: userIds } }, { resolvedById: { in: userIds } }] },
+    });
+    await this.prisma.banner.deleteMany({
+      where: { OR: [{ createdById: { in: userIds } }, { linkProperty: { userId: { in: userIds } } }] },
+    });
+    await this.prisma.pricingOverride.deleteMany({ where: { updatedById: { in: userIds } } });
+    await this.prisma.adminAuditLog.deleteMany({
+      where: { OR: [{ actorId: { in: userIds } }, { targetType: 'user', targetId: { in: userIds } }] },
+    });
+    await this.prisma.propertyImage.deleteMany({ where: { uploaderId: { in: userIds } } });
+    await this.prisma.propertyViewDay.deleteMany({ where: { property: { userId: { in: userIds } } } });
+    await this.prisma.agency.updateMany({ where: { reviewedById: { in: userIds } }, data: { reviewedById: null } });
     // Tokens point at both payments and listings, so they go first.
     await this.prisma.mapLocationToken.deleteMany({ where: { userId: { in: userIds } } });
     await this.prisma.transaction.deleteMany({ where: { userId: { in: userIds } } });
@@ -237,6 +284,9 @@ export class TestContext {
   patch = (path: string, body: object, token?: string) =>
     withAuth(request(this.http).patch(path).send(body), token);
   del = (path: string, token?: string) => withAuth(request(this.http).delete(path), token);
+  /** DELETE with a JSON body (DELETE /notifications/devices). */
+  delWith = (path: string, body: object, token?: string) =>
+    withAuth(request(this.http).delete(path).send(body), token);
 }
 
 /** A fresh Afghan number (+9370xxxxxxx) so tests never share a user. */
@@ -248,6 +298,12 @@ export function randomPhone(): string {
 function withAuth<T extends request.Test>(req: T, token?: string): T {
   return token ? (req.set('Authorization', `Bearer ${token}`) as T) : req;
 }
+
+/** Bytes that start like a real JPEG, padded to `size`. */
+export const jpegBytes = (size = 2000) => Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(size - 4, 7)]);
+/** Bytes that start like a real PNG, padded to `size`. */
+export const pngBytes = (size = 500) =>
+  Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(size - 8, 1)]);
 
 /** The pin used by tests that need one. */
 export const PIN = { lat: 34.5333, lng: 69.1667 };

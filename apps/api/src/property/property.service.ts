@@ -13,6 +13,7 @@ import type { CreatePropertyDto } from './dto/create-property.dto.js';
 import type { ListPropertiesDto, PaginationDto } from './dto/list-properties.dto.js';
 import type { PropertyDto, PropertyPageDto } from './dto/property-response.dto.js';
 import type { UpdatePropertyDto } from './dto/update-property.dto.js';
+import { kabulDayKey } from '../contact/contact.time.js';
 import { FREE_LISTINGS_PER_MONTH } from './property.constants.js';
 import { toPropertyDto } from './property.mapper.js';
 import { kabulMonthStart, nextKabulMonthStart } from './property.time.js';
@@ -33,11 +34,12 @@ export class PropertyService {
     private readonly mapLocation: MapLocationService,
   ) {}
 
-  /** Public search: active listings only. */
+  /** Public search: active listings only, and never those of a banned account. */
   async list(query: ListPropertiesDto): Promise<PropertyPageDto> {
     const hasPriceRange = query.min_price !== undefined || query.max_price !== undefined;
     const where: Prisma.PropertyWhereInput = {
       status: PropertyStatus.ACTIVE,
+      user: { bannedAt: null },
       province: query.province,
       district: query.district,
       type: query.type,
@@ -56,10 +58,10 @@ export class PropertyService {
     return this.page({ userId }, query);
   }
 
-  /** A single listing. Archived listings are gone for everyone (owners see them via /mine). */
+  /** A single listing. Archived listings (and a banned account's) are gone for everyone (owners see them via /mine). */
   async findOne(id: string): Promise<PropertyDto> {
     const row = await this.prisma.property.findFirst({
-      where: { id, status: { not: PropertyStatus.ARCHIVED } },
+      where: { id, status: { not: PropertyStatus.ARCHIVED }, user: { bannedAt: null } },
     });
     if (!row) throw new NotFoundException('Property not found.');
     return toPropertyDto(row, new Date());
@@ -70,12 +72,20 @@ export class PropertyService {
    * active is silently ignored, so the app never has to handle an error for a statistic.
    *
    * Raw SQL on purpose: it is one atomic increment (no read-modify-write race), and a Prisma
-   * update would also bump updated_at, which means "the owner edited this listing".
+   * update would also bump updated_at, which means "the owner edited this listing". The same
+   * statement adds the view to today's (Kabul day) row for the analytics chart, so the lifetime
+   * counter and the daily counts cannot disagree.
    */
   async recordView(id: string): Promise<void> {
+    const day = kabulDayKey(new Date()).toISOString().slice(0, 10);
     await this.prisma.$executeRaw`
-      UPDATE properties SET view_count = view_count + 1
-      WHERE id = ${id}::uuid AND status = 'ACTIVE'`;
+      WITH hit AS (
+        UPDATE properties SET view_count = view_count + 1
+         WHERE id = ${id}::uuid AND status = 'ACTIVE'
+        RETURNING id)
+      INSERT INTO property_view_days (property_id, day, count)
+      SELECT id, ${day}::date, 1 FROM hit
+      ON CONFLICT (property_id, day) DO UPDATE SET count = property_view_days.count + 1`;
   }
 
   /**
@@ -178,10 +188,17 @@ export class PropertyService {
     const { deal_type, area_sqm, ...rest } = input;
 
     const row = await this.prisma.$transaction(async (tx) => {
-      const locked = await tx.$queryRaw<{ user_id: string; lat: number | null }[]>`
-        SELECT user_id, lat FROM properties WHERE id = ${id}::uuid FOR UPDATE`;
+      const locked = await tx.$queryRaw<{ user_id: string; lat: number | null; removed_by_admin_at: Date | null }[]>`
+        SELECT user_id, lat, removed_by_admin_at FROM properties WHERE id = ${id}::uuid FOR UPDATE`;
       if (locked.length === 0) throw new NotFoundException('Property not found.');
       const actorRole = await this.assertCanModify(tx, userId, locked[0].user_id);
+      // A listing an admin took down stays down: only an admin can touch it (restore it, say).
+      if (locked[0].removed_by_admin_at && actorRole !== Role.ADMIN) {
+        throw new ForbiddenException({
+          message: 'This listing was removed by the Bongah team.',
+          code: 'LISTING_REMOVED',
+        });
+      }
 
       if (input.lat !== undefined && locked[0].lat === null) {
         await this.mapLocation.chargeForPin(tx, userId, actorRole, id, now);

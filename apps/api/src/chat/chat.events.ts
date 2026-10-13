@@ -5,7 +5,9 @@ import { Subject } from 'rxjs';
 /** What the chat service tells the socket gateway. Plain data, so neither side imports the other. */
 export type ChatEvent =
   | { kind: 'message'; participantIds: [string, string]; message: ChatMessage }
-  | { kind: 'read'; participantIds: [string, string]; event: ChatReadEvent };
+  | { kind: 'read'; participantIds: [string, string]; event: ChatReadEvent }
+  /** Close every live connection of this person (they were banned). */
+  | { kind: 'disconnect'; userId: string };
 
 /**
  * An in-process event bus between ChatService (which writes) and ChatGateway (which pushes to

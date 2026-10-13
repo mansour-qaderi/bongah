@@ -2,7 +2,9 @@ import type {
   CreatePropertyInput,
   CreateTemplateInput,
   InitiatePaymentInput,
+  RegisterDeviceInput,
   SendMessageInput,
+  UpdatePreferencesInput,
   UpdatePropertyInput,
   UpdateTemplateInput,
 } from '@bongah/validation';
@@ -17,6 +19,7 @@ import type {
   ContactAccess,
   Currency,
   DealType,
+  Language,
   MapLocationStatus,
   Paginated,
   PaymentInitiated,
@@ -29,6 +32,7 @@ import type {
   Transaction,
   User,
   VerifyOtpResponse,
+  WelcomeQuote,
 } from '@bongah/shared-types';
 import { UPLOAD_TIMEOUT_MS } from '../config';
 import { ApiError, request } from './client';
@@ -64,6 +68,33 @@ export const registerUser = (fullName: string) =>
   request<User>('POST', '/users/register', {
     auth: true,
     body: { full_name: fullName },
+  });
+
+/** The user's own settings: the morning-quote push, and "the welcome card has been shown" (it can only be set to true). */
+export const updatePreferences = (preferences: UpdatePreferencesInput) =>
+  request<User>('PATCH', '/users/me/preferences', {
+    auth: true,
+    body: preferences,
+  });
+
+// ───────────── Welcome card and push ─────────────
+
+/** The text for the first-launch card. 404 NO_ACTIVE_QUOTE means the admin has none: show the built-in text. */
+export const getWelcomeQuote = (language: Language) =>
+  request<WelcomeQuote>('GET', '/quotes/welcome', {
+    auth: true,
+    query: { language },
+  });
+
+/** Tells the server this phone can receive the signed-in user's pushes. Safe to repeat. */
+export const registerPushDevice = (device: RegisterDeviceInput) =>
+  request<void>('PUT', '/notifications/devices', { auth: true, body: device });
+
+/** Sign-out: this phone stops receiving the signed-in user's pushes. */
+export const removePushDevice = (token: string) =>
+  request<void>('DELETE', '/notifications/devices', {
+    auth: true,
+    body: { token },
   });
 
 // ───────────── Properties ─────────────

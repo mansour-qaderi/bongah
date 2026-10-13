@@ -11,6 +11,7 @@ import type { User, VerifyOtpResponse } from '@bongah/shared-types';
 import { setAuthToken, setUnauthorizedHandler } from '../api/client';
 import { getMe } from '../api/endpoints';
 import { queryClient, queryKeys } from '../api/hooks';
+import { forgetPushDevice } from '../push/registration';
 import {
   clearSession,
   loadSession,
@@ -48,6 +49,13 @@ export function AuthProvider({ children }: PropsWithChildren) {
     queryClient.removeQueries({ queryKey: queryKeys.contact });
     await clearSession();
   }, []);
+
+  // The person chose to leave: stop this phone receiving their pushes while the token still works. (A 401
+  // already means the token is dead, so that path goes straight to endSession.)
+  const signOut = useCallback(async () => {
+    await forgetPushDevice();
+    await endSession();
+  }, [endSession]);
 
   // A 401 on a signed-in request means the token expired or was revoked.
   useEffect(() => {
@@ -111,9 +119,9 @@ export function AuthProvider({ children }: PropsWithChildren) {
       user: state.status === 'signedIn' ? state.session.user : null,
       signIn,
       updateUser,
-      signOut: endSession,
+      signOut,
     }),
-    [state, signIn, updateUser, endSession],
+    [state, signIn, updateUser, signOut],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

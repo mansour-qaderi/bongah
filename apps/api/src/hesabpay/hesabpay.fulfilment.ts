@@ -34,7 +34,8 @@ export async function fulfil(
     case TransactionPurpose.LADDER:
       return ladderProperty(db, payment, now, promotion);
     case TransactionPurpose.FEATURED_AD:
-      return featureProperty(db, payment, featuredAdDays, now, promotion);
+      // The days were recorded when the payment started; older payments (before that) use the configured default.
+      return featureProperty(db, payment, payment.quantity ?? featuredAdDays, now, promotion);
     case TransactionPurpose.MAP_LOCATION:
       // transaction_id is UNIQUE on tokens: this payment can only ever mint one.
       return grantMapLocationToken(db, {

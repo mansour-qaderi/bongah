@@ -74,7 +74,7 @@ async function readBody(response: Response): Promise<ApiErrorBody | unknown> {
 }
 
 export async function request<T>(
-  method: 'GET' | 'POST' | 'PATCH' | 'DELETE',
+  method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE',
   path: string,
   options: RequestOptions = {},
 ): Promise<T> {

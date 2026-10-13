@@ -2,6 +2,8 @@ import { Injectable, UnauthorizedException } from '@nestjs/common';
 import type { User } from '@bongah/shared-types';
 import { PrismaService } from '../prisma/prisma.service.js';
 import type { RegisterUserDto } from './dto/register-user.dto.js';
+import type { UpdatePreferencesDto } from './dto/update-preferences.dto.js';
+import { toUser } from './user.mapper.js';
 
 @Injectable()
 export class UsersService {
@@ -33,20 +35,22 @@ export class UsersService {
     });
     return toUser(row);
   }
-}
 
-function toUser(row: {
-  id: string;
-  phoneNumber: string;
-  fullName: string | null;
-  role: User['role'];
-  avatar: string | null;
-}): User {
-  return {
-    id: row.id,
-    phone_number: row.phoneNumber,
-    full_name: row.fullName,
-    role: row.role,
-    avatar: row.avatar,
-  };
+  /**
+   * Changes the signed-in user's own settings. The welcome flag can only be raised (the schema refuses `false`),
+   * and raising it twice is harmless, so the app may retry freely.
+   */
+  async updatePreferences(userId: string, input: UpdatePreferencesDto): Promise<User> {
+    const existing = await this.prisma.user.findUnique({ where: { id: userId }, select: { id: true } });
+    if (!existing) throw new UnauthorizedException();
+
+    const row = await this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        enableDailyMotivation: input.enable_daily_motivation,
+        hasSeenWelcome: input.has_seen_welcome,
+      },
+    });
+    return toUser(row);
+  }
 }

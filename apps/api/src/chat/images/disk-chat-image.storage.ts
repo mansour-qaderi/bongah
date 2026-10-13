@@ -12,8 +12,9 @@ export class DiskChatImageStorage implements ChatImageStorage {
   private readonly dir: string;
   private ready: Promise<unknown> | null = null;
 
-  constructor(baseDir: string) {
-    this.dir = join(baseDir, 'chat-images');
+  /** `folder` lets other picture stores (listing photos) share this implementation in their own subfolder. */
+  constructor(baseDir: string, folder = 'chat-images') {
+    this.dir = join(baseDir, folder);
   }
 
   async save(id: string, data: Buffer): Promise<void> {

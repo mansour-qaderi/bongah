@@ -9,12 +9,14 @@ import { MockHesabPayGateway } from './gateway/mock-hesabpay.gateway.js';
 import { HESABPAY_SETTINGS, readHesabPaySettings, type HesabPaySettings } from './hesabpay.config.js';
 import { HesabpayController } from './hesabpay.controller.js';
 import { HesabpayService } from './hesabpay.service.js';
+import { PricingService } from './pricing.service.js';
 
 @Module({
   imports: [AuthModule, PromotionModule, ThrottlerModule.forRoot([{ name: 'default', ttl: 60_000, limit: 60 }])],
   controllers: [HesabpayController],
   providers: [
     HesabpayService,
+    PricingService,
     {
       provide: HESABPAY_SETTINGS,
       inject: [ConfigService],
@@ -27,6 +29,6 @@ import { HesabpayService } from './hesabpay.service.js';
         settings.mode === 'live' ? new LiveHesabPayGateway(settings) : new MockHesabPayGateway(settings),
     },
   ],
-  exports: [HesabpayService],
+  exports: [HesabpayService, PricingService],
 })
 export class HesabpayModule {}

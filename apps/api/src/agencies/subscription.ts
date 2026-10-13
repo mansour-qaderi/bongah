@@ -1,5 +1,7 @@
 import { Prisma, SubscriptionStatus, type SubscriptionPackage } from '../generated/prisma/client.js';
 
+export const DAY_MS = 24 * 60 * 60 * 1000;
+
 export interface ActiveSubscription {
   id: string;
   packageType: SubscriptionPackage;
@@ -47,4 +49,49 @@ export function subscriptionCoveredUntil(
     if (next.endDate.getTime() > until.getTime()) until = next.endDate;
   }
   return until;
+}
+
+export interface SubscriptionSummary {
+  /** The plan running now, or null. */
+  running: ActiveSubscription | null;
+  /** When publishing rights end, counting plans bought in advance; null when nothing is running. */
+  until: Date | null;
+  /** Plans that start in the future (bought in advance), earliest first. */
+  queued: { packageType: SubscriptionPackage; startDate: Date; endDate: Date }[];
+}
+
+/**
+ * The agency's subscription picture at `now`: what is running, how far it reaches, and what is
+ * queued behind it. The dashboard and the wallet both read this, so they can never disagree about
+ * how many days are left.
+ */
+export async function summariseSubscription(
+  db: Prisma.TransactionClient,
+  agencyId: string,
+  now: Date,
+): Promise<SubscriptionSummary> {
+  const running = await findActiveSubscription(db, agencyId, now);
+  if (!running) {
+    const queued = await queuedSubscriptions(db, agencyId, now);
+    return { running: null, until: null, queued };
+  }
+  // Plans bought in advance start when the running one ends: they extend the access.
+  const later = await db.subscription.findMany({
+    where: { agencyId, status: SubscriptionStatus.ACTIVE, endDate: { gt: running.endDate } },
+    select: { packageType: true, startDate: true, endDate: true },
+    orderBy: { startDate: 'asc' },
+  });
+  return {
+    running,
+    until: subscriptionCoveredUntil(running.endDate, later),
+    queued: later.filter((plan) => plan.startDate.getTime() > now.getTime()),
+  };
+}
+
+function queuedSubscriptions(db: Prisma.TransactionClient, agencyId: string, now: Date) {
+  return db.subscription.findMany({
+    where: { agencyId, status: SubscriptionStatus.ACTIVE, startDate: { gt: now } },
+    select: { packageType: true, startDate: true, endDate: true },
+    orderBy: { startDate: 'asc' },
+  });
 }

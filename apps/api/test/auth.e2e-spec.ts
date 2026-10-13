@@ -165,7 +165,7 @@ describe.skipIf(!hasDb)('Auth (e2e)', () => {
       expect(res.body).toMatchObject({
         token_type: 'Bearer',
         is_new_user: true,
-        user: { phone_number: phone.e164, role: 'USER', full_name: null, avatar: null },
+        user: { phone_number: phone.e164, role: 'USER', full_name: null, avatar: null, enable_daily_motivation: true, has_seen_welcome: false },
       });
 
       const payload = await jwt.verifyAsync(res.body.access_token);
