@@ -17,6 +17,8 @@ import type { AuthenticatedUser } from '../auth/auth.types.js';
 import { CurrentUser } from '../auth/decorators/current-user.decorator.js';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard.js';
 import { ZodValidationPipe } from '../common/pipes/zod-validation.pipe.js';
+import { ContactService } from '../contact/contact.service.js';
+import { unlockContactSchema, type ContactAccessDto, type UnlockContactDto } from '../contact/dto/contact.dto.js';
 import { createPropertySchema, type CreatePropertyDto } from './dto/create-property.dto.js';
 import {
   listPropertiesQuerySchema,
@@ -25,7 +27,6 @@ import {
   type PaginationDto,
 } from './dto/list-properties.dto.js';
 import type {
-  PropertyContactDto,
   PropertyDto,
   PropertyPageDto,
 } from './dto/property-response.dto.js';
@@ -34,7 +35,10 @@ import { PropertyService } from './property.service.js';
 
 @Controller('properties')
 export class PropertyController {
-  constructor(private readonly properties: PropertyService) {}
+  constructor(
+    private readonly properties: PropertyService,
+    private readonly contacts: ContactService,
+  ) {}
 
   /** Public search with filters and pagination. */
   @Get()
@@ -72,12 +76,35 @@ export class PropertyController {
     return this.properties.recordView(id);
   }
 
-  /** The owner's phone number. Needs a signed-in user and is rate limited against bulk scraping. */
+  /**
+   * Whether I can already see the owner's phone number (and what is left of my daily allowance).
+   * Never reveals a number I have not unlocked. Needs a signed-in user; rate limited.
+   */
   @Get(':id/contact')
   @UseGuards(JwtAuthGuard, ThrottlerGuard)
+  @Throttle({ default: { limit: 60, ttl: 60_000 } })
+  contact(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<ContactAccessDto> {
+    return this.contacts.getAccess(user.id, id);
+  }
+
+  /**
+   * Reveals the owner's phone number: free up to the daily allowance, unlimited for agencies with
+   * a subscription, and a credit beyond that only when the body says `use_credit: true`.
+   * 403 CONTACT_LIMIT_REACHED when none of those applies.
+   */
+  @Post(':id/contact/unlock')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(JwtAuthGuard, ThrottlerGuard)
   @Throttle({ default: { limit: 30, ttl: 60_000 } })
-  contact(@Param('id', ParseUUIDPipe) id: string): Promise<PropertyContactDto> {
-    return this.properties.getContact(id);
+  unlockContact(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body(new ZodValidationPipe(unlockContactSchema)) body: UnlockContactDto,
+  ): Promise<ContactAccessDto> {
+    return this.contacts.unlock(user.id, id, body.use_credit ?? false);
   }
 
   @Post()

@@ -14,6 +14,8 @@ const LIVE_ENV = {
   HESABPAY_PRICE_LADDER: '50',
   HESABPAY_PRICE_FEATURED_AD: '100',
   HESABPAY_PRICE_MAP_LOCATION: '30',
+  HESABPAY_PRICE_CONTACT_CREDITS: '40',
+  HESABPAY_CONTACT_CREDITS_PER_PACK: '10',
   HESABPAY_FEATURED_AD_DAYS: '7',
 };
 
@@ -24,6 +26,8 @@ describe('readHesabPaySettings', () => {
     expect(s.currency).toBe('AFGHANI');
     expect(s.prices.subscription.MONTHLY).toBe('1000');
     expect(s.featuredAdDays).toBe(7);
+    expect(s.prices.contactCredits).toBe('40');
+    expect(s.contactCreditsPerPack).toBe(10);
     expect(s.baseUrl).toBe('https://api.hesab.com/api/v1');
   });
 
@@ -58,6 +62,10 @@ describe('readHesabPaySettings', () => {
     ['HESABPAY_FEATURED_AD_DAYS', '0'],
     ['HESABPAY_FEATURED_AD_DAYS', '2.5'],
     ['HESABPAY_FEATURED_AD_DAYS', '4000'],
+    ['HESABPAY_CONTACT_CREDITS_PER_PACK', '0'],
+    ['HESABPAY_CONTACT_CREDITS_PER_PACK', '2.5'],
+    ['HESABPAY_CONTACT_CREDITS_PER_PACK', '10000'],
+    ['HESABPAY_PRICE_CONTACT_CREDITS', '0'],
     ['HESABPAY_CURRENCY', 'EUR'],
     ['HESABPAY_MODE', 'sandbox'],
   ])('rejects %s=%s', (name, value) => {

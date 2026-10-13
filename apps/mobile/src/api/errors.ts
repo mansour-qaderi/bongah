@@ -1,4 +1,5 @@
 import type { TFunction } from 'i18next';
+import type { ContactLimitReachedBody } from '@bongah/shared-types';
 import { formatDate, formatNumber } from '../i18n/format';
 import { ApiError } from './client';
 
@@ -38,6 +39,28 @@ export function errorMessage(
       return t('auth.referralInvalid');
     case 'NO_LADDER_TOKEN':
       return t('referral.noToken');
+    case 'CONTACT_LIMIT_REACHED':
+      return t('contact.limitReached');
+    case 'CONTACT_ALREADY_UNLIMITED':
+      return t('contact.alreadyUnlimited');
+    case 'PERKS_REQUIRED':
+      return t('chat.perksRequired');
+    case 'CANNOT_CHAT_WITH_SELF':
+      return t('chat.ownListing');
+    case 'LISTING_NOT_ACTIVE':
+      return t('chat.listingClosed');
+    case 'CHAT_RATE_LIMITED':
+      return t('chat.slowDown');
+    case 'IMAGE_TOO_LARGE':
+      return t('chat.imageTooLarge');
+    case 'UNSUPPORTED_IMAGE_TYPE':
+    case 'EMPTY_IMAGE':
+    case 'IMAGE_UNREADABLE':
+      return t('chat.imageUnsupported');
+    case 'LOCATION_OUT_OF_BOUNDS':
+      return t('chat.locationOutside');
+    case 'TEMPLATE_LIMIT_REACHED':
+      return t('chat.templateLimit');
   }
 
   switch (error.status) {
@@ -76,3 +99,9 @@ export const isMapLocationRequired = (error: unknown): boolean =>
 /** The quota/subscription failures that have a clear next step (buy a subscription). */
 export const isSubscriptionRequired = (error: unknown): boolean =>
   error instanceof ApiError && error.code === 'SUBSCRIPTION_REQUIRED';
+
+/** Today's free reveals are used up and the request did not (or could not) pay with a credit. */
+export const isContactLimitReached = (
+  error: unknown,
+): error is ApiError & { body: ContactLimitReachedBody } =>
+  error instanceof ApiError && error.code === 'CONTACT_LIMIT_REACHED';

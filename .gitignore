@@ -33,3 +33,6 @@ apps/mobile/android/local.properties
 
 # Prisma generated client (recreated by `pnpm db:generate`)
 apps/api/src/generated/
+
+# local chat picture store (see apps/api/src/chat/images)
+uploads/

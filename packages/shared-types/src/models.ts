@@ -1,7 +1,10 @@
 import type {
   Currency,
   DealType,
+  ContactUnlockMethod,
   MapLocationUnlimitedReason,
+  MessageType,
+  PerkReason,
   PropertyStatus,
   PropertyType,
   RewardReason,
@@ -190,6 +193,10 @@ export interface Pricing {
   map_location: number;
   /** How long a paid featured badge lasts. */
   featured_ad_days: number;
+  /** One pack of contact reveal credits. */
+  contact_credits: number;
+  /** How many credits one pack contains. */
+  contact_credits_per_pack: number;
 }
 
 /** Whether the signed-in user may put exact coordinates on a listing, and what they have prepaid. */
@@ -248,6 +255,8 @@ export interface ReferralSummary {
     rewarded_invites: number;
     /** Invites beyond this earn the inviter nothing (the friend still gets their reward). */
     max_rewarded_invites: number;
+    /** Contact reveal credits each side earns per invite; 0 when invites earn only ladder tokens. */
+    contact_credits_per_invite: number;
     ladder_tokens_available: number;
     ladder_tokens_earned: number;
   };
@@ -262,3 +271,152 @@ export interface RedeemLadderTokenResponse {
   laddered_at: string;
   ladder_tokens_available: number;
 }
+
+// ───────────── Contact reveals ─────────────
+
+/**
+ * What the signed-in user may do about seeing phone numbers today.
+ * The free allowance is per Kabul calendar day; credits and perks are described in the API docs.
+ */
+export interface ContactQuota {
+  /** Free reveals per day for a regular account. */
+  free_limit: number;
+  free_used: number;
+  free_remaining: number;
+  /** Prepaid or earned credits left (they never expire). Includes `referral_credits`. */
+  credits: number;
+  /** The part of `credits` that came from inviting friends or joining through a friend. */
+  referral_credits: number;
+  /** True for accounts with the agency perks: reveals are never limited or charged. */
+  unlimited: boolean;
+  unlimited_reason: PerkReason | null;
+  /** When the free allowance refills (the next Kabul midnight). */
+  resets_at: string;
+}
+
+/** GET /properties/:id/contact and the result of unlocking. `contact` is null while locked. */
+export interface ContactAccess {
+  unlocked: boolean;
+  /** True when the signed-in user owns the listing (their own number, never counted or charged). */
+  is_owner: boolean;
+  contact: PropertyContact | null;
+  quota: ContactQuota;
+  /** How this reveal was paid for; set on the call that unlocked it, null when it was already unlocked or free of charge. */
+  paid_with: ContactUnlockMethod | null;
+}
+
+/** The body of the 403 returned when a reveal is not allowed any more today. */
+export interface ContactLimitReachedBody extends ApiErrorBody {
+  code: 'CONTACT_LIMIT_REACHED';
+  quota: ContactQuota;
+}
+
+// ───────────── Chat ─────────────
+
+/** What the chat screens need to know about the signed-in user's abilities. */
+export interface ChatCapabilities {
+  /** Agency perks: map pins, high-quality photos, saved replies and the automatic reply. */
+  advanced: boolean;
+  advanced_reason: PerkReason | null;
+  limits: {
+    text_max_length: number;
+    /** Largest picture upload for this account, in bytes. */
+    image_max_bytes: number;
+    template_max_length: number;
+    templates_max: number;
+  };
+}
+
+/** The listing a chat is about, shown at the top of the conversation. */
+export interface ChatPropertySummary {
+  id: string;
+  title: string;
+  price: number;
+  currency: Currency;
+  province: string;
+  district: string;
+  status: PropertyStatus;
+  /** First picture of the listing, or null. */
+  cover_image: string | null;
+}
+
+export interface ChatMessage {
+  id: string;
+  conversation_id: string;
+  sender_id: string;
+  type: MessageType;
+  /** The text; for IMAGE and LOCATION an optional caption. */
+  body: string | null;
+  /** IMAGE: API path to download the picture (needs the access token), e.g. /chat/images/<id>. */
+  image_url: string | null;
+  /** LOCATION: the pin. */
+  lat: number | null;
+  lng: number | null;
+  /** Sent automatically from the seller's auto-reply, not typed by them. */
+  is_auto_reply: boolean;
+  /** The sender's own id for this message, used to match the optimistic copy and to retry safely. */
+  client_id: string;
+  /** When the other person saw it; null while unread. */
+  read_at: string | null;
+  created_at: string;
+}
+
+export interface ChatCounterpart {
+  id: string;
+  /** The person's name. For an agency listing this is the agency's name. */
+  name: string | null;
+}
+
+export interface ChatConversation {
+  id: string;
+  property: ChatPropertySummary;
+  counterpart: ChatCounterpart;
+  /** Whether the signed-in user is the one asking about the listing or the one who owns it. */
+  my_role: 'BUYER' | 'SELLER';
+  last_message: ChatMessage | null;
+  /** Messages from the other person that the signed-in user has not read. */
+  unread_count: number;
+  last_message_at: string | null;
+  created_at: string;
+}
+
+export interface ChatMessagesPage {
+  /** Newest first. */
+  data: ChatMessage[];
+  /** Pass as `before` to get the next older page; null when there is nothing older. */
+  next_cursor: string | null;
+}
+
+export interface ChatTemplate {
+  id: string;
+  body: string;
+  /** Sent automatically to a buyer's first message. At most one template has this on. */
+  is_auto_reply: boolean;
+  created_at: string;
+}
+
+export interface ChatImageUploaded {
+  id: string;
+  url: string;
+  content_type: string;
+  byte_size: number;
+}
+
+/** Socket events the server sends (names are in CHAT_EVENTS in @bongah/shared-types). */
+export interface ChatTypingEvent {
+  conversation_id: string;
+  user_id: string;
+  is_typing: boolean;
+}
+
+export interface ChatReadEvent {
+  conversation_id: string;
+  /** Who read: their messages sent TO them in this conversation are now read. */
+  reader_id: string;
+  read_at: string;
+}
+
+/** The acknowledgement of `message:send`. */
+export type ChatSendAck =
+  | { ok: true; message: ChatMessage }
+  | { ok: false; code: string; message: string; status: number; retry_after?: number };

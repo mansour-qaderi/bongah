@@ -42,3 +42,13 @@ export const REQUEST_TIMEOUT_MS = 20_000;
 export const PAYMENT_POLL_INTERVAL_MS = 3_000;
 /** Stop polling after this long; the user can still re-check by hand. */
 export const PAYMENT_POLL_TIMEOUT_MS = 10 * 60_000;
+
+/** Uploading a picture can take a while on a slow mobile network. */
+export const UPLOAD_TIMEOUT_MS = 60_000;
+
+/** How long "typing…" stays on screen without a newer signal from the other person. */
+export const TYPING_VISIBLE_MS = 5_000;
+/** How long after the last keystroke we tell the other person we stopped typing. */
+export const TYPING_IDLE_MS = 2_500;
+/** A socket send gets this long to be acknowledged before the same message is sent over HTTP instead. */
+export const SOCKET_ACK_TIMEOUT_MS = 8_000;

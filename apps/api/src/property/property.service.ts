@@ -13,7 +13,6 @@ import type { CreatePropertyDto } from './dto/create-property.dto.js';
 import type { ListPropertiesDto, PaginationDto } from './dto/list-properties.dto.js';
 import type { PropertyDto, PropertyPageDto } from './dto/property-response.dto.js';
 import type { UpdatePropertyDto } from './dto/update-property.dto.js';
-import type { PropertyContactDto } from './dto/property-response.dto.js';
 import { FREE_LISTINGS_PER_MONTH } from './property.constants.js';
 import { toPropertyDto } from './property.mapper.js';
 import { kabulMonthStart, nextKabulMonthStart } from './property.time.js';
@@ -77,26 +76,6 @@ export class PropertyService {
     await this.prisma.$executeRaw`
       UPDATE properties SET view_count = view_count + 1
       WHERE id = ${id}::uuid AND status = 'ACTIVE'`;
-  }
-
-  /**
-   * Who to call about a listing. Deliberately a separate, signed-in-only call: the public listing
-   * and search responses never carry phone numbers, so they can't be scraped in bulk.
-   */
-  async getContact(id: string): Promise<PropertyContactDto> {
-    const row = await this.prisma.property.findFirst({
-      where: { id, status: { not: PropertyStatus.ARCHIVED } },
-      select: {
-        user: { select: { fullName: true, phoneNumber: true } },
-        agency: { select: { agencyName: true } },
-      },
-    });
-    if (!row) throw new NotFoundException('Property not found.');
-    return {
-      full_name: row.user.fullName,
-      phone_number: row.user.phoneNumber,
-      agency_name: row.agency?.agencyName ?? null,
-    };
   }
 
   /**

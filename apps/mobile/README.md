@@ -65,25 +65,29 @@ src/
   constants/provinces.ts     34 provinces: Dari/Pashto names, centres, quick-pick cities
   map/                       MapLibre/OSM: style.ts (tile style), geo.ts (camera, [lng,lat] helpers), BaseMap, PinMarker
   navigation/
-    RootNavigator.tsx        stack: Tabs, PropertyDetails, AddProperty, SetLocation, Checkout, Auth (modal)
-    MainTabs.tsx             Home · Dashboard (agency accounts only) · My listings · Account
+    RootNavigator.tsx        stack: Tabs, PropertyDetails, AddProperty, SetLocation, Checkout, Referral, Chat, Templates, Auth (modal)
+    MainTabs.tsx             Home · Dashboard (agency accounts only) · Messages (unread badge) · My listings · Account
     AuthNavigator.tsx        Phone → Otp → ProfileSetup
     useRequireAuth.ts        "sign in first" gate for contact / add / pay
     types.ts                 route params
+  chat/                      ChatProvider (one Socket.io connection → React Query cache), messageCache, outbox (unsent messages), uuid, mapLinks, preview
+  contact/                   useContactActions (Call / WhatsApp / Chat logic), contactLinks (tel:, wa.me)
   payments/usePaymentFlow    one HesabPay payment: create → open the payment page → poll until the webhook confirms
   components/                Button, TextField, Chip, PropertyCard, FilterSheet, ProvincePicker,
                              PropertyMap, LocationPicker, PropertyLocationMap, PinSection, OptionCard,
-                             PromotionSheet (ladder / featured bottom sheet), PaymentProgress, …
+                             PromotionSheet (ladder / featured bottom sheet), PaymentProgress,
+                             ContactActionBar, ContactLockSheet, MessageBubble, …
   screens/
     auth/                    PhoneScreen, OtpScreen, ProfileSetupScreen
     home/HomeScreen          province quick-picks + filters, list ⇄ map, infinite scroll
     property/                PropertyDetailsScreen, AddPropertyScreen, SetLocationScreen (add/move a pin)
+    chat/                    ChatListScreen, ChatScreen (text, photo, pin, quick replies), TemplatesScreen (saved replies)
     agency/AgencyDashboardScreen  agency CRM home: listing counts, views, subscription days left, top listings (promote from here)
     payments/CheckoutScreen  subscription / map pin (and the older ladder / featured tab) → HesabPay → status polling
     my/MyListingsScreen      own listings: promote (sheet), archive, add or move the map pin
     account/AccountScreen    language switch, profile, "invite friends", sign out
     referral/ReferralScreen  my invite code + share sheet, friends who joined, free ladders earned
-__tests__/                   unit + render tests      test-utils/  small test helpers
+__tests__/                   unit + render tests      test-utils/  helpers, MockSocket (stands in for socket.io-client), navMock
 ```
 
 ## Agency dashboard and promotions
@@ -112,6 +116,31 @@ __tests__/                   unit + render tests      test-utils/  small test he
 - **Using a free ladder**: `PromotionSheet` shows "use free ladder" (Ladder selected, at least one
   token) and calls `POST /rewards/ladder-tokens/redeem`. Paying still works the same way.
 
+## Contact and chat
+
+- **Action bar** (pinned under every listing that is not yours): Call, WhatsApp, Chat in App.
+  Call and WhatsApp need the owner's number, which the API meters (3 free reveals a day per
+  account; agencies with an active subscription are unlimited). `useContactActions` always asks
+  the server and never counts locally: already revealed today → use it; otherwise
+  `POST /properties/:id/contact/unlock`; a `403 CONTACT_LIMIT_REACHED` opens `ContactLockSheet`.
+  Call opens `tel:`; WhatsApp opens `https://wa.me/<digits>?text=…` with the listing title and a
+  short `#reference` already typed (the person still presses send).
+- **Lock sheet**: spend a credit the person already holds ("use 1 credit" is the only thing that
+  ever sends `use_credit: true`), buy a pack through HesabPay (price and pack size come from
+  `GET /hesabpay/pricing`), or go to the invite screen when invites earn credits. After a
+  purchase the cached allowance is refreshed. Whatever was tapped (call or WhatsApp) is done once
+  the credit is spent.
+- **Chat**: `ChatProvider` keeps one socket open while signed in and writes what it receives
+  (new messages, read receipts, typing) into the React Query cache; screens only read the cache.
+  Sending uses the socket and falls back to HTTP; the message's `client_id` makes a retry safe.
+  A message that failed stays in the list with its reason, a retry button and a delete button.
+  Photos are shrunk on the phone before upload (a larger, sharper size for subscribed agencies);
+  location pins and saved replies are for subscribed agencies only (the API enforces it too).
+  Saved replies appear as chips above the box; tapping one puts the text in the box to edit.
+- **Native dependency**: `react-native-image-picker` is new. After pulling run `pnpm install`,
+  `cd ios && pod install`, and rebuild the app. Android may need the photo permission prompt
+  handled per OS version; not tried on a device.
+
 ## Map pins and who pays for them
 
 Every listing has province, district and neighborhood **text**. The exact map pin (`lat`/`lng`) is
@@ -123,8 +152,8 @@ a paid extra:
 - The app asks the API (`GET /map-location/status`) and shows the map picker only to people who
   may use it; otherwise it shows the price and a buy button. The API enforces the same rule, so a
   stale screen gets `MAP_LOCATION_REQUIRED` and is sent to the purchase.
-- Referral credits are not built: there is no referral system yet. The API has a token source
-  for them, ready for when it exists.
+- Referrals pay in free ladders (and contact credits, when the server turns them on), not in map
+  pins. The API has a token source for pins, ready if that is ever wanted.
 
 ## How right-to-left works
 
@@ -146,6 +175,7 @@ URLs in a `TextField` with `ltr`.
   `PUT /agencies/me/location`; no screen uses it yet) and the agency branding pages.
 - Editing a listing's details: the API has `PATCH /properties/:id`, but the app only has the
   create form. The dashboard's "manage listings" opens My listings (promote, map pin, archive).
-- Referral credits for map pins (no referral system exists).
+- Push notifications for chat (a message only arrives live while the app is open and connected; otherwise it appears when the app next opens), block / report in chat, sending voice or video.
+- Referral credits for map pins.
 - Solar Hijri dates — dates show in the Gregorian calendar with Persian digits.
 - Districts are free text (the API stores free-text districts).

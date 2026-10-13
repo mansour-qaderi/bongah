@@ -1,11 +1,13 @@
 import { Logger } from '@nestjs/common';
 import {
+  ContactCreditSource,
   MapLocationTokenSource,
   Prisma,
   SubscriptionStatus,
   TransactionPurpose,
   type Transaction,
 } from '../generated/prisma/client.js';
+import { grantContactCredits } from '../contact/contact.credits.js';
 import { grantMapLocationToken } from '../map-location/map-location.tokens.js';
 import type { PromotionService } from '../promotion/promotion.service.js';
 import { PACKAGE_MONTHS } from './hesabpay.constants.js';
@@ -40,7 +42,24 @@ export async function fulfil(
         source: MapLocationTokenSource.PURCHASE,
         transactionId: payment.id,
       });
+    case TransactionPurpose.CONTACT_CREDITS:
+      return grantPurchasedContactCredits(db, payment);
   }
+}
+
+async function grantPurchasedContactCredits(db: Prisma.TransactionClient, payment: Transaction): Promise<void> {
+  // The pack size was recorded when the payment started, so a later config change cannot give the
+  // buyer something other than what they were quoted.
+  if (!payment.quantity) {
+    throw new Error(`Contact-credits payment ${payment.id} has no quantity recorded.`);
+  }
+  // transaction_id is UNIQUE on credits: this payment can only ever mint one batch.
+  await grantContactCredits(db, {
+    userId: payment.userId,
+    source: ContactCreditSource.PURCHASE,
+    amount: payment.quantity,
+    transactionId: payment.id,
+  });
 }
 
 async function activateSubscription(

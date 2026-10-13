@@ -15,6 +15,7 @@ import {
   TransactionStatus,
   type Transaction,
 } from '../generated/prisma/client.js';
+import { accountPerkReason } from '../perks/perks.access.js';
 import { unlimitedMapLocationReason } from '../map-location/map-location.access.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { PromotionService } from '../promotion/promotion.service.js';
@@ -32,6 +33,7 @@ interface PaymentTarget {
   agencyId?: string;
   packageType?: Transaction['packageType'];
   propertyId?: string;
+  quantity?: number;
 }
 
 @Injectable()
@@ -71,6 +73,7 @@ export class HesabpayService {
         agencyId: target.agencyId,
         packageType: target.packageType,
         propertyId: target.propertyId,
+        quantity: target.quantity,
       },
     });
 
@@ -87,7 +90,7 @@ export class HesabpayService {
 
   /** What each purchase costs right now. Public: the prices are not secret and the UI shows them before paying. */
   getPricing(): PricingDto {
-    const { prices, currency, featuredAdDays } = this.settings;
+    const { prices, currency, featuredAdDays, contactCreditsPerPack } = this.settings;
     return {
       currency,
       subscription: {
@@ -99,6 +102,8 @@ export class HesabpayService {
       featured_ad: Number(prices.featuredAd),
       map_location: Number(prices.mapLocation),
       featured_ad_days: featuredAdDays,
+      contact_credits: Number(prices.contactCredits),
+      contact_credits_per_pack: contactCreditsPerPack,
     };
   }
 
@@ -214,6 +219,26 @@ export class HesabpayService {
           purpose: TransactionPurpose.MAP_LOCATION,
           amount: this.settings.prices.mapLocation,
           description: 'Bongah map location add-on',
+        };
+      }
+      case 'CONTACT_CREDITS': {
+        const user = await this.prisma.user.findUnique({
+          where: { id: userId },
+          select: { role: true },
+        });
+        if (!user) throw new UnauthorizedException();
+        // Agencies with a subscription and admins already reveal for free; credits would buy nothing.
+        if (await accountPerkReason(this.prisma, userId, user.role, new Date())) {
+          throw new ConflictException({
+            message: 'Your account already includes unlimited contact reveals.',
+            code: 'CONTACT_ALREADY_UNLIMITED',
+          });
+        }
+        return {
+          purpose: TransactionPurpose.CONTACT_CREDITS,
+          amount: this.settings.prices.contactCredits,
+          description: `Bongah contact reveal credits (${this.settings.contactCreditsPerPack})`,
+          quantity: this.settings.contactCreditsPerPack,
         };
       }
       case 'LADDER':

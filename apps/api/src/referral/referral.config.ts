@@ -7,6 +7,12 @@ export interface ReferralSettings {
    * with throwaway SIMs. The number is a placeholder business decision (REFERRAL_MAX_REWARDED_INVITES).
    */
   maxRewardedInvites: number;
+  /**
+   * Contact reveal credits each side of a referral earns (REFERRAL_CONTACT_CREDITS): the new user
+   * always, the inviter within the cap above. 0 turns it off. The number is an undecided business
+   * choice, so it is off until someone sets it.
+   */
+  contactCredits: number;
   /** Invite link with a `{code}` placeholder, or null when the product has no link to share yet. */
   linkTemplate: string | null;
 }
@@ -22,6 +28,15 @@ export function readReferralSettings(config: ConfigService): ReferralSettings {
       throw new Error('REFERRAL_MAX_REWARDED_INVITES must be a whole number (0 turns inviter rewards off).');
     }
     maxRewardedInvites = Number(rawMax);
+  }
+
+  const rawCredits = config.get<string>('REFERRAL_CONTACT_CREDITS')?.trim();
+  let contactCredits = 0;
+  if (rawCredits) {
+    if (!/^\d{1,3}$/.test(rawCredits)) {
+      throw new Error('REFERRAL_CONTACT_CREDITS must be a whole number (0 turns contact credit rewards off).');
+    }
+    contactCredits = Number(rawCredits);
   }
 
   const rawLink = config.get<string>('REFERRAL_LINK_TEMPLATE')?.trim();
@@ -40,7 +55,7 @@ export function readReferralSettings(config: ConfigService): ReferralSettings {
     linkTemplate = rawLink;
   }
 
-  return { maxRewardedInvites, linkTemplate };
+  return { maxRewardedInvites, contactCredits, linkTemplate };
 }
 
 export function buildShareUrl(template: string | null, code: string): string | null {

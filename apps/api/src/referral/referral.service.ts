@@ -58,6 +58,7 @@ export class ReferralService {
         invited_count: invitedCount,
         rewarded_invites: rewardedInvites,
         max_rewarded_invites: this.settings.maxRewardedInvites,
+        contact_credits_per_invite: this.settings.contactCredits,
         ladder_tokens_available: available,
         ladder_tokens_earned: earned,
       },

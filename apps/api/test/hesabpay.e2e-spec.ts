@@ -139,6 +139,8 @@ describe.skipIf(!hasDb)('HesabPay (e2e)', () => {
         featured_ad: 100.5,
         map_location: 30,
         featured_ad_days: 7,
+        contact_credits: 40,
+        contact_credits_per_pack: 10,
       });
     });
   });
@@ -480,6 +482,80 @@ describe.skipIf(!hasDb)('HesabPay (e2e)', () => {
       const res = await ctx.post('/properties', propertyBody({ ...PIN }), user.token).expect(201);
       expect(res.body).toMatchObject(PIN);
       expect((await ctx.get('/map-location/status', user.token).expect(200)).body.tokens_available).toBe(0);
+    });
+  });
+  describe('CONTACT_CREDITS pack', () => {
+    const creditsOf = (userId: string) => ctx.prisma.userCredit.findMany({ where: { userId } });
+    const buy = (user: TestUser) => start(user, { purpose: 'CONTACT_CREDITS' });
+
+    it('records a PENDING purchase at the configured price with the pack size, and delivers nothing until it is paid', async () => {
+      const user = await ctx.user();
+      const { id, body } = await buy(user);
+      expect(body).toMatchObject({ purpose: 'CONTACT_CREDITS', status: 'PENDING', amount: 40, currency: 'AFGHANI' });
+      expect((await ctx.prisma.transaction.findUniqueOrThrow({ where: { id } })).quantity).toBe(10);
+      expect(await creditsOf(user.id)).toHaveLength(0);
+    });
+
+    it('does not take an amount, a quantity or a property id', async () => {
+      const user = await ctx.user();
+      await pay(user, { purpose: 'CONTACT_CREDITS', amount: 1 }).expect(400);
+      await pay(user, { purpose: 'CONTACT_CREDITS', quantity: 999 }).expect(400);
+      await pay(user, { purpose: 'CONTACT_CREDITS', property_id: '00000000-0000-4000-8000-000000000000' }).expect(400);
+    });
+
+    it('grants one batch of the quoted size when the payment succeeds, linked to the payment', async () => {
+      const user = await ctx.user();
+      const { id, sessionId } = await buy(user);
+      await confirm(sessionId).expect(200);
+      expect(await status(id)).toBe('SUCCESS');
+      const batches = await creditsOf(user.id);
+      expect(batches).toHaveLength(1);
+      expect(batches[0]).toMatchObject({ source: 'PURCHASE', transactionId: id, amount: 10, remaining: 10, inviteeId: null });
+    });
+
+    it('grants the pack size that was quoted, even if the configured size changes before the payment lands', async () => {
+      const user = await ctx.user();
+      const { id, sessionId } = await buy(user);
+      // The pack was 10 when the user was quoted; pretend it changed since.
+      await ctx.prisma.$executeRaw`UPDATE transactions SET quantity = 7 WHERE id = ${id}::uuid`;
+      await confirm(sessionId).expect(200);
+      expect((await creditsOf(user.id))[0].amount).toBe(7);
+    });
+
+    it('grants one batch however many times the webhook arrives, even simultaneously', async () => {
+      const user = await ctx.user();
+      const { sessionId } = await buy(user);
+      const results = await Promise.all(Array.from({ length: 5 }, () => confirm(sessionId)));
+      expect(results.map((r) => r.status)).toEqual([200, 200, 200, 200, 200]);
+      await confirm(sessionId).expect(200);
+      expect(await creditsOf(user.id)).toHaveLength(1);
+    });
+
+    it('grants nothing for a failed payment or a mismatched amount', async () => {
+      const user = await ctx.user();
+      const failed = await buy(user);
+      await webhook({ transaction_id: failed.sessionId, status: 'FAILED' }).expect(200);
+      const wrong = await buy(user);
+      await confirm(wrong.sessionId, { amount: '1' }).expect(200);
+      expect(await status(failed.id)).toBe('FAILED');
+      expect(await status(wrong.id)).toBe('PENDING');
+      expect(await creditsOf(user.id)).toHaveLength(0);
+    });
+
+    it('refuses to sell credits to accounts that already reveal for free', async () => {
+      const subscribed = await ctx.agency(true);
+      const admin = await ctx.user('ADMIN');
+      for (const buyer of [subscribed, admin]) {
+        const res = await pay(buyer, { purpose: 'CONTACT_CREDITS' }).expect(409);
+        expect(res.body.code).toBe('CONTACT_ALREADY_UNLIMITED');
+      }
+      expect(await ctx.prisma.transaction.count({ where: { userId: { in: [subscribed.id, admin.id] } } })).toBe(0);
+    });
+
+    it('sells them to an agency whose subscription has lapsed, and to a regular user', async () => {
+      for (const buyer of [await ctx.lapsedAgency(), await ctx.user()]) {
+        await pay(buyer, { purpose: 'CONTACT_CREDITS' }).expect(201);
+      }
     });
   });
 });

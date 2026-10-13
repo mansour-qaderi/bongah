@@ -376,23 +376,29 @@ describe.skipIf(!hasDb)('Properties (e2e)', () => {
   });
 
   describe('GET /properties/:id/contact', () => {
-    it('gives a signed-in user the owner name and phone, and the agency name for agency listings', async () => {
+    it('keeps the number locked until the user unlocks it, then gives the owner name, phone and agency name', async () => {
       const [viewer, owner] = [await ctx.user(), await ctx.user()];
       await ctx.prisma.user.update({ where: { id: owner.id }, data: { fullName: 'Ahmad Zia' } });
       const listing = await seed(owner);
-      const res = await ctx.get(`/properties/${listing.id}/contact`, viewer.token).expect(200);
-      expect(res.body).toEqual({ full_name: 'Ahmad Zia', phone_number: owner.phone, agency_name: null });
+
+      const locked = await ctx.get(`/properties/${listing.id}/contact`, viewer.token).expect(200);
+      expect(locked.body).toMatchObject({ unlocked: false, contact: null });
+      expect(JSON.stringify(locked.body)).not.toContain(owner.phone);
+
+      const res = await ctx.post(`/properties/${listing.id}/contact/unlock`, {}, viewer.token).expect(200);
+      expect(res.body.contact).toEqual({ full_name: 'Ahmad Zia', phone_number: owner.phone, agency_name: null });
 
       const agency = await ctx.agency(true);
       const agencyListing = (await ctx.post('/properties', propertyBody(), agency.token).expect(201)).body;
-      const res2 = await ctx.get(`/properties/${agencyListing.id}/contact`, viewer.token).expect(200);
-      expect(res2.body).toMatchObject({ phone_number: agency.phone, agency_name: 'Test Agency' });
+      const res2 = await ctx.post(`/properties/${agencyListing.id}/contact/unlock`, {}, viewer.token).expect(200);
+      expect(res2.body.contact).toMatchObject({ phone_number: agency.phone, agency_name: 'Test Agency' });
     });
 
     it('is not available anonymously, and never leaks into public listing responses', async () => {
       const owner = await ctx.user();
       const listing = await seed(owner);
       await ctx.get(`/properties/${listing.id}/contact`).expect(401);
+      await ctx.post(`/properties/${listing.id}/contact/unlock`, {}).expect(401);
       const detail = await ctx.get(`/properties/${listing.id}`).expect(200);
       expect(JSON.stringify(detail.body)).not.toContain(owner.phone);
       const list = await ctx.get(`/properties?province=${listing.province}&limit=5`).expect(200);
@@ -403,6 +409,7 @@ describe.skipIf(!hasDb)('Properties (e2e)', () => {
       const [viewer, owner] = [await ctx.user(), await ctx.user()];
       const archived = await seed(owner, { status: 'ARCHIVED' });
       await ctx.get(`/properties/${archived.id}/contact`, viewer.token).expect(404);
+      await ctx.post(`/properties/${archived.id}/contact/unlock`, {}, viewer.token).expect(404);
       await ctx.get('/properties/00000000-0000-4000-8000-000000000000/contact', viewer.token).expect(404);
       await ctx.get('/properties/nope/contact', viewer.token).expect(400);
     });

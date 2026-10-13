@@ -5,3 +5,5 @@ export * from './agency.schema';
 export * from './property.schema';
 export * from './payment.schema';
 export * from './referral.schema';
+export * from './chat.schema';
+export * from './contact.schema';

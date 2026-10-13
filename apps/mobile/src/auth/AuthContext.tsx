@@ -43,6 +43,9 @@ export function AuthProvider({ children }: PropsWithChildren) {
     setState({ status: 'signedOut' });
     queryClient.removeQueries({ queryKey: queryKeys.mine });
     queryClient.removeQueries({ queryKey: queryKeys.agencyDashboard });
+    // Conversations, saved replies and revealed numbers belong to the person who just left.
+    queryClient.removeQueries({ queryKey: queryKeys.chat });
+    queryClient.removeQueries({ queryKey: queryKeys.contact });
     await clearSession();
   }, []);
 

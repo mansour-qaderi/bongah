@@ -36,6 +36,7 @@ export class AuthService {
   private readonly accessTokenTtlSeconds: number;
   private readonly exposeDevOtp: boolean;
   private readonly maxRewardedInvites: number;
+  private readonly referralContactCredits: number;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -46,7 +47,9 @@ export class AuthService {
     const settings = readJwtSettings(config);
     this.secret = settings.secret;
     this.accessTokenTtlSeconds = settings.expiresInSeconds;
-    this.maxRewardedInvites = readReferralSettings(config).maxRewardedInvites;
+    const referral = readReferralSettings(config);
+    this.maxRewardedInvites = referral.maxRewardedInvites;
+    this.referralContactCredits = referral.contactCredits;
     // Only the mock gateway outside production may hand the code back in the HTTP response.
     this.exposeDevOtp =
       config.get<string>('SMS_PROVIDER', 'mock') === 'mock' &&
@@ -195,6 +198,7 @@ export class AuthService {
             referrerId,
             inviteeId: user.id,
             maxRewardedInvites: this.maxRewardedInvites,
+            contactCredits: this.referralContactCredits,
           });
         }
         return { user, isNewUser: true, referralApplied: referrerId !== null };

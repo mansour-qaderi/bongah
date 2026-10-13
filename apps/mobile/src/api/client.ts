@@ -29,6 +29,11 @@ export function setAuthToken(token: string | null): void {
   authToken = token;
 }
 
+/** The token of the signed-in session, for things that cannot go through request() (the chat socket, picture downloads). */
+export function getAuthToken(): string | null {
+  return authToken;
+}
+
 /** Set by AuthProvider: called when a signed-in request is answered with 401 (token expired/revoked). */
 export function setUnauthorizedHandler(handler: (() => void) | null): void {
   onUnauthorized = handler;
@@ -39,6 +44,10 @@ type QueryValue = string | number | boolean | null | undefined;
 interface RequestOptions {
   query?: Record<string, QueryValue>;
   body?: unknown;
+  /** The file itself as the request body (picture uploads), sent with this Content-Type instead of JSON. */
+  file?: { data: Blob; contentType: string };
+  /** Overrides REQUEST_TIMEOUT_MS (uploads on slow networks need longer). */
+  timeoutMs?: number;
   /** Send the bearer token. A 401 then means "your session is over", not "wrong input". */
   auth?: boolean;
 }
@@ -70,20 +79,27 @@ export async function request<T>(
   options: RequestOptions = {},
 ): Promise<T> {
   const headers: Record<string, string> = { Accept: 'application/json' };
-  if (options.body !== undefined) headers['Content-Type'] = 'application/json';
+  if (options.file) headers['Content-Type'] = options.file.contentType;
+  else if (options.body !== undefined) headers['Content-Type'] = 'application/json';
   const sentToken = options.auth ? authToken : null;
   if (sentToken) headers.Authorization = `Bearer ${sentToken}`;
 
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  const timer = setTimeout(
+    () => controller.abort(),
+    options.timeoutMs ?? REQUEST_TIMEOUT_MS,
+  );
 
   let response: Response;
   try {
     response = await fetch(buildUrl(path, options.query), {
       method,
       headers,
-      body:
-        options.body === undefined ? undefined : JSON.stringify(options.body),
+      body: options.file
+        ? options.file.data
+        : options.body === undefined
+        ? undefined
+        : JSON.stringify(options.body),
       signal: controller.signal,
     });
   } catch (error) {

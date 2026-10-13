@@ -5,6 +5,7 @@ import { QueryClientProvider, focusManager } from '@tanstack/react-query';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { queryClient } from './src/api/hooks';
 import { AuthProvider } from './src/auth/AuthContext';
+import { ChatProvider } from './src/chat/ChatProvider';
 import { LoadingView } from './src/components/States';
 import { initI18n } from './src/i18n';
 import { isRtlActive } from './src/i18n/rtl';
@@ -55,9 +56,11 @@ export default function App() {
       {ready ? (
         <QueryClientProvider client={queryClient}>
           <AuthProvider>
-            <NavigationContainer theme={navigationTheme}>
-              <RootNavigator />
-            </NavigationContainer>
+            <ChatProvider>
+              <NavigationContainer theme={navigationTheme}>
+                <RootNavigator />
+              </NavigationContainer>
+            </ChatProvider>
           </AuthProvider>
         </QueryClientProvider>
       ) : (

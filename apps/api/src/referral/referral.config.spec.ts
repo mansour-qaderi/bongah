@@ -5,15 +5,24 @@ const read = (env: Record<string, string>) => readReferralSettings(new ConfigSer
 
 describe('readReferralSettings', () => {
   it('defaults to a cap of 20 and no invite link', () => {
-    expect(read({})).toEqual({ maxRewardedInvites: DEFAULT_MAX_REWARDED_INVITES, linkTemplate: null });
+    expect(read({})).toEqual({ maxRewardedInvites: DEFAULT_MAX_REWARDED_INVITES, contactCredits: 0, linkTemplate: null });
     expect(DEFAULT_MAX_REWARDED_INVITES).toBe(20);
   });
 
   it('treats blank values as unset', () => {
     expect(read({ REFERRAL_MAX_REWARDED_INVITES: '  ', REFERRAL_LINK_TEMPLATE: '' })).toEqual({
       maxRewardedInvites: 20,
+      contactCredits: 0,
       linkTemplate: null,
     });
+  });
+
+  it('reads the contact credits each side earns, 0 meaning off', () => {
+    expect(read({ REFERRAL_CONTACT_CREDITS: '5' }).contactCredits).toBe(5);
+    expect(read({ REFERRAL_CONTACT_CREDITS: '0' }).contactCredits).toBe(0);
+    for (const value of ['-1', '2.5', 'many', '1000']) {
+      expect(() => read({ REFERRAL_CONTACT_CREDITS: value })).toThrow(/REFERRAL_CONTACT_CREDITS/);
+    }
   });
 
   it('reads the cap, including 0 (inviter rewards off)', () => {

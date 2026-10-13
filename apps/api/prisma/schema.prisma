@@ -82,6 +82,7 @@ enum TransactionPurpose {
   LADDER
   FEATURED_AD
   MAP_LOCATION
+  CONTACT_CREDITS
 
   @@map("transaction_purpose")
 }
@@ -123,6 +124,35 @@ enum RewardReason {
   @@map("reward_reason")
 }
 
+/// What a chat message carries. TEXT needs `body`, IMAGE needs `image_id`, LOCATION needs lat + lng
+/// (CHECK constraint in the migration).
+enum MessageType {
+  TEXT
+  IMAGE
+  LOCATION
+
+  @@map("message_type")
+}
+
+/// Why a contact reveal was allowed: one of the day's free reveals, one credit, or an account perk
+/// (active agency subscription / admin).
+enum ContactUnlockMethod {
+  FREE_DAILY
+  CREDIT
+  PERK
+
+  @@map("contact_unlock_method")
+}
+
+/// Where a batch of contact credits came from.
+enum ContactCreditSource {
+  PURCHASE
+  REFERRAL
+  ADMIN_GRANT
+
+  @@map("contact_credit_source")
+}
+
 // ───────────────────────────── Models ─────────────────────────────
 
 model User {
@@ -154,6 +184,20 @@ model User {
   /// Rewards granted to others because this user signed up with their code.
   rewardsEarnedFrom Reward[]           @relation("RewardInvitee")
 
+  // Chat and contact reveals.
+  conversationsAsBuyer  Conversation[]     @relation("ConversationBuyer")
+  conversationsAsSeller Conversation[]     @relation("ConversationSeller")
+  messagesSent          Message[]
+  chatImages            ChatImage[]
+  chatTemplates         ChatTemplate[]
+  /// Numbers this user revealed.
+  contactUnlocks        ContactUnlockLog[] @relation("UnlockViewer")
+  /// Times this user's number was revealed by others.
+  contactUnlocked       ContactUnlockLog[] @relation("UnlockOwner")
+  contactCredits        UserCredit[]       @relation("CreditOwner")
+  /// Credits granted to others because this user signed up with their code.
+  contactCreditsEarnedFrom UserCredit[]    @relation("CreditInvitee")
+
   @@index([referredById])
   @@map("users")
 }
@@ -178,6 +222,7 @@ model Agency {
   properties    Property[]
   subscriptions Subscription[]
   transactions  Transaction[]
+  conversations Conversation[]
 
   @@map("agencies")
 }
@@ -228,6 +273,8 @@ model Property {
   transactions     Transaction[]
   mapLocationToken MapLocationToken?
   rewards          Reward[]
+  conversations    Conversation[]
+  contactUnlocks   ContactUnlockLog[]
 
   // Postgres does not index foreign keys automatically.
   @@index([userId, createdAt]) // "1 free listing per month" quota check
@@ -272,6 +319,9 @@ model Transaction {
   packageType SubscriptionPackage? @map("package_type")
   /// LADDER / FEATURED_AD: the listing being promoted.
   propertyId  String?              @map("property_id") @db.Uuid
+  /// CONTACT_CREDITS: how many credits this payment buys. Recorded at initiation so a later price
+  /// or pack-size change cannot make the buyer receive something other than what they were quoted.
+  quantity    Int?
 
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
@@ -282,6 +332,8 @@ model Transaction {
   subscription Subscription?
   /// MAP_LOCATION: the token this payment bought.
   mapLocationToken MapLocationToken?
+  /// CONTACT_CREDITS: the credits this payment bought.
+  userCredit       UserCredit?
 
   @@index([userId, createdAt])
   @@index([agencyId])
@@ -344,6 +396,151 @@ model Reward {
   @@index([inviteeId])
   @@index([propertyId])
   @@map("rewards")
+}
+
+/// A chat between one buyer and the owner of one listing (a regular user, or the agency's account).
+/// One per (listing, buyer): opening "Chat in App" twice reuses it. `seller_id` is the listing's
+/// owner at the time; `agency_id` is set when the listing belongs to an agency. It has no row in
+/// the conversation list until the first message (`last_message_at`).
+model Conversation {
+  id              String    @id @default(uuid()) @db.Uuid
+  propertyId      String    @map("property_id") @db.Uuid
+  buyerId         String    @map("buyer_id") @db.Uuid
+  sellerId        String    @map("seller_id") @db.Uuid
+  agencyId        String?   @map("agency_id") @db.Uuid
+  /// Set (once, atomically) when the seller's auto-reply was sent. Null = not sent yet.
+  autoReplySentAt DateTime? @map("auto_reply_sent_at") @db.Timestamptz(3)
+  /// Newest message time; null while the conversation is empty. Orders the conversation list.
+  lastMessageAt   DateTime? @map("last_message_at") @db.Timestamptz(3)
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  property Property  @relation(fields: [propertyId], references: [id], onDelete: Restrict)
+  buyer    User      @relation("ConversationBuyer", fields: [buyerId], references: [id], onDelete: Restrict)
+  seller   User      @relation("ConversationSeller", fields: [sellerId], references: [id], onDelete: Restrict)
+  agency   Agency?   @relation(fields: [agencyId], references: [id], onDelete: SetNull)
+  messages Message[]
+
+  @@unique([propertyId, buyerId])
+  @@index([buyerId, lastMessageAt])
+  @@index([sellerId, lastMessageAt])
+  @@map("conversations")
+}
+
+/// One chat message. Which fields are filled depends on `type` (CHECK constraint in the migration).
+/// `client_id` is made by the sender's device: sending the same message twice (a retry after a
+/// dropped connection) stores it once.
+model Message {
+  id             String      @id @default(uuid()) @db.Uuid
+  conversationId String      @map("conversation_id") @db.Uuid
+  senderId       String      @map("sender_id") @db.Uuid
+  type           MessageType
+  body           String?
+  imageId        String?     @unique @map("image_id") @db.Uuid
+  lat            Float?
+  lng            Float?
+  /// Sent automatically from the seller's auto-reply template, not typed by them.
+  isAutoReply    Boolean     @default(false) @map("is_auto_reply")
+  clientId       String      @map("client_id") @db.Uuid
+  /// When the OTHER participant saw it. Null = unread.
+  readAt         DateTime?   @map("read_at") @db.Timestamptz(3)
+  createdAt      DateTime    @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Restrict)
+  sender       User         @relation(fields: [senderId], references: [id], onDelete: Restrict)
+  image        ChatImage?   @relation(fields: [imageId], references: [id], onDelete: Restrict)
+
+  @@unique([conversationId, senderId, clientId])
+  @@index([conversationId, createdAt, id]) // history, newest first
+  @@index([conversationId, readAt]) // unread counts
+  @@map("messages")
+}
+
+/// An uploaded chat picture. The bytes live in the chat image store (disk now; see
+/// src/chat/images/); this row says who uploaded it and, once sent, which message carries it.
+/// Only the uploader (before it is sent) and the two people in the conversation may download it.
+model ChatImage {
+  id          String   @id @default(uuid()) @db.Uuid
+  uploaderId  String   @map("uploader_id") @db.Uuid
+  contentType String   @map("content_type")
+  byteSize    Int      @map("byte_size")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  uploader User     @relation(fields: [uploaderId], references: [id], onDelete: Restrict)
+  message  Message?
+
+  @@index([uploaderId, createdAt])
+  @@map("chat_images")
+}
+
+/// A saved reply an agency can send with one tap. At most one per user is the AUTO reply, sent by
+/// itself to a buyer's first message (partial UNIQUE index in the migration). Creating and using
+/// templates needs the agency perks (active subscription).
+model ChatTemplate {
+  id          String   @id @default(uuid()) @db.Uuid
+  userId      String   @map("user_id") @db.Uuid
+  body        String
+  isAutoReply Boolean  @default(false) @map("is_auto_reply")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@index([userId, createdAt])
+  @@map("chat_templates")
+}
+
+/// One revealed phone number: this user may see (and call / WhatsApp) `contact_user_id`'s number for
+/// the Kabul calendar day `day_key`. UNIQUE per (viewer, number, day): revealing the same number
+/// again the same day is free and does not count again, and one reveal covers phone and WhatsApp
+/// and every listing of that person.
+model ContactUnlockLog {
+  id            String              @id @default(uuid()) @db.Uuid
+  userId        String              @map("user_id") @db.Uuid
+  contactUserId String              @map("contact_user_id") @db.Uuid
+  /// The listing it was revealed from (for analytics and the pre-filled WhatsApp text).
+  propertyId    String              @map("property_id") @db.Uuid
+  /// The Kabul-local date (UTC+4:30) the reveal counts for.
+  dayKey        DateTime            @map("day_key") @db.Date
+  method        ContactUnlockMethod
+  /// The credit batch that paid for it (method CREDIT only; CHECK constraint in the migration).
+  creditId      String?             @map("credit_id") @db.Uuid
+  createdAt     DateTime            @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  user        User        @relation("UnlockViewer", fields: [userId], references: [id], onDelete: Restrict)
+  contactUser User        @relation("UnlockOwner", fields: [contactUserId], references: [id], onDelete: Restrict)
+  property    Property    @relation(fields: [propertyId], references: [id], onDelete: Restrict)
+  credit      UserCredit? @relation(fields: [creditId], references: [id], onDelete: Restrict)
+
+  @@unique([userId, contactUserId, dayKey])
+  @@index([userId, dayKey, method]) // "how many free reveals did I use today"
+  @@index([propertyId])
+  @@map("contact_unlock_logs")
+}
+
+/// A batch of contact reveal credits. `remaining` counts down as reveals are paid for; the oldest
+/// batch with credits left is used first. Credits never expire. The balance is the SUM of `remaining`.
+///
+/// Whether an agency currently has unlimited reveals is NOT stored here: it follows from its
+/// subscription rows (see src/perks), so there is no second copy that could drift from them.
+model UserCredit {
+  id            String              @id @default(uuid()) @db.Uuid
+  userId        String              @map("user_id") @db.Uuid
+  source        ContactCreditSource
+  amount        Int
+  remaining     Int
+  /// The payment that bought them (PURCHASE only). UNIQUE: one payment can never mint two batches.
+  transactionId String?             @unique @map("transaction_id") @db.Uuid
+  /// REFERRAL only: the invited friend whose signup earned these. One batch per (user, friend)
+  /// (partial UNIQUE index in the migration).
+  inviteeId     String?             @map("invitee_id") @db.Uuid
+  createdAt     DateTime            @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  user        User         @relation("CreditOwner", fields: [userId], references: [id], onDelete: Restrict)
+  invitee     User?        @relation("CreditInvitee", fields: [inviteeId], references: [id], onDelete: Restrict)
+  transaction Transaction? @relation(fields: [transactionId], references: [id], onDelete: Restrict)
+  unlocks     ContactUnlockLog[]
+
+  @@index([userId, remaining])
+  @@map("user_credits")
 }
 
 /// A phone-login one-time passcode. Only a keyed hash of the code is stored, never the code.

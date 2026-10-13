@@ -50,6 +50,8 @@ const PRICING = {
   featured_ad: 100,
   map_location: 30,
   featured_ad_days: 7,
+  contact_credits: 40,
+  contact_credits_per_pack: 10,
 };
 
 const summary = (overrides: Record<string, unknown> = {}) => ({
@@ -59,6 +61,7 @@ const summary = (overrides: Record<string, unknown> = {}) => ({
     invited_count: 3,
     rewarded_invites: 2,
     max_rewarded_invites: 20,
+    contact_credits_per_invite: 0,
     ladder_tokens_available: 1,
     ladder_tokens_earned: 2,
   },
@@ -271,6 +274,7 @@ describe('ReferralScreen', () => {
             invited_count: 25,
             rewarded_invites: 20,
             max_rewarded_invites: 20,
+            contact_credits_per_invite: 0,
             ladder_tokens_available: 0,
             ladder_tokens_earned: 20,
           },
@@ -294,6 +298,7 @@ describe('ReferralScreen', () => {
             invited_count: 0,
             rewarded_invites: 0,
             max_rewarded_invites: 20,
+            contact_credits_per_invite: 0,
             ladder_tokens_available: 0,
             ladder_tokens_earned: 0,
           },

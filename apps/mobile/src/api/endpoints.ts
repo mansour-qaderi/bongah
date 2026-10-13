@@ -1,10 +1,20 @@
 import type {
   CreatePropertyInput,
+  CreateTemplateInput,
   InitiatePaymentInput,
+  SendMessageInput,
   UpdatePropertyInput,
+  UpdateTemplateInput,
 } from '@bongah/validation';
 import type {
   AgencyDashboard,
+  ChatCapabilities,
+  ChatConversation,
+  ChatImageUploaded,
+  ChatMessage,
+  ChatMessagesPage,
+  ChatTemplate,
+  ContactAccess,
   Currency,
   DealType,
   MapLocationStatus,
@@ -12,7 +22,6 @@ import type {
   PaymentInitiated,
   Pricing,
   Property,
-  PropertyContact,
   PropertyType,
   RedeemLadderTokenResponse,
   ReferralSummary,
@@ -21,7 +30,8 @@ import type {
   User,
   VerifyOtpResponse,
 } from '@bongah/shared-types';
-import { request } from './client';
+import { UPLOAD_TIMEOUT_MS } from '../config';
+import { ApiError, request } from './client';
 
 export const PAGE_SIZE = 20;
 
@@ -85,8 +95,23 @@ export const listMyProperties = (page: number) =>
 export const getProperty = (id: string) =>
   request<Property>('GET', `/properties/${id}`);
 
-export const getPropertyContact = (id: string) =>
-  request<PropertyContact>('GET', `/properties/${id}/contact`, { auth: true });
+// ───────────── Contact reveals ─────────────
+
+/** Whether I can already see the owner's number, and what is left of today's free reveals. Never reveals a new number. */
+export const getContactAccess = (propertyId: string) =>
+  request<ContactAccess>('GET', `/properties/${propertyId}/contact`, {
+    auth: true,
+  });
+
+/**
+ * Reveals the owner's number. `useCredit` is the person's consent to spend a credit once today's
+ * free reveals are used; without it the server answers 403 CONTACT_LIMIT_REACHED instead.
+ */
+export const unlockContact = (propertyId: string, useCredit = false) =>
+  request<ContactAccess>('POST', `/properties/${propertyId}/contact/unlock`, {
+    auth: true,
+    body: { use_credit: useCredit },
+  });
 
 export const createProperty = (input: CreatePropertyInput) =>
   request<Property>('POST', '/properties', { auth: true, body: input });
@@ -126,6 +151,81 @@ export const redeemLadderToken = (propertyId: string) =>
 
 export const getMapLocationStatus = () =>
   request<MapLocationStatus>('GET', '/map-location/status', { auth: true });
+
+// ───────────── Chat ─────────────
+
+export const getChatCapabilities = () =>
+  request<ChatCapabilities>('GET', '/chat/capabilities', { auth: true });
+
+export const listConversations = () =>
+  request<ChatConversation[]>('GET', '/chat/conversations', { auth: true });
+
+/** Opens (or reopens) my chat about a listing. */
+export const openConversation = (propertyId: string) =>
+  request<ChatConversation>('POST', '/chat/conversations', {
+    auth: true,
+    body: { property_id: propertyId },
+  });
+
+export const getMessages = (conversationId: string, before?: string) =>
+  request<ChatMessagesPage>(
+    'GET',
+    `/chat/conversations/${conversationId}/messages`,
+    { auth: true, query: { before, limit: 30 } },
+  );
+
+/** The HTTP way to send; the chat uses the socket and falls back to this. */
+export const sendMessageHttp = (
+  conversationId: string,
+  message: SendMessageInput,
+) =>
+  request<ChatMessage>('POST', `/chat/conversations/${conversationId}/messages`, {
+    auth: true,
+    body: message,
+  });
+
+export const markConversationRead = (conversationId: string) =>
+  request<{ marked: number }>(
+    'POST',
+    `/chat/conversations/${conversationId}/read`,
+    { auth: true, body: {} },
+  );
+
+/** Uploads a picture from this phone; the result's id is then sent as an IMAGE message. */
+export async function uploadChatImage(
+  uri: string,
+  contentType: string,
+): Promise<ChatImageUploaded> {
+  let data: Blob;
+  try {
+    data = await (await fetch(uri)).blob();
+  } catch {
+    throw new ApiError('http', 0, { code: 'IMAGE_UNREADABLE' });
+  }
+  return request<ChatImageUploaded>('POST', '/chat/images', {
+    auth: true,
+    file: { data, contentType },
+    timeoutMs: UPLOAD_TIMEOUT_MS,
+  });
+}
+
+export const listTemplates = () =>
+  request<ChatTemplate[]>('GET', '/chat/templates', { auth: true });
+
+export const createTemplate = (input: CreateTemplateInput) =>
+  request<ChatTemplate>('POST', '/chat/templates', {
+    auth: true,
+    body: input,
+  });
+
+export const updateTemplate = (id: string, input: UpdateTemplateInput) =>
+  request<ChatTemplate>('PATCH', `/chat/templates/${id}`, {
+    auth: true,
+    body: input,
+  });
+
+export const deleteTemplate = (id: string) =>
+  request<void>('DELETE', `/chat/templates/${id}`, { auth: true });
 
 // ───────────── Payments ─────────────
 

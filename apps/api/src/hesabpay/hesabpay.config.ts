@@ -19,8 +19,12 @@ export interface HesabPaySettings {
     featuredAd: string;
     /** One exact map pin on one listing, for accounts without an agency subscription. */
     mapLocation: string;
+    /** One pack of contact reveal credits (see contactCreditsPerPack). */
+    contactCredits: string;
   };
   featuredAdDays: number;
+  /** How many contact reveal credits one pack contains. Stored on the payment when it is started. */
+  contactCreditsPerPack: number;
 }
 
 const DEFAULT_BASE_URL = 'https://api.hesab.com/api/v1';
@@ -33,7 +37,10 @@ const MOCK_DEFAULT_PRICES = {
   HESABPAY_PRICE_LADDER: '50',
   HESABPAY_PRICE_FEATURED_AD: '100',
   HESABPAY_PRICE_MAP_LOCATION: '30',
+  HESABPAY_PRICE_CONTACT_CREDITS: '40',
 } as const;
+
+const MOCK_DEFAULT_CONTACT_CREDITS_PER_PACK = '10';
 
 const PRICE_PATTERN = /^\d{1,12}(\.\d{1,2})?$/;
 
@@ -83,6 +90,15 @@ export function readHesabPaySettings(config: ConfigService): HesabPaySettings {
     throw new Error('HESABPAY_FEATURED_AD_DAYS must be a whole number of days between 1 and 365.');
   }
 
+  const rawPack =
+    mode === 'live'
+      ? required('HESABPAY_CONTACT_CREDITS_PER_PACK')
+      : text('HESABPAY_CONTACT_CREDITS_PER_PACK') || MOCK_DEFAULT_CONTACT_CREDITS_PER_PACK;
+  const contactCreditsPerPack = Number(rawPack);
+  if (!/^\d{1,4}$/.test(rawPack) || contactCreditsPerPack < 1) {
+    throw new Error('HESABPAY_CONTACT_CREDITS_PER_PACK must be a whole number between 1 and 9999.');
+  }
+
   const subscription = Object.fromEntries(
     SUBSCRIPTION_PACKAGES.map((pkg) => [
       pkg,
@@ -101,7 +117,9 @@ export function readHesabPaySettings(config: ConfigService): HesabPaySettings {
       ladder: price('HESABPAY_PRICE_LADDER'),
       featuredAd: price('HESABPAY_PRICE_FEATURED_AD'),
       mapLocation: price('HESABPAY_PRICE_MAP_LOCATION'),
+      contactCredits: price('HESABPAY_PRICE_CONTACT_CREDITS'),
     },
     featuredAdDays,
+    contactCreditsPerPack,
   };
 }

@@ -1,0 +1,519 @@
+import React from 'react';
+import ReactTestRenderer from 'react-test-renderer';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { initI18n } from '../src/i18n';
+import { formatNumber } from '../src/i18n/format';
+import prs from '../src/i18n/locales/prs.json';
+import {
+  propertyRef,
+  telUrl,
+  whatsappDigits,
+  whatsappUrl,
+} from '../src/contact/contactLinks';
+import {
+  allText,
+  callsTo,
+  mockApi,
+  pressableWith,
+  render as renderTree,
+} from '../test-utils';
+import { mockNavigation } from '../test-utils/navMock';
+
+const fetchMock = jest.fn();
+let mockAuth: { status: string; user: unknown } = {
+  status: 'signedIn',
+  user: null,
+};
+
+jest.mock('../src/auth/AuthContext', () => ({
+  useAuth: () => mockAuth,
+  AuthProvider: ({ children }: { children: React.ReactNode }) => children,
+}));
+jest.mock('@react-navigation/native', () =>
+  require('../test-utils/navMock').navigationModule(),
+);
+jest.mock('../src/navigation/useRequireAuth', () => ({
+  useRequireAuth: () => (action: () => void) => action(),
+}));
+
+// Imported after the mocks so the screens pick them up.
+import PropertyDetailsScreen from '../src/screens/property/PropertyDetailsScreen';
+
+const L = '11111111-1111-4111-8111-111111111111';
+const viewer = {
+  id: 'viewer',
+  role: 'USER',
+  phone_number: '+93700000000',
+  full_name: null,
+  avatar: null,
+};
+
+const listing = (ownerId = 'seller') => ({
+  id: L,
+  user_id: ownerId,
+  agency_id: null,
+  title: 'خانه نو',
+  description: 'تازه',
+  type: 'HOUSE_HAWILI',
+  deal_type: 'SALE',
+  price: 1000,
+  currency: 'AFGHANI',
+  area_sqm: 100,
+  bedrooms: 2,
+  bathrooms: 1,
+  province: 'کابل',
+  district: 'شهر نو',
+  neighborhood: 'قلعه',
+  address: 'سرک',
+  lat: null,
+  lng: null,
+  images: [],
+  status: 'ACTIVE',
+  is_featured: false,
+  featured_until: null,
+  laddered_at: null,
+  created_at: '2026-10-01T00:00:00Z',
+  updated_at: '2026-10-01T00:00:00Z',
+});
+
+const quota = (overrides: Record<string, unknown> = {}) => ({
+  free_limit: 3,
+  free_used: 0,
+  free_remaining: 3,
+  credits: 0,
+  referral_credits: 0,
+  unlimited: false,
+  unlimited_reason: null,
+  resets_at: '2026-10-14T19:30:00.000Z',
+  ...overrides,
+});
+const SELLER_CONTACT = {
+  full_name: 'احمد',
+  phone_number: '+93701234567',
+  agency_name: null,
+};
+const locked = (q = quota()) => ({
+  unlocked: false,
+  is_owner: false,
+  contact: null,
+  quota: q,
+  paid_with: null,
+});
+const unlocked = (q = quota({ free_used: 1, free_remaining: 2 })) => ({
+  unlocked: true,
+  is_owner: false,
+  contact: SELLER_CONTACT,
+  quota: q,
+  paid_with: 'FREE_DAILY',
+});
+const limitReached = (q: ReturnType<typeof quota>) => ({
+  status: 403,
+  body: { code: 'CONTACT_LIMIT_REACHED', message: 'limit', quota: q },
+});
+
+const PRICING = {
+  currency: 'AFGHANI',
+  subscription: { MONTHLY: 1000, QUARTERLY: 2700, YEARLY: 9600 },
+  ladder: 50,
+  featured_ad: 100,
+  map_location: 30,
+  featured_ad_days: 7,
+  contact_credits: 40,
+  contact_credits_per_pack: 10,
+};
+const PAYMENT = {
+  id: 'pay1',
+  purpose: 'CONTACT_CREDITS',
+  status: 'PENDING',
+  amount: 40,
+  currency: 'AFGHANI',
+  created_at: '2026-10-13T00:00:00Z',
+  payment_url: 'https://pay.example/x',
+};
+
+const withQuery = (node: React.ReactElement) => (
+  <QueryClientProvider
+    client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
+  >
+    {node}
+  </QueryClientProvider>
+);
+const screen = () =>
+  withQuery(
+    <PropertyDetailsScreen
+      {...({
+        navigation: mockNavigation,
+        route: { params: { id: L } },
+      } as unknown as React.ComponentProps<typeof PropertyDetailsScreen>)}
+    />,
+  );
+
+const act = ReactTestRenderer.act;
+const mounted: ReactTestRenderer.ReactTestRenderer[] = [];
+const render = async (element: React.ReactElement) => {
+  const tree = await renderTree(element);
+  mounted.push(tree);
+  return tree;
+};
+const settle = async () => {
+  for (let i = 0; i < 5; i += 1) {
+    await act(async () => {
+      await new Promise<void>(resolve => setTimeout(() => resolve(), 0));
+    });
+  }
+};
+const press = (root: ReactTestRenderer.ReactTestInstance, label: string) =>
+  act(async () => {
+    pressableWith(root, label).props.onPress();
+  });
+const unlockCalls = () =>
+  callsTo(fetchMock).filter(
+    c => c.method === 'POST' && c.path === `/properties/${L}/contact/unlock`,
+  );
+
+const openUrl = jest.fn(async () => true);
+
+beforeAll(async () => {
+  await initI18n();
+});
+beforeEach(() => {
+  fetchMock.mockReset();
+  openUrl.mockClear();
+  mockNavigation.navigate.mockClear();
+  (globalThis as unknown as { fetch: unknown }).fetch = fetchMock;
+  mockAuth = { status: 'signedIn', user: viewer };
+  jest
+    .spyOn(require('react-native').Linking, 'openURL')
+    .mockImplementation(openUrl);
+});
+afterEach(async () => {
+  await act(async () => {
+    mounted.splice(0).forEach(tree => tree.unmount());
+  });
+});
+
+describe('contact links', () => {
+  it('builds a tel: link and a wa.me link with the text already typed', () => {
+    expect(telUrl('+93701234567')).toBe('tel:+93701234567');
+    expect(whatsappDigits('+93 70-123 4567')).toBe('93701234567');
+    const url = whatsappUrl('+93701234567', 'سلام #abc');
+    expect(url.startsWith('https://wa.me/93701234567?text=')).toBe(true);
+    expect(decodeURIComponent(url.split('text=')[1])).toBe('سلام #abc');
+  });
+
+  it('quotes the first 8 characters of the listing id as its reference', () => {
+    expect(propertyRef(L)).toBe('#11111111');
+  });
+});
+
+describe('PropertyDetailsScreen: contact bar', () => {
+  it('shows Call, WhatsApp and Chat, and how many free reveals are left', async () => {
+    mockApi(fetchMock, {
+      [`GET /properties/${L}`]: { body: listing() },
+      [`POST /properties/${L}/view`]: { status: 204 },
+      [`GET /properties/${L}/contact`]: { body: locked() },
+    });
+    const tree = await render(screen());
+    await settle();
+    const text = allText(tree.root);
+    expect(text).toContain(prs.property.callAction);
+    expect(text).toContain(prs.property.whatsappAction);
+    expect(text).toContain(prs.property.chatAction);
+    expect(text).toContain(
+      prs.property.freeRevealsLeft.replace('{{count}}', formatNumber(3, 0)),
+    );
+  });
+
+  it('reveals the number and dials it', async () => {
+    mockApi(fetchMock, {
+      [`GET /properties/${L}`]: { body: listing() },
+      [`POST /properties/${L}/view`]: { status: 204 },
+      [`GET /properties/${L}/contact`]: { body: locked() },
+      [`POST /properties/${L}/contact/unlock`]: { body: unlocked() },
+    });
+    const tree = await render(screen());
+    await settle();
+    await press(tree.root, prs.property.callAction);
+    await settle();
+
+    expect(unlockCalls()).toHaveLength(1);
+    // A plain tap never spends a credit.
+    expect(unlockCalls()[0].body).toEqual({ use_credit: false });
+    expect(openUrl).toHaveBeenCalledWith('tel:+93701234567');
+    // The owner's details are shown once revealed.
+    expect(allText(tree.root)).toContain('احمد');
+  });
+
+  it('opens WhatsApp on the number with the listing title and reference prefilled', async () => {
+    mockApi(fetchMock, {
+      [`GET /properties/${L}`]: { body: listing() },
+      [`POST /properties/${L}/view`]: { status: 204 },
+      [`GET /properties/${L}/contact`]: { body: locked() },
+      [`POST /properties/${L}/contact/unlock`]: { body: unlocked() },
+    });
+    const tree = await render(screen());
+    await settle();
+    await press(tree.root, prs.property.whatsappAction);
+    await settle();
+
+    const [url] = openUrl.mock.calls[0] as unknown as [string];
+    expect(url.startsWith('https://wa.me/93701234567?text=')).toBe(true);
+    const text = decodeURIComponent(url.split('text=')[1]);
+    expect(text).toContain('خانه نو');
+    expect(text).toContain('#11111111');
+  });
+
+  it('does not reveal again when the number is already unlocked today', async () => {
+    mockApi(fetchMock, {
+      [`GET /properties/${L}`]: { body: listing() },
+      [`POST /properties/${L}/view`]: { status: 204 },
+      [`GET /properties/${L}/contact`]: { body: unlocked() },
+    });
+    const tree = await render(screen());
+    await settle();
+    await press(tree.root, prs.property.callAction);
+    await settle();
+    expect(unlockCalls()).toHaveLength(0);
+    expect(openUrl).toHaveBeenCalledWith('tel:+93701234567');
+  });
+
+  it('opens the in-app chat for the listing without spending a reveal', async () => {
+    const conversation = { id: 'c1', property: { id: L } };
+    mockApi(fetchMock, {
+      [`GET /properties/${L}`]: { body: listing() },
+      [`POST /properties/${L}/view`]: { status: 204 },
+      [`GET /properties/${L}/contact`]: { body: locked() },
+      'POST /chat/conversations': { status: 201, body: conversation },
+    });
+    const tree = await render(screen());
+    await settle();
+    await press(tree.root, prs.property.chatAction);
+    await settle();
+    expect(
+      callsTo(fetchMock).find(c => c.path === '/chat/conversations')?.body,
+    ).toEqual({ property_id: L });
+    expect(mockNavigation.navigate).toHaveBeenCalledWith('Chat', {
+      conversation,
+    });
+    expect(unlockCalls()).toHaveLength(0);
+  });
+
+  it('says so when the phone cannot open the link', async () => {
+    openUrl.mockRejectedValueOnce(new Error('no app'));
+    mockApi(fetchMock, {
+      [`GET /properties/${L}`]: { body: listing() },
+      [`POST /properties/${L}/view`]: { status: 204 },
+      [`GET /properties/${L}/contact`]: { body: unlocked() },
+    });
+    const tree = await render(screen());
+    await settle();
+    await press(tree.root, prs.property.callAction);
+    await settle();
+    expect(allText(tree.root)).toContain(prs.contact.openFailed);
+  });
+
+  it('tells a signed-out visitor to sign in', async () => {
+    mockAuth = { status: 'signedOut', user: null };
+    mockApi(fetchMock, {
+      [`GET /properties/${L}`]: { body: listing() },
+      [`POST /properties/${L}/view`]: { status: 204 },
+    });
+    const tree = await render(screen());
+    await settle();
+    expect(allText(tree.root)).toContain(prs.property.contactSignIn);
+    // The contact status is only asked for when signed in.
+    expect(
+      callsTo(fetchMock).some(c => c.path === `/properties/${L}/contact`),
+    ).toBe(false);
+  });
+
+  it("shows no contact bar on the owner's own listing", async () => {
+    mockAuth = { status: 'signedIn', user: { ...viewer, id: 'seller' } };
+    mockApi(fetchMock, {
+      [`GET /properties/${L}`]: { body: listing('seller') },
+    });
+    const tree = await render(screen());
+    await settle();
+    const text = allText(tree.root);
+    expect(text).not.toContain(prs.property.callAction);
+    expect(text).toContain(prs.property.yourListing);
+  });
+
+  it('says unlimited for an agency with perks', async () => {
+    mockApi(fetchMock, {
+      [`GET /properties/${L}`]: { body: listing() },
+      [`POST /properties/${L}/view`]: { status: 204 },
+      [`GET /properties/${L}/contact`]: {
+        body: locked(
+          quota({ unlimited: true, unlimited_reason: 'AGENCY_SUBSCRIPTION' }),
+        ),
+      },
+    });
+    const tree = await render(screen());
+    await settle();
+    expect(allText(tree.root)).toContain(prs.property.unlimitedReveals);
+  });
+});
+
+describe('PropertyDetailsScreen: daily limit reached', () => {
+  const exhausted = (overrides: Record<string, unknown> = {}) =>
+    quota({ free_used: 3, free_remaining: 0, ...overrides });
+
+  it('opens the lock sheet instead of dialling, and offers a held credit', async () => {
+    mockApi(fetchMock, {
+      [`GET /properties/${L}`]: { body: listing() },
+      [`POST /properties/${L}/view`]: { status: 204 },
+      [`GET /properties/${L}/contact`]: {
+        body: locked(exhausted({ credits: 2 })),
+      },
+      [`POST /properties/${L}/contact/unlock`]: limitReached(
+        exhausted({ credits: 2, referral_credits: 1 }),
+      ),
+      'GET /hesabpay/pricing': { body: PRICING },
+      'GET /referrals/me': { status: 401, body: {} },
+    });
+    const tree = await render(screen());
+    await settle();
+    await press(tree.root, prs.property.callAction);
+    await settle();
+
+    const text = allText(tree.root);
+    expect(text).toContain(prs.contact.limitTitle);
+    expect(text).toContain(
+      prs.contact.creditsLeft.replace('{{count}}', formatNumber(2, 0)),
+    );
+    expect(text).toContain(
+      prs.contact.referralCreditsLeft.replace('{{count}}', formatNumber(1, 0)),
+    );
+    expect(openUrl).not.toHaveBeenCalled();
+  });
+
+  it('spends one credit only when asked, then does what was tapped', async () => {
+    let attempt = 0;
+    mockApi(fetchMock, {
+      [`GET /properties/${L}`]: { body: listing() },
+      [`POST /properties/${L}/view`]: { status: 204 },
+      [`GET /properties/${L}/contact`]: {
+        body: locked(exhausted({ credits: 2 })),
+      },
+      [`POST /properties/${L}/contact/unlock`]: () => {
+        attempt += 1;
+        return attempt === 1
+          ? limitReached(exhausted({ credits: 2 }))
+          : {
+              body: {
+                ...unlocked(exhausted({ credits: 1 })),
+                paid_with: 'CREDIT',
+              },
+            };
+      },
+      'GET /hesabpay/pricing': { body: PRICING },
+      'GET /referrals/me': { status: 401, body: {} },
+    });
+    const tree = await render(screen());
+    await settle();
+    await press(tree.root, prs.property.whatsappAction);
+    await settle();
+    expect(unlockCalls()).toHaveLength(1);
+    expect(unlockCalls()[0].body).toEqual({ use_credit: false });
+
+    await press(tree.root, prs.contact.useCredit);
+    await settle();
+    expect(unlockCalls()).toHaveLength(2);
+    expect(unlockCalls()[1].body).toEqual({ use_credit: true });
+    // It was WhatsApp that was tapped, so WhatsApp opens (and not the dialler).
+    const [url] = openUrl.mock.calls[0] as unknown as [string];
+    expect(url.startsWith('https://wa.me/93701234567')).toBe(true);
+    // The sheet closes.
+    expect(allText(tree.root)).not.toContain(prs.contact.limitTitle);
+  });
+
+  it("with no credits, sells a pack at the server's price and starts the HesabPay payment", async () => {
+    mockApi(fetchMock, {
+      [`GET /properties/${L}`]: { body: listing() },
+      [`POST /properties/${L}/view`]: { status: 204 },
+      [`GET /properties/${L}/contact`]: { body: locked(exhausted()) },
+      [`POST /properties/${L}/contact/unlock`]: limitReached(exhausted()),
+      'GET /hesabpay/pricing': { body: PRICING },
+      'GET /referrals/me': { status: 401, body: {} },
+      'POST /hesabpay/payments': { status: 201, body: PAYMENT },
+      'GET /hesabpay/payments/pay1': { body: PAYMENT },
+    });
+    const tree = await render(screen());
+    await settle();
+    await press(tree.root, prs.property.callAction);
+    await settle();
+
+    const text = allText(tree.root);
+    expect(text).not.toContain(prs.contact.useCredit);
+    expect(text).toContain(
+      prs.contact.buyItem.replace('{{count}}', formatNumber(10, 0)),
+    );
+
+    await press(tree.root, prs.contact.buy);
+    await settle();
+    const started = callsTo(fetchMock).find(
+      c => c.path === '/hesabpay/payments' && c.method === 'POST',
+    );
+    expect(started?.body).toEqual({ purpose: 'CONTACT_CREDITS' });
+    expect(openUrl).toHaveBeenCalledWith('https://pay.example/x');
+  });
+
+  it('offers the referral screen when invites earn credits', async () => {
+    mockApi(fetchMock, {
+      [`GET /properties/${L}`]: { body: listing() },
+      [`POST /properties/${L}/view`]: { status: 204 },
+      [`GET /properties/${L}/contact`]: { body: locked(exhausted()) },
+      [`POST /properties/${L}/contact/unlock`]: limitReached(exhausted()),
+      'GET /hesabpay/pricing': { body: PRICING },
+      'GET /referrals/me': {
+        body: {
+          referral_code: 'ABCD2345',
+          share_url: null,
+          stats: {
+            invited_count: 0,
+            rewarded_invites: 0,
+            max_rewarded_invites: 20,
+            contact_credits_per_invite: 2,
+            ladder_tokens_available: 0,
+            ladder_tokens_earned: 0,
+          },
+          invited: [],
+          rewards: [],
+        },
+      },
+    });
+    const tree = await render(screen());
+    await settle();
+    await press(tree.root, prs.property.callAction);
+    await settle();
+
+    await press(
+      tree.root,
+      prs.contact.inviteFriends.replace('{{count}}', formatNumber(2, 0)),
+    );
+    expect(mockNavigation.navigate).toHaveBeenCalledWith('Referral');
+  });
+
+  it("keeps the bar's allowance line in step with the 403's numbers", async () => {
+    mockApi(fetchMock, {
+      [`GET /properties/${L}`]: { body: listing() },
+      [`POST /properties/${L}/view`]: { status: 204 },
+      // The page was loaded when 1 free reveal was left; another device used it since.
+      [`GET /properties/${L}/contact`]: {
+        body: locked(quota({ free_used: 2, free_remaining: 1 })),
+      },
+      [`POST /properties/${L}/contact/unlock`]: limitReached(exhausted()),
+      'GET /hesabpay/pricing': { body: PRICING },
+      'GET /referrals/me': { status: 401, body: {} },
+    });
+    const tree = await render(screen());
+    await settle();
+    expect(allText(tree.root)).toContain(
+      prs.property.freeRevealsLeft.replace('{{count}}', formatNumber(1, 0)),
+    );
+    await press(tree.root, prs.property.callAction);
+    await settle();
+    expect(allText(tree.root)).toContain(prs.property.noFreeRevealsLeft);
+  });
+});

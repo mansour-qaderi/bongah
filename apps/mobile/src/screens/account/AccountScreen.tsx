@@ -76,6 +76,15 @@ export default function AccountScreen({ navigation }: Props) {
         />
       ) : null}
 
+      {user?.role === 'AGENCY' ? (
+        <Button
+          title={t('nav.templates')}
+          variant="secondary"
+          style={styles.invite}
+          onPress={() => navigation.navigate('Templates')}
+        />
+      ) : null}
+
       {user ? (
         <Button
           title={t('auth.signOut')}
