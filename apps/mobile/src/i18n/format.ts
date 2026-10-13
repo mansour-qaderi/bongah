@@ -33,6 +33,36 @@ export function formatPrice(amount: number, currencyLabel: string): string {
   return `${formatNumber(amount)} ${currencyLabel}`;
 }
 
+export type AmountUnit = 'billion' | 'million' | 'thousand';
+
+const AMOUNT_STEPS: ReadonlyArray<[AmountUnit, number]> = [
+  ['billion', 1e9],
+  ['million', 1e6],
+  ['thousand', 1e3],
+];
+
+/**
+ * A short form of a big amount for small spaces (map markers): 2,500,000 is 2.5 million, 50,000 is 50 thousand.
+ * One decimal at most; below one thousand the number is left whole (unit null). Rounding never produces
+ * "1000 thousand": that becomes "1 million".
+ */
+export function compactAmount(amount: number): {
+  value: number;
+  unit: AmountUnit | null;
+} {
+  if (!Number.isFinite(amount) || amount < 1000)
+    return { value: amount, unit: null };
+  for (let i = 0; i < AMOUNT_STEPS.length; i++) {
+    const [unit, size] = AMOUNT_STEPS[i];
+    if (amount < size) continue;
+    const value = Math.round((amount / size) * 10) / 10;
+    if (value >= 1000 && i > 0)
+      return { value: 1, unit: AMOUNT_STEPS[i - 1][0] };
+    return { value, unit };
+  }
+  return { value: amount, unit: null };
+}
+
 /**
  * Reads a number a person typed: Persian/Arabic-Indic digits, "٬" "," as thousands
  * separators, "." "٫" as the decimal point. Returns null for empty or unreadable input.

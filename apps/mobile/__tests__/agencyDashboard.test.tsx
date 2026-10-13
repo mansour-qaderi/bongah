@@ -437,6 +437,7 @@ describe('PropertyDetailsScreen: view counting', () => {
     id: L1,
     user_id: userId,
     agency_id: null,
+    agency_name: null,
     title: 'خانه',
     description: 'تازه',
     type: 'HOUSE_HAWILI',

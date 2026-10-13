@@ -71,7 +71,7 @@ import { TYPING_IDLE_MS } from '../../config';
 import { AFGHANISTAN_CAMERA, type Coordinate } from '../../map/geo';
 import { useFormat } from '../../i18n/useFormat';
 import type { RootStackParamList } from '../../navigation/types';
-import { colors, radius, spacing } from '../../theme';
+import { colors, fonts, radius, spacing } from '../../theme';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Chat'>;
 
@@ -597,6 +597,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     paddingTop: spacing.md,
     fontSize: 16,
+    fontFamily: fonts.regular,
     color: colors.text,
     textAlignVertical: 'top',
   },

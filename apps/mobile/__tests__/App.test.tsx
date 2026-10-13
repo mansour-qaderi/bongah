@@ -3,12 +3,19 @@ import ReactTestRenderer from 'react-test-renderer';
 import App from '../App';
 import prs from '../src/i18n/locales/prs.json';
 import { queryClient } from '../src/api/hooks';
-import { allText, flush, jsonResponse, render } from '../test-utils';
+import {
+  allText,
+  flush,
+  jsonResponse,
+  pressableWith,
+  render,
+} from '../test-utils';
 
 const property = {
   id: '11111111-1111-4111-8111-111111111111',
   user_id: 'u1',
   agency_id: null,
+  agency_name: null,
   title: 'آپارتمان سه‌خوابه در شهر نو',
   description: 'تازه‌ساز',
   type: 'APARTMENT',
@@ -41,7 +48,7 @@ jest.mock('../src/i18n/rtl', () => ({
 
 afterEach(() => queryClient.clear());
 
-test('the app starts in Dari and shows listings with Persian digits and the right currency word', async () => {
+test('the app opens on the map in Dari, and the list shows Persian digits and the right currency word', async () => {
   const fetchMock = jest.fn(async (url: string) => {
     if (url.includes('/properties?')) {
       return jsonResponse(200, {
@@ -49,6 +56,7 @@ test('the app starts in Dari and shows listings with Persian digits and the righ
         meta: { page: 1, limit: 20, total: 1, total_pages: 1 },
       });
     }
+    if (url.endsWith('/agencies/map')) return jsonResponse(200, []);
     return jsonResponse(404, {});
   });
   (globalThis as unknown as { fetch: unknown }).fetch = fetchMock;
@@ -57,12 +65,29 @@ test('the app starts in Dari and shows listings with Persian digits and the righ
   await flush();
   await flush();
 
-  const text = allText(tree.root);
+  // Map first: a marker with the short price (Afghani sign) and who is selling.
+  let text = allText(tree.root);
   expect(text).toContain(prs.app.tagline);
+  expect(text).toContain('۱٫۲ میلیون ؋');
+  expect(text).toContain(prs.property.owner);
+  expect(fetchMock.mock.calls[0][0]).toMatch(
+    /\/properties\?has_location=true&page=1&limit=20$/,
+  );
+
+  // The list one tap away shows the full price.
+  await ReactTestRenderer.act(async () => {
+    pressableWith(tree.root, prs.home.list).props.onPress();
+  });
+  // React Query tells React about new data on a 0 ms timer, so let real time pass.
+  for (let i = 0; i < 3; i += 1) {
+    await ReactTestRenderer.act(async () => {
+      await new Promise<void>(resolve => setTimeout(() => resolve(), 5));
+    });
+  }
+  text = allText(tree.root);
   expect(text).toContain(property.title);
   expect(text).toContain('۱٬۲۰۰٬۰۰۰ افغانی');
   expect(text).toContain('۱۲۰ متر مربع');
-  expect(fetchMock.mock.calls[0][0]).toMatch(/\/properties\?page=1&limit=20$/);
 
   ReactTestRenderer.act(() => tree.unmount());
 });

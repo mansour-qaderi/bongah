@@ -11,7 +11,7 @@ import { useTranslation } from 'react-i18next';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { PROVINCES, type Province } from '../constants/provinces';
 import { useFormat } from '../i18n/useFormat';
-import { colors, radius, spacing } from '../theme';
+import { colors, fonts, radius, spacing } from '../theme';
 import AppText from './AppText';
 
 interface Props {
@@ -145,6 +145,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
     paddingHorizontal: spacing.md,
     fontSize: 16,
+    fontFamily: fonts.regular,
   },
   row: {
     flexDirection: 'row',

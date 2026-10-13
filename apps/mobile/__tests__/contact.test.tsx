@@ -52,6 +52,7 @@ const listing = (ownerId = 'seller') => ({
   id: L,
   user_id: ownerId,
   agency_id: null,
+  agency_name: null,
   title: 'خانه نو',
   description: 'تازه',
   type: 'HOUSE_HAWILI',

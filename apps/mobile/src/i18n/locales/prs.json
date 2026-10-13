@@ -90,7 +90,19 @@
     "searchProvince": "جستجوی ولایت",
     "mapHint": "برای دیدن جزئیات روی نشانه بزنید",
     "mapShowing": "{{count}} ملک روی نقشه",
-    "noMapResults": "ملکی با موقعیت دقیق روی نقشه پیدا نشد."
+    "noMapResults": "ملکی با موقعیت دقیق روی نقشه پیدا نشد.",
+    "locate": "موقعیت من",
+    "locating": "در حال یافتن موقعیت شما…",
+    "locationDenied": "اجازهٔ دسترسی به موقعیت داده نشد. می‌توانید آن را در تنظیمات گوشی روشن کنید.",
+    "locationUnavailable": "موقعیت شما پیدا نشد. موقعیت‌یاب (جی‌پی‌اس) را روشن کنید و دوباره امتحان کنید.",
+    "locationOutside": "به نظر می‌رسد بیرون از افغانستان هستید؛ نقشه تغییر نکرد.",
+    "agencies": "دفترهای املاک",
+    "clusterTitle": "{{count}} مورد در این نقطه",
+    "agencyListings": "{{count}} ملک فعال",
+    "agencyNoListings": "فعلاً ملک فعال ندارد",
+    "agencyVerified": "دفتر تأییدشده",
+    "viewDetails": "دیدن جزئیات",
+    "you": "موقعیت شما"
   },
   "propertyType": {
     "APARTMENT": "آپارتمان",
@@ -110,7 +122,10 @@
   },
   "unit": {
     "sqm": "متر مربع",
-    "jerib": "جریب"
+    "jerib": "جریب",
+    "thousand": "هزار",
+    "million": "میلیون",
+    "billion": "میلیارد"
   },
   "status": {
     "ACTIVE": "فعال",
@@ -418,5 +433,9 @@
     "makeNotAuto": "خودکار نباشد",
     "empty": "هنوز پاسخ آماده‌ای ندارید.",
     "deleteConfirm": "این پاسخ حذف شود؟"
+  },
+  "currencySymbol": {
+    "AFGHANI": "؋",
+    "USD": "$"
   }
 }

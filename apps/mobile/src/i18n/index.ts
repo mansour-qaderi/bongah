@@ -37,10 +37,28 @@ export async function initI18n(): Promise<Language> {
   return language;
 }
 
-/** Both languages are RTL, so switching never needs a restart: only the strings change. */
-export async function changeLanguage(language: Language): Promise<void> {
-  await i18n.changeLanguage(language);
-  await kv.set(KV_KEYS.language, language);
+/** Changes are applied one at a time, in the order they were asked for. */
+let queue: Promise<void> = Promise.resolve();
+
+/**
+ * Switches the app's language and remembers it for next launch.
+ *
+ * - The choice is saved BEFORE the screen changes, so whatever the person sees is never newer than what is
+ *   stored: if the app is killed mid-switch, it restarts in the language they picked, not the old one.
+ * - Calls are queued, so tapping Dari then Pashto quickly always ends on Pashto in both the UI and storage
+ *   (two overlapping writes could otherwise land in either order).
+ * - Anything that is not one of the two supported languages is ignored.
+ * Both languages are RTL, so switching never needs a restart: only the strings change.
+ */
+export function changeLanguage(language: Language): Promise<void> {
+  if (!isLanguage(language)) return Promise.resolve();
+  const run = queue.then(async () => {
+    await kv.set(KV_KEYS.language, language);
+    await i18n.changeLanguage(language);
+  });
+  // A failed switch must not block the ones after it.
+  queue = run.catch(() => undefined);
+  return run;
 }
 
 export const currentLanguage = (): Language =>

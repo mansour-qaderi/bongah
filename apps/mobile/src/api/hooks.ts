@@ -10,6 +10,7 @@ import type { Language, Paginated, Property } from '@bongah/shared-types';
 import { ApiError } from './client';
 import {
   getAgencyDashboard,
+  listAgencyMapPins,
   getChatCapabilities,
   getContactAccess,
   getMapLocationStatus,
@@ -60,6 +61,7 @@ export const queryKeys = {
   messages: (conversationId: string) => ['chat', 'messages', conversationId] as const,
   chatCapabilities: ['chat', 'capabilities'] as const,
   templates: ['chat', 'templates'] as const,
+  agencyPins: ['agency-map-pins'] as const,
   welcomeQuote: (language: string) => ['welcome-quote', language] as const,
 };
 
@@ -100,6 +102,20 @@ export function usePricing() {
   return useQuery({
     queryKey: queryKeys.pricing,
     queryFn: getPricing,
+    staleTime: 5 * 60_000,
+  });
+}
+
+/**
+ * Offices for the home map. They change rarely (an office verifies or places its pin once), so a few minutes
+ * old is fine; the server also lets proxies cache for a minute. A failure is not worth an error screen: the
+ * map just shows the listings without offices.
+ */
+export function useAgencyMapPins(enabled: boolean) {
+  return useQuery({
+    queryKey: queryKeys.agencyPins,
+    queryFn: listAgencyMapPins,
+    enabled,
     staleTime: 5 * 60_000,
   });
 }

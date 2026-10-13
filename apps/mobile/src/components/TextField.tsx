@@ -1,6 +1,6 @@
 import React from 'react';
 import { StyleSheet, TextInput, View, type TextInputProps } from 'react-native';
-import { colors, ltrInput, radius, spacing } from '../theme';
+import { colors, fonts, ltrInput, radius, spacing } from '../theme';
 import AppText from './AppText';
 
 interface Props extends TextInputProps {
@@ -58,6 +58,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
     paddingHorizontal: spacing.md,
     fontSize: 16,
+    fontFamily: fonts.regular,
     color: colors.text,
   },
   multiline: {

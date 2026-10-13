@@ -42,7 +42,7 @@ export default function PropertyCard({ property, onPress, footer }: Props) {
           )}
           {property.is_featured ? (
             <View style={styles.badge}>
-              <AppText variant="caption" color={colors.textOnPrimary}>
+              <AppText variant="caption" color={colors.textOnAccent}>
                 {t('property.featured')}
               </AppText>
             </View>

@@ -40,13 +40,33 @@ jest.mock('@maplibre/maplibre-react-native', () => {
     }));
     return React.createElement(View, { ...props, mockName: 'Camera' });
   });
+  // The phone's position. A test sets `grant` (what the permission prompt answers) and `position`
+  // (undefined = no fix, the default), and reads `requests` / `fixes` to see whether the app asked.
+  const location = {
+    grant: true,
+    position: undefined,
+    requests: 0,
+    fixes: 0,
+  };
+  const LocationManager = {
+    requestPermissions: async () => {
+      location.requests += 1;
+      return location.grant;
+    },
+    getCurrentPosition: async () => {
+      location.fixes += 1;
+      return location.position;
+    },
+  };
   return {
     Map: passthrough('Map'),
     Camera,
     GeoJSONSource: passthrough('GeoJSONSource'),
     Layer: passthrough('Layer'),
     Marker: passthrough('Marker'),
+    LocationManager,
     __flyTo: mockFlyTo,
+    __location: location,
   };
 });
 
@@ -95,6 +115,7 @@ jest.mock('@react-native-firebase/messaging', () => {
       return () => refreshListeners.delete(listener);
     }),
     __state: state,
-    __emitTokenRefresh: token => refreshListeners.forEach(listener => listener(token)),
+    __emitTokenRefresh: token =>
+      refreshListeners.forEach(listener => listener(token)),
   };
 });

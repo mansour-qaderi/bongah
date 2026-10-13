@@ -14,6 +14,16 @@ export type LngLat = [longitude: number, latitude: number];
 export interface MapCamera {
   center: LngLat;
   zoom: number;
+  /**
+   * Space the map should not count as visible (a card covering the bottom), so the centre is the middle of
+   * what the person can actually see.
+   */
+  padding?: { bottom?: number };
+  /**
+   * Change it to fly to the same place again (e.g. "my location" tapped after panning away), which a camera
+   * with unchanged numbers would otherwise ignore.
+   */
+  nonce?: number;
 }
 
 export const toLngLat = (c: Coordinate): LngLat => [c.longitude, c.latitude];
@@ -26,6 +36,12 @@ export const fromLngLat = ([longitude, latitude]: LngLat): Coordinate => ({
 export const AFGHANISTAN_CAMERA: MapCamera = {
   center: [67.7, 33.9],
   zoom: 4.8,
+};
+
+/** Where Home opens: Kabul, the capital and the biggest market. [lng, lat] */
+export const KABUL_CAMERA: MapCamera = {
+  center: [69.1721, 34.5553],
+  zoom: 11,
 };
 
 /** A city-sized view around a province's centre. */

@@ -15,7 +15,7 @@ import type { PropertyDto, PropertyPageDto } from './dto/property-response.dto.j
 import type { UpdatePropertyDto } from './dto/update-property.dto.js';
 import { kabulDayKey } from '../contact/contact.time.js';
 import { FREE_LISTINGS_PER_MONTH } from './property.constants.js';
-import { toPropertyDto } from './property.mapper.js';
+import { toPropertyDto, WITH_AGENCY_NAME } from './property.mapper.js';
 import { kabulMonthStart, nextKabulMonthStart } from './property.time.js';
 
 /** Newest ladder first. Rows with no ladder time (legacy) sort last, then newest created. */
@@ -62,6 +62,7 @@ export class PropertyService {
   async findOne(id: string): Promise<PropertyDto> {
     const row = await this.prisma.property.findFirst({
       where: { id, status: { not: PropertyStatus.ARCHIVED }, user: { bannedAt: null } },
+      include: WITH_AGENCY_NAME,
     });
     if (!row) throw new NotFoundException('Property not found.');
     return toPropertyDto(row, new Date());
@@ -163,6 +164,7 @@ export class PropertyService {
           createdAt: now,
           ladderedAt: now,
         },
+        include: WITH_AGENCY_NAME,
       });
       // An exact pin is a paid feature (agency subscription or a prepaid token). Charged in this
       // same transaction, so a refusal also undoes the listing: nothing is published unpinned
@@ -211,6 +213,7 @@ export class PropertyService {
           ...(deal_type !== undefined ? { dealType: deal_type } : {}),
           ...(area_sqm !== undefined ? { areaSqm: area_sqm } : {}),
         },
+        include: WITH_AGENCY_NAME,
       });
     });
     return toPropertyDto(row, now);
@@ -250,6 +253,7 @@ export class PropertyService {
         orderBy: LISTING_ORDER,
         skip: (p.page - 1) * p.limit,
         take: p.limit,
+        include: WITH_AGENCY_NAME,
       }),
       this.prisma.property.count({ where }),
     ]);

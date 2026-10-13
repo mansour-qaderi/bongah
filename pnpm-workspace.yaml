@@ -2,7 +2,9 @@ packages:
   - packages/*
   - apps/*
 allowBuilds:
+  '@firebase/util': false
   '@prisma/engines': false
   prisma: false
+  protobufjs: false
 minimumReleaseAgeExclude:
   - '@nestjs/jwt@12.0.3'
