@@ -1,5 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { ChatModule } from './chat/chat.module.js';
+import { ContactModule } from './contact/contact.module.js';
 import { AppController } from './app.controller.js';
 import { AppService } from './app.service.js';
 import { AuthModule } from './auth/auth.module.js';
@@ -22,6 +24,8 @@ import { ReferralModule } from './referral/referral.module.js';
     PropertyModule,
     HesabpayModule,
     ReferralModule,
+    ContactModule,
+    ChatModule,
   ],
   controllers: [AppController],
   providers: [AppService],

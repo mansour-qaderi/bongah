@@ -1,4 +1,5 @@
-import { Prisma, RewardReason, RewardType } from '../generated/prisma/client.js';
+import { grantContactCredits } from '../contact/contact.credits.js';
+import { ContactCreditSource, Prisma, RewardReason, RewardType } from '../generated/prisma/client.js';
 
 /**
  * What happens when someone signs up with a referral code. Plain functions over a Prisma client
@@ -13,7 +14,8 @@ export async function findReferrerId(db: Prisma.TransactionClient, code: string)
 }
 
 /**
- * Gives the new user and (within the cap) their inviter one free ladder token each.
+ * Gives the new user and (within the cap) their inviter one free ladder token each, plus
+ * `contactCredits` contact reveal credits each when that is above 0.
  * Call it in the same transaction that creates the invited user: either the account and both
  * rewards exist, or none of them do. The (user, type, reason, invitee) UNIQUE index means the
  * same signup can never pay twice.
@@ -22,7 +24,7 @@ export async function findReferrerId(db: Prisma.TransactionClient, code: string)
  */
 export async function grantSignupRewards(
   db: Prisma.TransactionClient,
-  signup: { referrerId: string; inviteeId: string; maxRewardedInvites: number },
+  signup: { referrerId: string; inviteeId: string; maxRewardedInvites: number; contactCredits?: number },
 ): Promise<{ referrerRewarded: boolean }> {
   // Two friends signing up with one code at the same moment must not both slip under the cap:
   // take the inviter's row lock so their rewards are counted one after the other. NO KEY UPDATE
@@ -41,5 +43,13 @@ export async function grantSignupRewards(
       ...(referrerRewarded ? [{ ...base, userId: signup.referrerId, reason: RewardReason.REFERRER_BONUS }] : []),
     ],
   });
+
+  const credits = signup.contactCredits ?? 0;
+  if (credits > 0) {
+    // (user, invitee) is UNIQUE among referral batches, like the rewards above: no double pay.
+    const batch = { source: ContactCreditSource.REFERRAL, amount: credits, inviteeId: signup.inviteeId };
+    await grantContactCredits(db, { ...batch, userId: signup.inviteeId });
+    if (referrerRewarded) await grantContactCredits(db, { ...batch, userId: signup.referrerId });
+  }
   return { referrerRewarded };
 }

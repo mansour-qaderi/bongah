@@ -61,6 +61,16 @@ export function formatDate(iso: string): string {
   return toPersianDigits(`${d.getUTCFullYear()}/${mm}/${dd}`);
 }
 
+/** The time of day in Kabul time, e.g. ۱۴:۰۵ (chat message times). */
+export function formatTime(iso: string): string {
+  const time = Date.parse(iso);
+  if (Number.isNaN(time)) return '';
+  const d = new Date(time + KABUL_OFFSET_MS);
+  const hh = String(d.getUTCHours()).padStart(2, '0');
+  const mm = String(d.getUTCMinutes()).padStart(2, '0');
+  return toPersianDigits(`${hh}:${mm}`);
+}
+
 /** Formats a phone number in canonical +93 form for display: +۹۳ ۷۰ ۱۲۳ ۴۵۶۷. */
 export function formatPhone(e164: string): string {
   const m = /^\+93(\d{2})(\d{3})(\d{4})$/.exec(e164);

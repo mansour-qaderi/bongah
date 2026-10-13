@@ -215,7 +215,7 @@ describe.skipIf(!hasDb)('Referrals and rewards (e2e)', () => {
       expect(s).toEqual({
         referral_code: code,
         share_url: `https://bongah.test/invite/${code}`,
-        stats: { invited_count: 0, rewarded_invites: 0, max_rewarded_invites: CAP, ladder_tokens_available: 0, ladder_tokens_earned: 0 },
+        stats: { invited_count: 0, rewarded_invites: 0, max_rewarded_invites: CAP, contact_credits_per_invite: 2, ladder_tokens_available: 0, ladder_tokens_earned: 0 },
         invited: [],
         rewards: [],
       });

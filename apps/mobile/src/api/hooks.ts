@@ -10,12 +10,16 @@ import type { Paginated, Property } from '@bongah/shared-types';
 import { ApiError } from './client';
 import {
   getAgencyDashboard,
+  getChatCapabilities,
+  getContactAccess,
   getMapLocationStatus,
   getPricing,
   getProperty,
   getReferralSummary,
+  listConversations,
   listMyProperties,
   listProperties,
+  listTemplates,
   redeemLadderToken,
   type PropertyFilters,
 } from './endpoints';
@@ -46,6 +50,15 @@ export const queryKeys = {
   pricing: ['pricing'] as const,
   mapLocation: ['map-location'] as const,
   referral: ['referral'] as const,
+  /** Everything about a listing's owner number: the allowance and who has been revealed. A payment or a reveal refreshes it all. */
+  contact: ['contact'] as const,
+  contactFor: (propertyId: string) => ['contact', propertyId] as const,
+  /** Everything chat. Signing out removes it all. */
+  chat: ['chat'] as const,
+  conversations: ['chat', 'conversations'] as const,
+  messages: (conversationId: string) => ['chat', 'messages', conversationId] as const,
+  chatCapabilities: ['chat', 'capabilities'] as const,
+  templates: ['chat', 'templates'] as const,
 };
 
 const nextPage = (last: Paginated<Property>) =>
@@ -133,6 +146,48 @@ export function useMapLocationStatus(enabled: boolean) {
     queryFn: getMapLocationStatus,
     enabled,
     // It changes the moment a payment lands or a pin is spent, so never trust an old answer.
+    staleTime: 0,
+  });
+}
+
+/** Whether I can already see this listing's number and what is left of today's free reveals. */
+export function useContactAccess(propertyId: string, enabled: boolean) {
+  return useQuery({
+    queryKey: queryKeys.contactFor(propertyId),
+    queryFn: () => getContactAccess(propertyId),
+    enabled,
+    // The allowance changes whenever I reveal anything, anywhere, and refills at midnight.
+    staleTime: 0,
+  });
+}
+
+/** My conversations that have at least one message. The chat socket keeps it fresh. */
+export function useConversations(enabled: boolean) {
+  return useQuery({
+    queryKey: queryKeys.conversations,
+    queryFn: listConversations,
+    enabled,
+    staleTime: 0,
+  });
+}
+
+/** What my chat may do (agency perks) and its size limits. */
+export function useChatCapabilities(enabled: boolean) {
+  return useQuery({
+    queryKey: queryKeys.chatCapabilities,
+    queryFn: getChatCapabilities,
+    enabled,
+    // Subscribing (or the subscription ending) changes this.
+    staleTime: 60_000,
+  });
+}
+
+/** My saved replies. Agencies with a subscription only. */
+export function useTemplates(enabled: boolean) {
+  return useQuery({
+    queryKey: queryKeys.templates,
+    queryFn: listTemplates,
+    enabled,
     staleTime: 0,
   });
 }

@@ -58,6 +58,10 @@ export function usePaymentFlow() {
       queryClient.invalidateQueries({ queryKey: queryKeys.properties });
       // ...and a map location payment adds a prepaid pin.
       queryClient.invalidateQueries({ queryKey: queryKeys.mapLocation });
+      // ...a contact credits payment adds credits to the allowance...
+      queryClient.invalidateQueries({ queryKey: queryKeys.contact });
+      // ...and a subscription turns on the chat perks.
+      queryClient.invalidateQueries({ queryKey: queryKeys.chatCapabilities });
     }
   }, [status, queryClient]);
 

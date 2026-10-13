@@ -24,6 +24,9 @@ jest.mock('../src/auth/AuthContext', () => ({
   useAuth: () => mockAuth,
   AuthProvider: ({ children }: { children: React.ReactNode }) => children,
 }));
+jest.mock('@react-navigation/native', () =>
+  require('../test-utils/navMock').navigationModule(),
+);
 jest.mock('../src/navigation/useRequireAuth', () => ({
   useRequireAuth: () => (action: () => void) => action(),
 }));
@@ -51,6 +54,8 @@ const PRICING = {
   featured_ad: 100,
   map_location: 30,
   featured_ad_days: 7,
+  contact_credits: 40,
+  contact_credits_per_pack: 10,
 };
 const STATUS_NONE = {
   unlimited: false,

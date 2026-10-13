@@ -3,6 +3,8 @@ import { JwtService } from '@nestjs/jwt';
 import { Test } from '@nestjs/testing';
 import { ThrottlerGuard } from '@nestjs/throttler';
 import { createHmac, randomUUID } from 'node:crypto';
+import type { AddressInfo } from 'node:net';
+import { io, type Socket } from 'socket.io-client';
 import request from 'supertest';
 import { AppModule } from '../src/app.module.js';
 import type { VerifyOtpResponse } from '@bongah/shared-types';
@@ -44,6 +46,27 @@ export class TestContext {
 
   get http() {
     return this.app.getHttpServer();
+  }
+
+  private readonly sockets: Socket[] = [];
+
+  /** Starts the app on a free port (sockets need a real one) and returns its base URL. Idempotent. */
+  async listen(): Promise<string> {
+    const server = this.app.getHttpServer();
+    if (!server.listening) await this.app.listen(0, '127.0.0.1');
+    return `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  }
+
+  /** A connected chat socket for `token` (closed in close()). Rejects with the server's reason if the handshake is refused. */
+  async connectSocket(token: string | undefined): Promise<Socket> {
+    const url = await this.listen();
+    const socket = io(url, { auth: token === undefined ? {} : { token }, transports: ['websocket'], reconnection: false });
+    this.sockets.push(socket);
+    await new Promise<void>((resolve, reject) => {
+      socket.once('connect', () => resolve());
+      socket.once('connect_error', (error) => reject(error));
+    });
+    return socket;
   }
 
   /** Creates a user straight in the database (bypassing OTP) and returns it with a token. */
@@ -134,14 +157,64 @@ export class TestContext {
     });
   }
 
+  /** Gives a user a batch of contact reveal credits (without going through a payment). */
+  async giveContactCredits(userId: string, amount: number, source: 'REFERRAL' | 'ADMIN_GRANT' = 'ADMIN_GRANT') {
+    await this.prisma.userCredit.create({
+      data: {
+        userId,
+        source,
+        amount,
+        remaining: amount,
+        // A referral batch names the friend it came from; tests use the user's own id.
+        inviteeId: source === 'REFERRAL' ? userId : null,
+      },
+    });
+  }
+
+  /** Creates an ACTIVE listing owned by `owner` straight in the database. */
+  async listing(owner: { id: string }, overrides: Record<string, unknown> = {}) {
+    const agency = await this.prisma.agency.findUnique({ where: { userId: owner.id }, select: { id: true } });
+    return this.prisma.property.create({
+      data: {
+        userId: owner.id,
+        agencyId: agency?.id ?? null,
+        title: 'Chat test apartment',
+        description: 'Bright apartment close to the market.',
+        type: 'APARTMENT',
+        dealType: 'SALE',
+        price: 85000,
+        currency: 'USD',
+        areaSqm: 90,
+        province: 'Kabul',
+        district: 'Shar-e-Naw',
+        neighborhood: 'Qala-e-Fathullah',
+        address: 'Street 4',
+        images: ['https://example.com/a.jpg'],
+        ...overrides,
+      },
+    });
+  }
+
   /** Removes everything the test created, children before parents. */
   async close(): Promise<void> {
+    for (const socket of this.sockets) socket.close();
     const userIds = this.userIds;
     const agencies = await this.prisma.agency.findMany({
       where: { userId: { in: userIds } },
       select: { id: true },
     });
     const agencyIds = agencies.map((a) => a.id);
+    // Chat and contact reveals point at users and listings (and messages at pictures, unlocks at credits).
+    await this.prisma.message.deleteMany({ where: { senderId: { in: userIds } } });
+    await this.prisma.conversation.deleteMany({
+      where: { OR: [{ buyerId: { in: userIds } }, { sellerId: { in: userIds } }] },
+    });
+    await this.prisma.chatImage.deleteMany({ where: { uploaderId: { in: userIds } } });
+    await this.prisma.chatTemplate.deleteMany({ where: { userId: { in: userIds } } });
+    await this.prisma.contactUnlockLog.deleteMany({
+      where: { OR: [{ userId: { in: userIds } }, { contactUserId: { in: userIds } }] },
+    });
+    await this.prisma.userCredit.deleteMany({ where: { OR: [{ userId: { in: userIds } }, { inviteeId: { in: userIds } }] } });
     await this.prisma.subscription.deleteMany({ where: { agencyId: { in: agencyIds } } });
     // Rewards point at users and listings; invited users point at their inviter.
     await this.prisma.reward.deleteMany({ where: { OR: [{ userId: { in: userIds } }, { inviteeId: { in: userIds } }] } });

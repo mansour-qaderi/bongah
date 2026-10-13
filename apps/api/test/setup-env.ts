@@ -17,8 +17,12 @@ process.env.HESABPAY_PRICE_SUBSCRIPTION_YEARLY = '9600';
 process.env.HESABPAY_PRICE_LADDER = '50';
 process.env.HESABPAY_PRICE_FEATURED_AD = '100.50';
 process.env.HESABPAY_PRICE_MAP_LOCATION = '30';
+process.env.HESABPAY_PRICE_CONTACT_CREDITS = '40';
+process.env.HESABPAY_CONTACT_CREDITS_PER_PACK = '10';
 process.env.HESABPAY_FEATURED_AD_DAYS = '7';
 
 // Referrals: a small cap so the limit can be tested, and a link template so share_url can be asserted.
 process.env.REFERRAL_MAX_REWARDED_INVITES = '3';
+process.env.REFERRAL_CONTACT_CREDITS = '2';
+process.env.CONTACT_DAILY_FREE_LIMIT = '3';
 process.env.REFERRAL_LINK_TEMPLATE = 'https://bongah.test/invite/{code}';

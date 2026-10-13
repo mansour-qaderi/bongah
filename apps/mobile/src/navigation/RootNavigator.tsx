@@ -1,6 +1,8 @@
 import React from 'react';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { useTranslation } from 'react-i18next';
+import ChatScreen from '../screens/chat/ChatScreen';
+import TemplatesScreen from '../screens/chat/TemplatesScreen';
 import AddPropertyScreen from '../screens/property/AddPropertyScreen';
 import PropertyDetailsScreen from '../screens/property/PropertyDetailsScreen';
 import SetLocationScreen from '../screens/property/SetLocationScreen';
@@ -50,6 +52,18 @@ export default function RootNavigator() {
         name="Referral"
         component={ReferralScreen}
         options={{ title: t('nav.referral') }}
+      />
+      <Stack.Screen
+        name="Chat"
+        component={ChatScreen}
+        options={({ route }) => ({
+          title: route.params.conversation.counterpart.name ?? t('chat.counterpart'),
+        })}
+      />
+      <Stack.Screen
+        name="Templates"
+        component={TemplatesScreen}
+        options={{ title: t('nav.templates') }}
       />
       <Stack.Screen
         name="Auth"

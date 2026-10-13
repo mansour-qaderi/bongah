@@ -54,3 +54,11 @@ jest.mock(
   'react-native-safe-area-context',
   () => require('react-native-safe-area-context/jest/mock').default,
 );
+
+// The chat socket and the picture picker are native / networked: stand-ins the tests can drive.
+jest.mock('socket.io-client', () => require('./test-utils/mockSocket'));
+
+jest.mock('react-native-image-picker', () => ({
+  launchImageLibrary: jest.fn(async () => ({ didCancel: true })),
+  launchCamera: jest.fn(async () => ({ didCancel: true })),
+}));

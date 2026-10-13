@@ -2,11 +2,14 @@ import React from 'react';
 import { StyleSheet, Text } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { useTranslation } from 'react-i18next';
+import { useConversations } from '../api/hooks';
 import { useAuth } from '../auth/AuthContext';
 import AccountScreen from '../screens/account/AccountScreen';
 import AgencyDashboardScreen from '../screens/agency/AgencyDashboardScreen';
 import HomeScreen from '../screens/home/HomeScreen';
+import ChatListScreen from '../screens/chat/ChatListScreen';
 import MyListingsScreen from '../screens/my/MyListingsScreen';
+import { formatNumber } from '../i18n/format';
 import { colors } from '../theme';
 import type { TabParamList } from './types';
 
@@ -19,7 +22,13 @@ const styles = StyleSheet.create({ icon: { fontSize: 20 } });
 
 export default function MainTabs() {
   const { t } = useTranslation();
-  const { user } = useAuth();
+  const { user, status } = useAuth();
+  // The unread badge on the Messages tab. The chat socket keeps this list fresh.
+  const conversations = useConversations(status === 'signedIn');
+  const unread = (conversations.data ?? []).reduce(
+    (sum, conversation) => sum + conversation.unread_count,
+    0,
+  );
   return (
     <Tab.Navigator
       screenOptions={{
@@ -44,6 +53,15 @@ export default function MainTabs() {
           options={{ title: t('nav.dashboard'), tabBarIcon: icon('📊') }}
         />
       ) : null}
+      <Tab.Screen
+        name="Messages"
+        component={ChatListScreen}
+        options={{
+          title: t('nav.messages'),
+          tabBarIcon: icon('💬'),
+          tabBarBadge: unread > 0 ? formatNumber(Math.min(unread, 99), 0) : undefined,
+        }}
+      />
       <Tab.Screen
         name="MyListings"
         component={MyListingsScreen}

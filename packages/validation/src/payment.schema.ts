@@ -22,5 +22,9 @@ export const initiatePaymentSchema = z.discriminatedUnion('purpose', [
   z.strictObject({
     purpose: z.literal('MAP_LOCATION'),
   }),
+  // A pack of contact reveal credits. The server decides the pack size and price (see Pricing).
+  z.strictObject({
+    purpose: z.literal('CONTACT_CREDITS'),
+  }),
 ]);
 export type InitiatePaymentInput = z.output<typeof initiatePaymentSchema>;
