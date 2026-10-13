@@ -10,7 +10,6 @@ import {
 import { randomUUID } from 'node:crypto';
 import {
   Prisma,
-  PropertyStatus,
   Role,
   TransactionPurpose,
   TransactionStatus,
@@ -18,6 +17,7 @@ import {
 } from '../generated/prisma/client.js';
 import { unlimitedMapLocationReason } from '../map-location/map-location.access.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { PromotionService } from '../promotion/promotion.service.js';
 import type { InitiatePaymentDto } from './dto/initiate-payment.dto.js';
 import type { PaymentInitiatedDto, PaymentStatusDto, PricingDto } from './dto/payment-response.dto.js';
 import { HesabPayGateway, type VerifiedWebhookEvent } from './gateway/hesabpay-gateway.js';
@@ -41,6 +41,7 @@ export class HesabpayService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly gateway: HesabPayGateway,
+    private readonly promotion: PromotionService,
     @Inject(HESABPAY_SETTINGS) private readonly settings: HesabPaySettings,
   ) {}
 
@@ -159,7 +160,7 @@ export class HesabpayService {
         data: { status: TransactionStatus.SUCCESS },
       });
       if (claimed.count !== 1) return; // another delivery of the same webhook won the race
-      await fulfil(db, payment, this.settings.featuredAdDays, new Date());
+      await fulfil(db, payment, this.settings.featuredAdDays, new Date(), this.promotion);
     });
     this.logger.log(`Payment ${payment.id} (${payment.purpose}) fulfilled`);
   }
@@ -217,16 +218,7 @@ export class HesabpayService {
       }
       case 'LADDER':
       case 'FEATURED_AD': {
-        const property = await this.prisma.property.findUnique({
-          where: { id: input.property_id },
-          select: { userId: true, status: true },
-        });
-        if (!property || property.status !== PropertyStatus.ACTIVE) {
-          throw new NotFoundException('Active property not found.');
-        }
-        if (property.userId !== userId) {
-          throw new ForbiddenException('You can only promote your own listings.');
-        }
+        await this.promotion.assertPromotable(this.prisma, userId, input.property_id);
         const ladder = input.purpose === 'LADDER';
         return {
           purpose: ladder ? TransactionPurpose.LADDER : TransactionPurpose.FEATURED_AD,

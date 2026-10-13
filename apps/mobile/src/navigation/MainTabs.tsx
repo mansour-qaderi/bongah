@@ -2,7 +2,9 @@ import React from 'react';
 import { StyleSheet, Text } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { useTranslation } from 'react-i18next';
+import { useAuth } from '../auth/AuthContext';
 import AccountScreen from '../screens/account/AccountScreen';
+import AgencyDashboardScreen from '../screens/agency/AgencyDashboardScreen';
 import HomeScreen from '../screens/home/HomeScreen';
 import MyListingsScreen from '../screens/my/MyListingsScreen';
 import { colors } from '../theme';
@@ -17,6 +19,7 @@ const styles = StyleSheet.create({ icon: { fontSize: 20 } });
 
 export default function MainTabs() {
   const { t } = useTranslation();
+  const { user } = useAuth();
   return (
     <Tab.Navigator
       screenOptions={{
@@ -34,6 +37,13 @@ export default function MainTabs() {
           tabBarIcon: icon('🏠'),
         }}
       />
+      {user?.role === 'AGENCY' ? (
+        <Tab.Screen
+          name="Dashboard"
+          component={AgencyDashboardScreen}
+          options={{ title: t('nav.dashboard'), tabBarIcon: icon('📊') }}
+        />
+      ) : null}
       <Tab.Screen
         name="MyListings"
         component={MyListingsScreen}

@@ -5,6 +5,7 @@ import { ThrottlerGuard } from '@nestjs/throttler';
 import { createHmac, randomUUID } from 'node:crypto';
 import request from 'supertest';
 import { AppModule } from '../src/app.module.js';
+import type { VerifyOtpResponse } from '@bongah/shared-types';
 import { Role } from '../src/generated/prisma/client.js';
 import { PrismaService } from '../src/prisma/prisma.service.js';
 
@@ -47,11 +48,40 @@ export class TestContext {
 
   /** Creates a user straight in the database (bypassing OTP) and returns it with a token. */
   async user(role: Role = Role.USER): Promise<TestUser> {
-    const tail = String(Math.floor(Math.random() * 1e7)).padStart(7, '0');
-    const phone = `+9370${tail}`;
+    const phone = randomPhone();
     const row = await this.prisma.user.create({ data: { phoneNumber: phone, role } });
     this.userIds.push(row.id);
     return { id: row.id, phone, token: await this.tokenFor(row.id, role) };
+  }
+
+  /** Asks for an OTP the way the app does and returns the code (the mock SMS gateway hands it back in tests). */
+  async otpFor(phone: string): Promise<string> {
+    // A second code for the same number would hit the resend cooldown; the cooldown is not what's under test.
+    await this.prisma.otpCode.updateMany({ where: { phoneNumber: phone }, data: { createdAt: new Date(Date.now() - 2 * 3_600_000) } });
+    const sent = await this.post('/auth/send-otp', { phone_number: phone }).expect(200);
+    return sent.body.dev_otp as string;
+  }
+
+  /** POST /auth/verify-otp, optionally with a referral code. Returns the request so callers pick the status they expect. */
+  verifyOtp = (phone: string, otp: string, referralCode?: string) =>
+    this.post('/auth/verify-otp', {
+      phone_number: phone,
+      otp_code: otp,
+      ...(referralCode === undefined ? {} : { referral_code: referralCode }),
+    });
+
+  /** Signs a NEW user up through the real OTP flow (optionally with a referral code). Removed in close(). */
+  async signUp(referralCode?: string): Promise<TestUser & { response: VerifyOtpResponse }> {
+    const phone = randomPhone();
+    const res = await this.verifyOtp(phone, await this.otpFor(phone), referralCode).expect(200);
+    const response = res.body as VerifyOtpResponse;
+    this.userIds.push(response.user.id);
+    return { id: response.user.id, phone, token: response.access_token, response };
+  }
+
+  /** The referral code of a user (every user has one). */
+  async codeOf(userId: string): Promise<string> {
+    return (await this.prisma.user.findUniqueOrThrow({ where: { id: userId } })).referralCode;
   }
 
   /** A token that claims `role`, whatever the database says. */
@@ -113,6 +143,9 @@ export class TestContext {
     });
     const agencyIds = agencies.map((a) => a.id);
     await this.prisma.subscription.deleteMany({ where: { agencyId: { in: agencyIds } } });
+    // Rewards point at users and listings; invited users point at their inviter.
+    await this.prisma.reward.deleteMany({ where: { OR: [{ userId: { in: userIds } }, { inviteeId: { in: userIds } }] } });
+    await this.prisma.user.updateMany({ where: { id: { in: userIds } }, data: { referredById: null } });
     // Tokens point at both payments and listings, so they go first.
     await this.prisma.mapLocationToken.deleteMany({ where: { userId: { in: userIds } } });
     await this.prisma.transaction.deleteMany({ where: { userId: { in: userIds } } });
@@ -131,6 +164,12 @@ export class TestContext {
   patch = (path: string, body: object, token?: string) =>
     withAuth(request(this.http).patch(path).send(body), token);
   del = (path: string, token?: string) => withAuth(request(this.http).delete(path), token);
+}
+
+/** A fresh Afghan number (+9370xxxxxxx) so tests never share a user. */
+export function randomPhone(): string {
+  const tail = String(Math.floor(Math.random() * 1e7)).padStart(7, '0');
+  return `+9370${tail}`;
 }
 
 function withAuth<T extends request.Test>(req: T, token?: string): T {

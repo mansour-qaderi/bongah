@@ -34,6 +34,10 @@ export function errorMessage(
       return t('map.required');
     case 'MAP_LOCATION_ALREADY_UNLIMITED':
       return t('map.alreadyUnlimited');
+    case 'INVALID_REFERRAL_CODE':
+      return t('auth.referralInvalid');
+    case 'NO_LADDER_TOKEN':
+      return t('referral.noToken');
   }
 
   switch (error.status) {
@@ -60,6 +64,10 @@ export function errorMessage(
       return t('errors.unknown');
   }
 }
+
+/** Sign-up was refused only because the referral code does not exist (the OTP is still usable). */
+export const isInvalidReferralCode = (error: unknown): boolean =>
+  error instanceof ApiError && error.code === 'INVALID_REFERRAL_CODE';
 
 /** The server refused an exact pin because the account has neither a subscription nor a prepaid pin. */
 export const isMapLocationRequired = (error: unknown): boolean =>

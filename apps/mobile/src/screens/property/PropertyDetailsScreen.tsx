@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   FlatList,
   Image,
@@ -12,13 +12,14 @@ import { useMutation } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { ApiError } from '../../api/client';
 import { errorMessage } from '../../api/errors';
-import { getPropertyContact } from '../../api/endpoints';
+import { getPropertyContact, recordPropertyView } from '../../api/endpoints';
 import { usePropertyDetail } from '../../api/hooks';
 import { useAuth } from '../../auth/AuthContext';
 import AppText from '../../components/AppText';
 import Banner from '../../components/Banner';
 import Button from '../../components/Button';
 import { Chip } from '../../components/Chip';
+import PromotionSheet from '../../components/PromotionSheet';
 import PropertyLocationMap from '../../components/PropertyLocationMap';
 import { ScrollScreen } from '../../components/Screen';
 import { ErrorView, LoadingView } from '../../components/States';
@@ -30,16 +31,29 @@ import { colors, radius, spacing } from '../../theme';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'PropertyDetails'>;
 
-export default function PropertyDetailsScreen({ navigation, route }: Props) {
+export default function PropertyDetailsScreen({ route }: Props) {
   const { t } = useTranslation();
   const format = useFormat();
-  const { user } = useAuth();
+  const { user, status } = useAuth();
   const requireAuth = useRequireAuth();
   const { width } = useWindowDimensions();
   const { id } = route.params;
 
   const query = usePropertyDetail(id);
   const contact = useMutation({ mutationFn: () => getPropertyContact(id) });
+  const [promoting, setPromoting] = useState(false);
+
+  // Count one view per opening of this screen, for the agency dashboard. The owner looking at
+  // their own listing is not a view. Waits until the session is known, otherwise the owner would
+  // be counted while the app is still restoring their sign-in. A failure is not worth showing.
+  const ownerId = query.data?.user_id;
+  const counted = useRef(false);
+  useEffect(() => {
+    if (counted.current || ownerId === undefined || status === 'loading')
+      return;
+    counted.current = true;
+    if (user?.id !== ownerId) recordPropertyView(id).catch(() => undefined);
+  }, [id, ownerId, status, user?.id]);
 
   if (query.isPending) return <LoadingView />;
   if (query.isError) {
@@ -212,14 +226,15 @@ export default function PropertyDetailsScreen({ navigation, route }: Props) {
           <Button
             title={t('property.promote')}
             variant="secondary"
-            onPress={() =>
-              navigation.navigate('Checkout', {
-                tab: 'promotion',
-                propertyId: property.id,
-              })
-            }
+            onPress={() => setPromoting(true)}
           />
         </View>
+      ) : null}
+      {isOwner ? (
+        <PromotionSheet
+          property={promoting ? property : null}
+          onClose={() => setPromoting(false)}
+        />
       ) : null}
     </ScrollScreen>
   );

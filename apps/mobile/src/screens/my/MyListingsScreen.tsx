@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -24,6 +24,7 @@ import { useAuth } from '../../auth/AuthContext';
 import AppText from '../../components/AppText';
 import Banner from '../../components/Banner';
 import Button from '../../components/Button';
+import PromotionSheet from '../../components/PromotionSheet';
 import PropertyCard from '../../components/PropertyCard';
 import { Screen } from '../../components/Screen';
 import { EmptyView, ErrorView, LoadingView } from '../../components/States';
@@ -41,6 +42,7 @@ export default function MyListingsScreen({ navigation }: Props) {
   const { status } = useAuth();
   const query = useMyProperties(status === 'signedIn');
   const properties = flattenPages(query.data);
+  const [promoting, setPromoting] = useState<Property | null>(null);
 
   const archive = useMutation({
     mutationFn: archiveProperty,
@@ -99,12 +101,7 @@ export default function MyListingsScreen({ navigation }: Props) {
             title={t('my.promote')}
             variant="secondary"
             style={styles.action}
-            onPress={() =>
-              navigation.navigate('Checkout', {
-                tab: 'promotion',
-                propertyId: property.id,
-              })
-            }
+            onPress={() => setPromoting(property)}
           />
           <Button
             title={t('my.archive')}
@@ -182,6 +179,7 @@ export default function MyListingsScreen({ navigation }: Props) {
         </View>
       ) : null}
       {body}
+      <PromotionSheet property={promoting} onClose={() => setPromoting(null)} />
     </Screen>
   );
 }

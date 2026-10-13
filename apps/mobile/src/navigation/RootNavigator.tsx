@@ -5,6 +5,7 @@ import AddPropertyScreen from '../screens/property/AddPropertyScreen';
 import PropertyDetailsScreen from '../screens/property/PropertyDetailsScreen';
 import SetLocationScreen from '../screens/property/SetLocationScreen';
 import CheckoutScreen from '../screens/payments/CheckoutScreen';
+import ReferralScreen from '../screens/referral/ReferralScreen';
 import AuthNavigator from './AuthNavigator';
 import MainTabs from './MainTabs';
 import type { RootStackParamList } from './types';
@@ -44,6 +45,11 @@ export default function RootNavigator() {
         name="Checkout"
         component={CheckoutScreen}
         options={{ title: t('nav.checkout') }}
+      />
+      <Stack.Screen
+        name="Referral"
+        component={ReferralScreen}
+        options={{ title: t('nav.referral') }}
       />
       <Stack.Screen
         name="Auth"

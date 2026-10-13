@@ -1,17 +1,22 @@
 import {
   QueryClient,
   useInfiniteQuery,
+  useMutation,
   useQuery,
+  useQueryClient,
   type InfiniteData,
 } from '@tanstack/react-query';
 import type { Paginated, Property } from '@bongah/shared-types';
 import { ApiError } from './client';
 import {
+  getAgencyDashboard,
   getMapLocationStatus,
   getPricing,
   getProperty,
+  getReferralSummary,
   listMyProperties,
   listProperties,
+  redeemLadderToken,
   type PropertyFilters,
 } from './endpoints';
 
@@ -31,9 +36,16 @@ export const queryKeys = {
   properties: ['properties'] as const,
   list: (filters: PropertyFilters) => ['properties', 'list', filters] as const,
   mine: ['properties', 'mine'] as const,
+  /**
+   * Sits under `properties` on purpose: everything on the dashboard (counts, subscription days,
+   * promotions) is derived from listings and payments, so the invalidations that already follow
+   * adding, archiving or paying refresh it too.
+   */
+  agencyDashboard: ['properties', 'agency-dashboard'] as const,
   property: (id: string) => ['properties', 'detail', id] as const,
   pricing: ['pricing'] as const,
   mapLocation: ['map-location'] as const,
+  referral: ['referral'] as const,
 };
 
 const nextPage = (last: Paginated<Property>) =>
@@ -74,6 +86,43 @@ export function usePricing() {
     queryKey: queryKeys.pricing,
     queryFn: getPricing,
     staleTime: 5 * 60_000,
+  });
+}
+
+/** The agency CRM home: listing counts, views, subscription days left, top listings. */
+export function useAgencyDashboard(enabled: boolean) {
+  return useQuery({
+    queryKey: queryKeys.agencyDashboard,
+    queryFn: getAgencyDashboard,
+    enabled,
+    // Views and subscription days move on their own, so never trust an old answer.
+    staleTime: 0,
+  });
+}
+
+/** My referral code, who joined with it, and the free ladder tokens I hold. */
+export function useReferralSummary(enabled: boolean) {
+  return useQuery({
+    queryKey: queryKeys.referral,
+    queryFn: getReferralSummary,
+    enabled,
+    // Friends join and tokens get spent without this screen knowing, so never trust an old answer.
+    staleTime: 0,
+  });
+}
+
+/**
+ * Spends one free ladder token on one of my listings. Moving a listing up changes the lists, and
+ * the token count on the referral screen, so both are refreshed.
+ */
+export function useRedeemLadderToken() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: redeemLadderToken,
+    onSuccess: () => {
+      client.invalidateQueries({ queryKey: queryKeys.properties });
+      client.invalidateQueries({ queryKey: queryKeys.referral });
+    },
   });
 }
 

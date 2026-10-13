@@ -1,20 +1,15 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { Linking, StyleSheet, View } from 'react-native';
+import React, { useState } from 'react';
+import { StyleSheet, View } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { useMutation, useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import {
   SUBSCRIPTION_PACKAGES,
-  type PaymentInitiated,
   type SubscriptionPackage,
 } from '@bongah/shared-types';
 import type { InitiatePaymentInput } from '@bongah/validation';
-import { getPayment, initiatePayment } from '../../api/endpoints';
 import { errorMessage } from '../../api/errors';
 import {
   flattenPages,
-  queryClient,
-  queryKeys,
   useMapLocationStatus,
   useMyProperties,
   usePricing,
@@ -24,16 +19,14 @@ import AppText from '../../components/AppText';
 import Banner from '../../components/Banner';
 import Button from '../../components/Button';
 import OptionCard from '../../components/OptionCard';
+import PaymentProgress from '../../components/PaymentProgress';
 import { ScrollScreen } from '../../components/Screen';
 import SegmentedControl from '../../components/SegmentedControl';
 import { EmptyView, ErrorView, LoadingView } from '../../components/States';
-import {
-  PAYMENT_POLL_INTERVAL_MS,
-  PAYMENT_POLL_TIMEOUT_MS,
-} from '../../config';
 import { formatNumber } from '../../i18n/format';
 import { useFormat } from '../../i18n/useFormat';
 import type { RootStackParamList } from '../../navigation/types';
+import { usePaymentFlow } from '../../payments/usePaymentFlow';
 import { colors, spacing } from '../../theme';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Checkout'>;
@@ -54,56 +47,12 @@ export default function CheckoutScreen({ navigation, route }: Props) {
   const [propertyId, setPropertyId] = useState<string | null>(
     params?.propertyId ?? null,
   );
-  const [payment, setPayment] = useState<PaymentInitiated | null>(null);
-  const [openFailed, setOpenFailed] = useState(false);
-  const startedAt = useRef(0);
+  const flow = usePaymentFlow();
 
   const pricing = usePricing();
   const mapStatus = useMapLocationStatus(status === 'signedIn');
   const mine = useMyProperties(status === 'signedIn');
   const listings = flattenPages(mine.data).filter(p => p.status === 'ACTIVE');
-
-  const start = useMutation({
-    mutationFn: initiatePayment,
-    onSuccess: async created => {
-      startedAt.current = Date.now();
-      setPayment(created);
-      await openPaymentPage(created.payment_url);
-    },
-  });
-
-  // While a payment is pending, ask the server every few seconds. The webhook from HesabPay
-  // is what actually confirms it; this just notices.
-  const poll = useQuery({
-    queryKey: ['payment', payment?.id],
-    queryFn: () => getPayment(payment!.id),
-    enabled: payment !== null,
-    refetchInterval: query => {
-      const pending = (query.state.data?.status ?? 'PENDING') === 'PENDING';
-      const withinTime =
-        Date.now() - startedAt.current < PAYMENT_POLL_TIMEOUT_MS;
-      return pending && withinTime ? PAYMENT_POLL_INTERVAL_MS : false;
-    },
-  });
-
-  const paymentStatus = poll.data?.status ?? payment?.status;
-  useEffect(() => {
-    if (paymentStatus === 'SUCCESS') {
-      // A new subscription / laddered / featured listing changes what the lists show.
-      queryClient.invalidateQueries({ queryKey: queryKeys.properties });
-      // ...and a map location payment adds a prepaid pin.
-      queryClient.invalidateQueries({ queryKey: queryKeys.mapLocation });
-    }
-  }, [paymentStatus]);
-
-  async function openPaymentPage(url: string) {
-    setOpenFailed(false);
-    try {
-      await Linking.openURL(url);
-    } catch {
-      setOpenFailed(true);
-    }
-  }
 
   if (status !== 'signedIn') {
     return (
@@ -127,10 +76,6 @@ export default function CheckoutScreen({ navigation, route }: Props) {
   const prices = pricing.data;
 
   const isAgency = user?.role === 'AGENCY';
-  const timedOut =
-    paymentStatus === 'PENDING' &&
-    Date.now() - startedAt.current >= PAYMENT_POLL_TIMEOUT_MS;
-
   // Accounts that already pin for free (an agency on an active plan, an admin) are not sold the add-on.
   const alreadyUnlimited = mapStatus.data?.unlimited === true;
 
@@ -150,64 +95,10 @@ export default function CheckoutScreen({ navigation, route }: Props) {
   }
 
   // ───── After the payment page has been opened ─────
-  if (payment) {
+  if (flow.payment) {
     return (
       <ScrollScreen>
-        {paymentStatus === 'SUCCESS' ? (
-          <Banner kind="success" message={t('checkout.success')} />
-        ) : paymentStatus === 'FAILED' ? (
-          <Banner kind="error" message={t('checkout.failed')} />
-        ) : (
-          <Banner
-            kind="info"
-            message={timedOut ? t('checkout.timedOut') : t('checkout.opened')}
-          />
-        )}
-        {paymentStatus === 'PENDING' && !timedOut ? (
-          <AppText color={colors.textMuted} style={styles.waiting}>
-            {t('checkout.awaiting')}
-          </AppText>
-        ) : null}
-        <AppText variant="heading" style={styles.amount}>
-          {t('checkout.amount')}:{' '}
-          {format.price(payment.amount, payment.currency)}
-        </AppText>
-        {openFailed ? (
-          <Banner kind="error" message={t('checkout.openFailed')} />
-        ) : null}
-
-        {paymentStatus === 'SUCCESS' ? (
-          <Button
-            title={t('common.done')}
-            onPress={() => navigation.goBack()}
-          />
-        ) : (
-          <>
-            {paymentStatus === 'FAILED' ? (
-              <Button
-                title={t('common.retry')}
-                onPress={() => setPayment(null)}
-              />
-            ) : (
-              <>
-                <Button
-                  title={t('checkout.checkStatus')}
-                  loading={poll.isFetching}
-                  onPress={() => {
-                    startedAt.current = Date.now();
-                    poll.refetch();
-                  }}
-                />
-                <Button
-                  title={t('checkout.reopen')}
-                  variant="secondary"
-                  onPress={() => openPaymentPage(payment.payment_url)}
-                  style={styles.gap}
-                />
-              </>
-            )}
-          </>
-        )}
+        <PaymentProgress flow={flow} onDone={() => navigation.goBack()} />
       </ScrollScreen>
     );
   }
@@ -225,8 +116,8 @@ export default function CheckoutScreen({ navigation, route }: Props) {
         ]}
       />
       <View style={styles.section}>
-        {start.isError ? (
-          <Banner kind="error" message={errorMessage(start.error, t)} />
+        {flow.startError ? (
+          <Banner kind="error" message={errorMessage(flow.startError, t)} />
         ) : null}
 
         {tab === 'subscription' ? (
@@ -309,8 +200,8 @@ export default function CheckoutScreen({ navigation, route }: Props) {
         <Button
           title={t('checkout.pay')}
           disabled={input === null}
-          loading={start.isPending}
-          onPress={() => input && start.mutate(input)}
+          loading={flow.starting}
+          onPress={() => input && flow.begin(input)}
         />
       </View>
     </ScrollScreen>
@@ -321,6 +212,4 @@ const styles = StyleSheet.create({
   section: { marginTop: spacing.lg },
   help: { marginBottom: spacing.md },
   amount: { marginVertical: spacing.lg },
-  waiting: { marginBottom: spacing.sm },
-  gap: { marginTop: spacing.md },
 });

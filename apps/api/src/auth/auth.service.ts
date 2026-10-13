@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   HttpException,
   HttpStatus,
   Injectable,
@@ -23,6 +24,8 @@ import {
 import type { JwtPayload } from './auth.types.js';
 import type { AuthUserDto, SendOtpResponse, VerifyOtpResponse } from './dto/auth-response.dto.js';
 import { SmsGateway } from './sms/sms-gateway.js';
+import { readReferralSettings } from '../referral/referral.config.js';
+import { findReferrerId, grantSignupRewards } from '../referral/referral.signup.js';
 
 const HOUR_MS = 60 * 60 * 1000;
 
@@ -32,6 +35,7 @@ export class AuthService {
   private readonly secret: string;
   private readonly accessTokenTtlSeconds: number;
   private readonly exposeDevOtp: boolean;
+  private readonly maxRewardedInvites: number;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -42,6 +46,7 @@ export class AuthService {
     const settings = readJwtSettings(config);
     this.secret = settings.secret;
     this.accessTokenTtlSeconds = settings.expiresInSeconds;
+    this.maxRewardedInvites = readReferralSettings(config).maxRewardedInvites;
     // Only the mock gateway outside production may hand the code back in the HTTP response.
     this.exposeDevOtp =
       config.get<string>('SMS_PROVIDER', 'mock') === 'mock' &&
@@ -113,8 +118,14 @@ export class AuthService {
     };
   }
 
-  /** Checks the code, signs the user in (creating the account on first login) and returns a JWT. */
-  async verifyOtp(phone: string, code: string): Promise<VerifyOtpResponse> {
+  /**
+   * Checks the code, signs the user in (creating the account on first login) and returns a JWT.
+   *
+   * `referralCode` (already normalised) only matters on a first login: the new account is linked to
+   * the inviter and both get their reward, in the same transaction that creates the account.
+   * An existing user's code is ignored, so a returning user can't be tricked into, or blocked by, it.
+   */
+  async verifyOtp(phone: string, code: string, referralCode?: string): Promise<VerifyOtpResponse> {
     const now = new Date();
 
     const otp = await this.prisma.otpCode.findFirst({
@@ -132,6 +143,20 @@ export class AuthService {
 
     if (!this.matches(otp.codeHash, this.hash(phone, code))) throw invalidCode();
 
+    // Only after the OTP is proven: an unknown code is refused here, BEFORE the OTP is spent, so the
+    // person can fix the code or carry on without one. Checked after the OTP so nobody can use this
+    // endpoint to find out which referral codes exist.
+    let referrerId: string | null = null;
+    if (referralCode && !(await this.prisma.user.findUnique({ where: { phoneNumber: phone }, select: { id: true } }))) {
+      referrerId = await findReferrerId(this.prisma, referralCode);
+      if (!referrerId) {
+        throw new BadRequestException({
+          message: 'This referral code does not exist.',
+          code: 'INVALID_REFERRAL_CODE',
+        });
+      }
+    }
+
     // Single use, even if the same correct code arrives twice at the same instant.
     const consumed = await this.prisma.otpCode.updateMany({
       where: { id: otp.id, consumedAt: null },
@@ -139,7 +164,7 @@ export class AuthService {
     });
     if (consumed.count !== 1) throw invalidCode();
 
-    const { user, isNewUser } = await this.findOrCreateUser(phone);
+    const { user, isNewUser, referralApplied } = await this.findOrCreateUser(phone, referrerId);
 
     const payload: JwtPayload = { sub: user.id, role: user.role };
     return {
@@ -147,22 +172,39 @@ export class AuthService {
       token_type: 'Bearer',
       expires_in: this.accessTokenTtlSeconds,
       is_new_user: isNewUser,
+      referral_applied: referralApplied,
       user: toAuthUser(user),
     };
   }
 
-  private async findOrCreateUser(phone: string): Promise<{ user: User; isNewUser: boolean }> {
+  private async findOrCreateUser(
+    phone: string,
+    referrerId: string | null,
+  ): Promise<{ user: User; isNewUser: boolean; referralApplied: boolean }> {
     const existing = await this.prisma.user.findUnique({ where: { phoneNumber: phone } });
-    if (existing) return { user: existing, isNewUser: false };
+    if (existing) return { user: existing, isNewUser: false, referralApplied: false };
 
     try {
-      const user = await this.prisma.user.create({ data: { phoneNumber: phone, role: Role.USER } });
-      return { user, isNewUser: true };
+      // The account and the rewards it earns are created together or not at all.
+      return await this.prisma.$transaction(async (tx) => {
+        const user = await tx.user.create({
+          data: { phoneNumber: phone, role: Role.USER, referredById: referrerId },
+        });
+        if (referrerId) {
+          await grantSignupRewards(tx, {
+            referrerId,
+            inviteeId: user.id,
+            maxRewardedInvites: this.maxRewardedInvites,
+          });
+        }
+        return { user, isNewUser: true, referralApplied: referrerId !== null };
+      });
     } catch (error) {
       // Lost a race with a concurrent first login for the same number: use the account that won.
+      // (It got no referral rewards from us: our transaction rolled back whole.)
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
-        const user = await this.prisma.user.findUniqueOrThrow({ where: { phoneNumber: phone } });
-        return { user, isNewUser: false };
+        const user = await this.prisma.user.findUnique({ where: { phoneNumber: phone } });
+        if (user) return { user, isNewUser: false, referralApplied: false };
       }
       throw error;
     }

@@ -4,6 +4,7 @@ import type {
   UpdatePropertyInput,
 } from '@bongah/validation';
 import type {
+  AgencyDashboard,
   Currency,
   DealType,
   MapLocationStatus,
@@ -13,6 +14,8 @@ import type {
   Property,
   PropertyContact,
   PropertyType,
+  RedeemLadderTokenResponse,
+  ReferralSummary,
   SendOtpResponse,
   Transaction,
   User,
@@ -29,9 +32,18 @@ export const sendOtp = (phoneNumber: string) =>
     body: { phone_number: phoneNumber },
   });
 
-export const verifyOtp = (phoneNumber: string, otpCode: string) =>
+export const verifyOtp = (
+  phoneNumber: string,
+  otpCode: string,
+  referralCode?: string,
+) =>
   request<VerifyOtpResponse>('POST', '/auth/verify-otp', {
-    body: { phone_number: phoneNumber, otp_code: otpCode },
+    body: {
+      phone_number: phoneNumber,
+      otp_code: otpCode,
+      // Only sent when there is one: the server ignores it for returning users anyway.
+      ...(referralCode ? { referral_code: referralCode } : {}),
+    },
   });
 
 // ───────────── Users ─────────────
@@ -82,9 +94,33 @@ export const createProperty = (input: CreatePropertyInput) =>
 export const updateProperty = (id: string, input: UpdatePropertyInput) =>
   request<Property>('PATCH', `/properties/${id}`, { auth: true, body: input });
 
+/**
+ * Counts one view of a listing for the owner's dashboard. Fire-and-forget: callers ignore
+ * failures, a missed view is not worth an error message.
+ */
+export const recordPropertyView = (id: string) =>
+  request<void>('POST', `/properties/${id}/view`);
+
 /** DELETE archives the listing (it is not erased). */
 export const archiveProperty = (id: string) =>
   request<void>('DELETE', `/properties/${id}`, { auth: true });
+
+// ───────────── Agency ─────────────
+
+export const getAgencyDashboard = () =>
+  request<AgencyDashboard>('GET', '/agencies/me/dashboard', { auth: true });
+
+// ───────────── Referrals & rewards ─────────────
+
+export const getReferralSummary = () =>
+  request<ReferralSummary>('GET', '/referrals/me', { auth: true });
+
+/** Spends one free ladder token to move one of my listings to the top of search. */
+export const redeemLadderToken = (propertyId: string) =>
+  request<RedeemLadderTokenResponse>('POST', '/rewards/ladder-tokens/redeem', {
+    auth: true,
+    body: { property_id: propertyId },
+  });
 
 // ───────────── Map location ─────────────
 

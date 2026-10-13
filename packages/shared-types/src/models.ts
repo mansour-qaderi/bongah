@@ -4,6 +4,8 @@ import type {
   MapLocationUnlimitedReason,
   PropertyStatus,
   PropertyType,
+  RewardReason,
+  RewardType,
   Role,
   SubscriptionPackage,
   SubscriptionStatus,
@@ -99,6 +101,51 @@ export interface Transaction {
   created_at: string;
 }
 
+// ───────────── Agency dashboard ─────────────
+
+/** One of the agency's active listings on the dashboard, ranked by views. */
+export interface DashboardListing {
+  id: string;
+  title: string;
+  price: number;
+  currency: Currency;
+  view_count: number;
+  /** True only while a paid featured promotion is running. */
+  is_featured: boolean;
+  featured_until: string | null;
+  laddered_at: string | null;
+}
+
+/** GET /agencies/me/dashboard: what the agency CRM home screen shows. */
+export interface AgencyDashboard {
+  agency: {
+    id: string;
+    agency_name: string;
+    is_verified: boolean;
+  };
+  stats: {
+    /** Listings the agency still has: active and sold. Archived ("deleted") ones are not counted. */
+    total_properties: number;
+    active_listings: number;
+    /** Active listings whose paid featured promotion is running right now. */
+    featured_listings: number;
+    /** Views of every listing the agency ever published, archived ones included (views earned do not vanish). */
+    total_views: number;
+  };
+  subscription: {
+    /** A subscription is running right now. Same rule that lets the agency publish. */
+    is_active: boolean;
+    /** The plan running now; null when not active. */
+    package_type: SubscriptionPackage | null;
+    /** When publishing rights end, counting plans bought in advance; null when not active. */
+    ends_at: string | null;
+    /** Whole days left, rounded up (3 hours left is 1 day). 0 when not active. */
+    remaining_days: number;
+  };
+  /** Up to 5 active listings, most viewed first. */
+  top_listings: DashboardListing[];
+}
+
 // ───────────── Auth ─────────────
 
 export interface SendOtpResponse {
@@ -118,6 +165,8 @@ export interface VerifyOtpResponse {
   expires_in: number;
   /** True when this login created the account (the app can then ask for a name). */
   is_new_user: boolean;
+  /** True when this login created the account AND a valid referral code was used (both got their reward). */
+  referral_applied: boolean;
   user: User;
 }
 
@@ -165,4 +214,51 @@ export interface ApiErrorBody {
   /** Seconds to wait (rate limits). */
   retry_after?: number;
   resets_at?: string;
+}
+
+// ───────────── Referrals & rewards ─────────────
+
+/** A friend who signed up with the user's code. Phone numbers are masked: the app shows who, not how to reach them. */
+export interface ReferralInvitee {
+  name: string | null;
+  /** e.g. "+9370••••123". */
+  phone_masked: string;
+  joined_at: string;
+  /** False when the user had already reached the reward limit: the friend still got theirs. */
+  reward_granted: boolean;
+}
+
+export interface RewardItem {
+  type: RewardType;
+  reason: RewardReason;
+  amount: number;
+  created_at: string;
+  /** When a ladder token was spent; null while it is still available. */
+  used_at: string | null;
+}
+
+export interface ReferralSummary {
+  referral_code: string;
+  /** The invite link to share, or null when the server has no link configured (share the code alone). */
+  share_url: string | null;
+  stats: {
+    /** Everyone who signed up with the code. */
+    invited_count: number;
+    /** How many of them earned the user a reward. */
+    rewarded_invites: number;
+    /** Invites beyond this earn the inviter nothing (the friend still gets their reward). */
+    max_rewarded_invites: number;
+    ladder_tokens_available: number;
+    ladder_tokens_earned: number;
+  };
+  /** Newest first, at most 50. */
+  invited: ReferralInvitee[];
+  /** Newest first, at most 50. */
+  rewards: RewardItem[];
+}
+
+export interface RedeemLadderTokenResponse {
+  property_id: string;
+  laddered_at: string;
+  ladder_tokens_available: number;
 }

@@ -104,6 +104,25 @@ enum MapLocationTokenSource {
   @@map("map_location_token_source")
 }
 
+/// What a reward is worth. Only LADDER_TOKEN has an effect today (see RewardsService.redeemLadderToken).
+/// BONUS_LISTING and SUBSCRIPTION_EXTENSION are reserved so the table does not need a migration
+/// the day the product decides how they work; nothing grants or reads them yet.
+enum RewardType {
+  LADDER_TOKEN
+  BONUS_LISTING
+  SUBSCRIPTION_EXTENSION
+
+  @@map("reward_type")
+}
+
+/// Why a reward was granted. Together with the user and the invited friend it identifies the reward.
+enum RewardReason {
+  REFERRER_BONUS
+  REFEREE_BONUS
+
+  @@map("reward_reason")
+}
+
 // ───────────────────────────── Models ─────────────────────────────
 
 model User {
@@ -114,14 +133,28 @@ model User {
   fullName    String?  @map("full_name")
   role        Role     @default(USER)
   avatar      String?
+  /// The code this user shares to invite friends. Filled by the database (generate_referral_code(),
+  /// see the referrals migration) so every way of creating a user gets one.
+  referralCode String   @unique @default(dbgenerated("generate_referral_code()")) @map("referral_code")
+  /// Who invited this user. Set once, at signup, and never changed.
+  /// A user cannot refer themselves (CHECK constraint in the migration).
+  referredById String?  @map("referred_by_id") @db.Uuid
   createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  referredBy User?  @relation("Referrals", fields: [referredById], references: [id], onDelete: Restrict)
+  referrals  User[] @relation("Referrals")
 
   agency            Agency?
   properties        Property[]
   transactions      Transaction[]
   mapLocationTokens MapLocationToken[]
+  /// Rewards this user received.
+  rewards           Reward[]           @relation("RewardRecipient")
+  /// Rewards granted to others because this user signed up with their code.
+  rewardsEarnedFrom Reward[]           @relation("RewardInvitee")
 
+  @@index([referredById])
   @@map("users")
 }
 
@@ -181,6 +214,10 @@ model Property {
   /// Paid "featured" promotion: the badge shows while is_featured is true AND this is in the future.
   /// is_featured alone goes stale at expiry, so readers must check both (see toPropertyDto in src/property/property.mapper.ts).
   featuredUntil DateTime?      @map("featured_until") @db.Timestamptz(3)
+  /// How many times people other than the owner opened this listing (agency dashboard "total views").
+  /// Only ever changed by one raw `view_count = view_count + 1` statement (PropertyService.recordView):
+  /// a Prisma update would also move updated_at, which means "the listing was edited".
+  viewCount     Int            @default(0) @map("view_count")
   createdAt     DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt     DateTime       @updatedAt @map("updated_at") @db.Timestamptz(3)
 
@@ -190,6 +227,7 @@ model Property {
 
   transactions     Transaction[]
   mapLocationToken MapLocationToken?
+  rewards          Reward[]
 
   // Postgres does not index foreign keys automatically.
   @@index([userId, createdAt]) // "1 free listing per month" quota check
@@ -272,6 +310,40 @@ model MapLocationToken {
   // "How many unspent tokens does this user have" and "take the oldest one".
   @@index([userId, consumedAt])
   @@map("map_location_tokens")
+}
+
+/// Something a user earned by inviting a friend (or by being invited).
+///
+/// Granted at signup, in the same transaction that creates the invited user. UNIQUE on
+/// (recipient, type, reason, invitee): replaying a signup can never pay the same reward twice.
+/// A LADDER_TOKEN is spent by laddering one of the owner's listings; consumed_at and property_id
+/// are then set together (CHECK constraint in the migration), like map_location_tokens.
+model Reward {
+  id             String       @id @default(uuid()) @db.Uuid
+  /// Who receives the reward.
+  userId         String       @map("user_id") @db.Uuid
+  type           RewardType
+  reason         RewardReason
+  /// The invited friend whose signup earned it. For REFEREE_BONUS this is the recipient themself.
+  inviteeId      String       @map("invitee_id") @db.Uuid
+  /// How many units: one ladder token, N bonus listings, N days of subscription.
+  amount         Int          @default(1)
+  /// When it was spent (LADDER_TOKEN only; the reserved types are never "spent" yet).
+  consumedAt     DateTime?    @map("consumed_at") @db.Timestamptz(3)
+  /// The listing a LADDER_TOKEN was spent on.
+  propertyId     String?      @map("property_id") @db.Uuid
+  createdAt      DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  user     User      @relation("RewardRecipient", fields: [userId], references: [id], onDelete: Restrict)
+  invitee  User      @relation("RewardInvitee", fields: [inviteeId], references: [id], onDelete: Restrict)
+  property Property? @relation(fields: [propertyId], references: [id], onDelete: Restrict)
+
+  @@unique([userId, type, reason, inviteeId])
+  // "How many unspent tokens does this user have" and "take the oldest one".
+  @@index([userId, type, consumedAt])
+  @@index([inviteeId])
+  @@index([propertyId])
+  @@map("rewards")
 }
 
 /// A phone-login one-time passcode. Only a keyed hash of the code is stored, never the code.

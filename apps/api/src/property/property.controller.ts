@@ -59,6 +59,19 @@ export class PropertyController {
     return this.properties.findOne(id);
   }
 
+  /**
+   * Counts one view for the agency dashboard. Public, so it is rate limited per IP. The app calls
+   * it once per opening of the details screen and skips it for the owner; the count is a raw
+   * tally of calls, not a proof of distinct people.
+   */
+  @Post(':id/view')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @UseGuards(ThrottlerGuard)
+  @Throttle({ default: { limit: 60, ttl: 60_000 } })
+  view(@Param('id', ParseUUIDPipe) id: string): Promise<void> {
+    return this.properties.recordView(id);
+  }
+
   /** The owner's phone number. Needs a signed-in user and is rate limited against bulk scraping. */
   @Get(':id/contact')
   @UseGuards(JwtAuthGuard, ThrottlerGuard)

@@ -47,6 +47,12 @@ describe('errorMessage', () => {
         i18n.t,
       ),
     ).toBe(prs.map.alreadyUnlimited);
+    expect(
+      errorMessage(http(400, { code: 'INVALID_REFERRAL_CODE' }), i18n.t),
+    ).toBe(prs.auth.referralInvalid);
+    expect(errorMessage(http(409, { code: 'NO_LADDER_TOKEN' }), i18n.t)).toBe(
+      prs.referral.noToken,
+    );
     const limit = errorMessage(
       http(403, {
         code: 'FREE_LISTING_LIMIT_REACHED',
