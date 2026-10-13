@@ -25,6 +25,6 @@ export class AuthController {
   verifyOtp(
     @Body(new ZodValidationPipe(verifyOtpSchema)) body: VerifyOtpDto,
   ): Promise<VerifyOtpResponse> {
-    return this.authService.verifyOtp(body.phone_number, body.otp_code);
+    return this.authService.verifyOtp(body.phone_number, body.otp_code, body.referral_code);
   }
 }

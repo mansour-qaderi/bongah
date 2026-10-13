@@ -69,6 +69,15 @@ export default function AccountScreen({ navigation }: Props) {
 
       {user ? (
         <Button
+          title={t('account.invite')}
+          variant="secondary"
+          style={styles.invite}
+          onPress={() => navigation.navigate('Referral')}
+        />
+      ) : null}
+
+      {user ? (
+        <Button
           title={t('auth.signOut')}
           variant="danger"
           onPress={confirmSignOut}
@@ -105,4 +114,5 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   hint: { marginBottom: spacing.md },
+  invite: { marginBottom: spacing.md },
 });

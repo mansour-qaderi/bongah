@@ -66,21 +66,51 @@ src/
   map/                       MapLibre/OSM: style.ts (tile style), geo.ts (camera, [lng,lat] helpers), BaseMap, PinMarker
   navigation/
     RootNavigator.tsx        stack: Tabs, PropertyDetails, AddProperty, SetLocation, Checkout, Auth (modal)
-    MainTabs.tsx             Home · My listings · Account
+    MainTabs.tsx             Home · Dashboard (agency accounts only) · My listings · Account
     AuthNavigator.tsx        Phone → Otp → ProfileSetup
     useRequireAuth.ts        "sign in first" gate for contact / add / pay
     types.ts                 route params
+  payments/usePaymentFlow    one HesabPay payment: create → open the payment page → poll until the webhook confirms
   components/                Button, TextField, Chip, PropertyCard, FilterSheet, ProvincePicker,
-                             PropertyMap, LocationPicker, PropertyLocationMap, PinSection, OptionCard, …
+                             PropertyMap, LocationPicker, PropertyLocationMap, PinSection, OptionCard,
+                             PromotionSheet (ladder / featured bottom sheet), PaymentProgress, …
   screens/
     auth/                    PhoneScreen, OtpScreen, ProfileSetupScreen
     home/HomeScreen          province quick-picks + filters, list ⇄ map, infinite scroll
     property/                PropertyDetailsScreen, AddPropertyScreen, SetLocationScreen (add/move a pin)
-    payments/CheckoutScreen  subscription / ladder / featured / map pin → HesabPay → status polling
-    my/MyListingsScreen      own listings: promote, archive, add or move the map pin
-    account/AccountScreen    language switch, profile, sign out
+    agency/AgencyDashboardScreen  agency CRM home: listing counts, views, subscription days left, top listings (promote from here)
+    payments/CheckoutScreen  subscription / map pin (and the older ladder / featured tab) → HesabPay → status polling
+    my/MyListingsScreen      own listings: promote (sheet), archive, add or move the map pin
+    account/AccountScreen    language switch, profile, "invite friends", sign out
+    referral/ReferralScreen  my invite code + share sheet, friends who joined, free ladders earned
 __tests__/                   unit + render tests      test-utils/  small test helpers
 ```
+
+## Agency dashboard and promotions
+
+- The **Dashboard** tab appears only for accounts whose role is `AGENCY`. It reads
+  `GET /agencies/me/dashboard` (never cached: views and subscription days move on their own).
+  The query key sits under `properties`, so adding, archiving or paying for a listing refreshes it.
+- **Promoting** a listing (Dashboard, My listings, the owner's details page) opens
+  `PromotionSheet`: Ladder or Featured, then the HesabPay payment. The app sends only the
+  purpose and the listing id; the server sets the price. `CheckoutScreen` still has an older
+  "promotion" tab that nothing links to any more and that can be deleted.
+- **Views**: the details screen calls `POST /properties/:id/view` once per opening, not for the
+  owner, and ignores failures. The count is a plain tally, not distinct people.
+
+## Referrals and rewards
+
+- **Invite friends** (Account tab, signed in) opens `ReferralScreen`: the user's code (select it to
+  copy), a Share button (native share sheet), how many friends joined, and the free ladders earned.
+  Data comes from `GET /referrals/me` (never cached). The share text includes a link only when the
+  server has `REFERRAL_LINK_TEMPLATE` set; otherwise it carries the code alone.
+- **Sign-up** has an optional invite-code field on `PhoneScreen`. The code is checked for shape
+  with the shared `normalizeReferralCode` and travels to `OtpScreen`, which sends it with the SMS
+  code. If the server says the code does not exist (`INVALID_REFERRAL_CODE`, SMS code not used up),
+  the person can carry on without it. A new account made with a valid code sees a welcome banner on
+  `ProfileSetup`; both people get one free ladder.
+- **Using a free ladder**: `PromotionSheet` shows "use free ladder" (Ladder selected, at least one
+  token) and calls `POST /rewards/ladder-tokens/redeem`. Paying still works the same way.
 
 ## Map pins and who pays for them
 
@@ -113,7 +143,9 @@ URLs in a `TextField` with `ltr`.
 
 - Photo upload — the form accepts image **links** only (the API has no upload endpoint yet).
 - Agency registration (name, licence, address), the agency office-pin screen (the API has
-  `PUT /agencies/me/location`; no screen uses it yet) and the agency CRM/branding pages.
+  `PUT /agencies/me/location`; no screen uses it yet) and the agency branding pages.
+- Editing a listing's details: the API has `PATCH /properties/:id`, but the app only has the
+  create form. The dashboard's "manage listings" opens My listings (promote, map pin, archive).
 - Referral credits for map pins (no referral system exists).
 - Solar Hijri dates — dates show in the Gregorian calendar with Persian digits.
 - Districts are free text (the API stores free-text districts).

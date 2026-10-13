@@ -4,7 +4,7 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useTranslation } from 'react-i18next';
 import { OTP_LENGTH, toAsciiDigits } from '@bongah/validation';
 import { sendOtp, verifyOtp } from '../../api/endpoints';
-import { errorMessage } from '../../api/errors';
+import { errorMessage, isInvalidReferralCode } from '../../api/errors';
 import { useAuth } from '../../auth/AuthContext';
 import AppText from '../../components/AppText';
 import Banner from '../../components/Banner';
@@ -21,13 +21,14 @@ type Props = NativeStackScreenProps<AuthStackParamList, 'Otp'>;
 export default function OtpScreen({ navigation, route }: Props) {
   const { t } = useTranslation();
   const { signIn } = useAuth();
-  const { phone } = route.params;
+  const { phone, referralCode } = route.params;
 
   const [code, setCode] = useState('');
   const [devOtp, setDevOtp] = useState(route.params.devOtp);
   const [secondsLeft, setSecondsLeft] = useState(route.params.resendAfter);
   const [failure, setFailure] = useState<string | null>(null);
   const [fieldError, setFieldError] = useState<string | null>(null);
+  const [referralRejected, setReferralRejected] = useState(false);
   const [verifying, setVerifying] = useState(false);
   const [resending, setResending] = useState(false);
 
@@ -38,8 +39,10 @@ export default function OtpScreen({ navigation, route }: Props) {
     return () => clearTimeout(timer);
   }, [secondsLeft]);
 
-  const submit = async () => {
+  /** `withoutReferral`: carry on with the same SMS code after the invite code was refused. */
+  const submit = async (withoutReferral = false) => {
     setFailure(null);
+    setReferralRejected(false);
     const digits = toAsciiDigits(code).replace(/\s/g, '');
     if (!new RegExp(`^\\d{${OTP_LENGTH}}$`).test(digits)) {
       setFieldError(
@@ -50,12 +53,26 @@ export default function OtpScreen({ navigation, route }: Props) {
     setFieldError(null);
     setVerifying(true);
     try {
-      const response = await verifyOtp(phone, digits);
+      const response = await verifyOtp(
+        phone,
+        digits,
+        withoutReferral ? undefined : referralCode,
+      );
       await signIn(response);
-      if (response.is_new_user) navigation.replace('ProfileSetup');
-      else closeAuth(navigation);
+      if (response.is_new_user) {
+        if (response.referral_applied) {
+          navigation.replace('ProfileSetup', { referralApplied: true });
+        } else {
+          navigation.replace('ProfileSetup');
+        }
+      } else {
+        closeAuth(navigation);
+      }
     } catch (error) {
-      setFailure(errorMessage(error, t, { unauthorized: 'invalidCode' }));
+      // The SMS code was fine and is still usable: only the invite code was refused, and the
+      // person decides whether to fix it (back to the phone screen) or carry on without it.
+      if (isInvalidReferralCode(error)) setReferralRejected(true);
+      else setFailure(errorMessage(error, t, { unauthorized: 'invalidCode' }));
       setVerifying(false);
     }
   };
@@ -85,6 +102,16 @@ export default function OtpScreen({ navigation, route }: Props) {
       </AppText>
 
       {failure ? <Banner kind="error" message={failure} /> : null}
+      {referralRejected ? (
+        <Banner kind="error" message={t('auth.referralInvalid')}>
+          <Button
+            title={t('auth.continueWithoutReferral')}
+            variant="outline"
+            onPress={() => submit(true)}
+            loading={verifying}
+          />
+        </Banner>
+      ) : null}
       {__DEV__ && devOtp ? (
         <Banner
           kind="info"
@@ -106,9 +133,13 @@ export default function OtpScreen({ navigation, route }: Props) {
         ltr
         style={styles.codeInput}
         error={fieldError}
-        onSubmitEditing={submit}
+        onSubmitEditing={() => submit()}
       />
-      <Button title={t('auth.verify')} onPress={submit} loading={verifying} />
+      <Button
+        title={t('auth.verify')}
+        onPress={() => submit()}
+        loading={verifying}
+      />
 
       <Button
         title={

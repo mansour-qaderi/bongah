@@ -18,7 +18,7 @@ import { colors, spacing } from '../../theme';
 type Props = NativeStackScreenProps<AuthStackParamList, 'ProfileSetup'>;
 
 /** Shown once after the first login: asks for a name. It can be skipped and set later. */
-export default function ProfileSetupScreen({ navigation }: Props) {
+export default function ProfileSetupScreen({ navigation, route }: Props) {
   const { t } = useTranslation();
   const { updateUser } = useAuth();
   const [name, setName] = useState('');
@@ -50,6 +50,9 @@ export default function ProfileSetupScreen({ navigation }: Props) {
       <AppText color={colors.textMuted} style={styles.hint}>
         {t('auth.profileHint')}
       </AppText>
+      {route?.params?.referralApplied ? (
+        <Banner kind="success" message={t('auth.referralApplied')} />
+      ) : null}
       {failure ? <Banner kind="error" message={failure} /> : null}
       <TextField
         label={t('auth.fullName')}

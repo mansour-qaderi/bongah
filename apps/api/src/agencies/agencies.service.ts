@@ -5,12 +5,22 @@ import {
   NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
-import type { Agency } from '@bongah/shared-types';
-import { Prisma, Role, type Agency as AgencyRow } from '../generated/prisma/client.js';
+import type { Agency, AgencyDashboard } from '@bongah/shared-types';
+import {
+  Prisma,
+  PropertyStatus,
+  Role,
+  SubscriptionStatus,
+  type Agency as AgencyRow,
+} from '../generated/prisma/client.js';
+import { isFeaturedAt } from '../property/property.mapper.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import type { RegisterAgencyDto } from './dto/register-agency.dto.js';
 import type { SetAgencyLocationDto } from './dto/set-agency-location.dto.js';
-import { findActiveSubscription } from './subscription.js';
+import { findActiveSubscription, subscriptionCoveredUntil } from './subscription.js';
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+const DASHBOARD_TOP_LISTINGS = 5;
 
 @Injectable()
 export class AgenciesService {
@@ -82,6 +92,104 @@ export class AgenciesService {
       });
       return toAgencyDto(row);
     });
+  }
+
+  /**
+   * The numbers on the agency's home screen. "The agency's listings" are the ones published
+   * under its agency profile (properties.agency_id); anything the owner posted as a regular user
+   * before registering the agency stays out of these figures.
+   */
+  async getDashboard(userId: string): Promise<AgencyDashboard> {
+    const now = new Date();
+    const agency = await this.prisma.agency.findUnique({
+      where: { userId },
+      select: { id: true, agencyName: true, isVerified: true },
+    });
+    if (!agency) {
+      throw new NotFoundException({
+        message: 'Register your agency first.',
+        code: 'AGENCY_PROFILE_REQUIRED',
+      });
+    }
+
+    const [byStatus, featuredListings, topListings, running] = await Promise.all([
+      this.prisma.property.groupBy({
+        by: ['status'],
+        where: { agencyId: agency.id },
+        _count: { _all: true },
+        _sum: { viewCount: true },
+      }),
+      this.prisma.property.count({
+        where: {
+          agencyId: agency.id,
+          status: PropertyStatus.ACTIVE,
+          isFeatured: true,
+          featuredUntil: { gt: now }, // same rule as isFeaturedAt()
+        },
+      }),
+      this.prisma.property.findMany({
+        where: { agencyId: agency.id, status: PropertyStatus.ACTIVE },
+        orderBy: [{ viewCount: 'desc' }, { ladderedAt: { sort: 'desc', nulls: 'last' } }, { id: 'desc' }],
+        take: DASHBOARD_TOP_LISTINGS,
+        select: {
+          id: true,
+          title: true,
+          price: true,
+          currency: true,
+          viewCount: true,
+          isFeatured: true,
+          featuredUntil: true,
+          ladderedAt: true,
+        },
+      }),
+      findActiveSubscription(this.prisma, agency.id, now),
+    ]);
+
+    const countOf = (status: PropertyStatus) =>
+      byStatus.find((group) => group.status === status)?._count._all ?? 0;
+    const totalViews = byStatus.reduce((sum, group) => sum + (group._sum.viewCount ?? 0), 0);
+
+    let subscription: AgencyDashboard['subscription'] = {
+      is_active: false,
+      package_type: null,
+      ends_at: null,
+      remaining_days: 0,
+    };
+    if (running) {
+      // Plans bought in advance start when the running one ends: they extend the access.
+      const later = await this.prisma.subscription.findMany({
+        where: { agencyId: agency.id, status: SubscriptionStatus.ACTIVE, endDate: { gt: running.endDate } },
+        select: { startDate: true, endDate: true },
+      });
+      const until = subscriptionCoveredUntil(running.endDate, later);
+      subscription = {
+        is_active: true,
+        package_type: running.packageType,
+        ends_at: until.toISOString(),
+        remaining_days: Math.ceil((until.getTime() - now.getTime()) / DAY_MS),
+      };
+    }
+
+    return {
+      agency: { id: agency.id, agency_name: agency.agencyName, is_verified: agency.isVerified },
+      stats: {
+        total_properties: countOf(PropertyStatus.ACTIVE) + countOf(PropertyStatus.SOLD),
+        active_listings: countOf(PropertyStatus.ACTIVE),
+        featured_listings: featuredListings,
+        total_views: totalViews,
+      },
+      subscription,
+      top_listings: topListings.map((row) => ({
+        id: row.id,
+        title: row.title,
+        price: row.price.toNumber(),
+        currency: row.currency,
+        view_count: row.viewCount,
+        is_featured: isFeaturedAt(row, now),
+        featured_until: row.featuredUntil?.toISOString() ?? null,
+        laddered_at: row.ladderedAt?.toISOString() ?? null,
+      })),
+    };
   }
 }
 

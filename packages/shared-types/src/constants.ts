@@ -19,6 +19,10 @@ export const SUBSCRIPTION_STATUSES = ['ACTIVE', 'EXPIRED'] as const;
 export const TRANSACTION_PURPOSES = ['SUBSCRIPTION', 'LADDER', 'FEATURED_AD', 'MAP_LOCATION'] as const;
 /** Why an account may pin exact coordinates without paying per listing. */
 export const MAP_LOCATION_UNLIMITED_REASONS = ['AGENCY_SUBSCRIPTION', 'ADMIN'] as const;
+/** What a reward grants. Only LADDER_TOKEN has an effect today; the others are reserved. */
+export const REWARD_TYPES = ['LADDER_TOKEN', 'BONUS_LISTING', 'SUBSCRIPTION_EXTENSION'] as const;
+/** Why a reward was granted: for inviting a friend, or for joining through a friend's code. */
+export const REWARD_REASONS = ['REFERRER_BONUS', 'REFEREE_BONUS'] as const;
 export const TRANSACTION_STATUSES = ['PENDING', 'SUCCESS', 'FAILED'] as const;
 
 export type Language = (typeof LANGUAGES)[number];
@@ -30,6 +34,8 @@ export type PropertyStatus = (typeof PROPERTY_STATUSES)[number];
 export type SubscriptionPackage = (typeof SUBSCRIPTION_PACKAGES)[number];
 export type SubscriptionStatus = (typeof SUBSCRIPTION_STATUSES)[number];
 export type TransactionPurpose = (typeof TRANSACTION_PURPOSES)[number];
+export type RewardType = (typeof REWARD_TYPES)[number];
+export type RewardReason = (typeof REWARD_REASONS)[number];
 export type TransactionStatus = (typeof TRANSACTION_STATUSES)[number];
 export type MapLocationUnlimitedReason = (typeof MAP_LOCATION_UNLIMITED_REASONS)[number];
 

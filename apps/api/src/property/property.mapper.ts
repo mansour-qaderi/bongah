@@ -1,6 +1,14 @@
 import type { Property as PropertyRow } from '../generated/prisma/client.js';
 import type { PropertyDto } from './dto/property-response.dto.js';
 
+/**
+ * Whether a paid featured promotion is running at `now`. THE definition: the flag alone goes
+ * stale when the promotion ends, so it only counts while featured_until is still ahead.
+ */
+export function isFeaturedAt(row: Pick<PropertyRow, 'isFeatured' | 'featuredUntil'>, now: Date): boolean {
+  return row.isFeatured && row.featuredUntil !== null && row.featuredUntil > now;
+}
+
 /** Converts a database row to the public snake_case shape. `now` decides whether a promotion is still running. */
 export function toPropertyDto(row: PropertyRow, now: Date): PropertyDto {
   return {
@@ -25,8 +33,7 @@ export function toPropertyDto(row: PropertyRow, now: Date): PropertyDto {
     lng: row.lng,
     images: row.images,
     status: row.status,
-    // The flag alone goes stale when the promotion ends; it only counts while featured_until is ahead.
-    is_featured: row.isFeatured && row.featuredUntil !== null && row.featuredUntil > now,
+    is_featured: isFeaturedAt(row, now),
     featured_until: row.featuredUntil?.toISOString() ?? null,
     laddered_at: row.ladderedAt?.toISOString() ?? null,
     created_at: row.createdAt.toISOString(),

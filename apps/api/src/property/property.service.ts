@@ -67,6 +67,19 @@ export class PropertyService {
   }
 
   /**
+   * Counts one view of an ACTIVE listing. Fire-and-forget: a listing that is missing or no longer
+   * active is silently ignored, so the app never has to handle an error for a statistic.
+   *
+   * Raw SQL on purpose: it is one atomic increment (no read-modify-write race), and a Prisma
+   * update would also bump updated_at, which means "the owner edited this listing".
+   */
+  async recordView(id: string): Promise<void> {
+    await this.prisma.$executeRaw`
+      UPDATE properties SET view_count = view_count + 1
+      WHERE id = ${id}::uuid AND status = 'ACTIVE'`;
+  }
+
+  /**
    * Who to call about a listing. Deliberately a separate, signed-in-only call: the public listing
    * and search responses never carry phone numbers, so they can't be scraped in bulk.
    */

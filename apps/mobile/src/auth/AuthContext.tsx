@@ -10,7 +10,7 @@ import React, {
 import type { User, VerifyOtpResponse } from '@bongah/shared-types';
 import { setAuthToken, setUnauthorizedHandler } from '../api/client';
 import { getMe } from '../api/endpoints';
-import { queryClient } from '../api/hooks';
+import { queryClient, queryKeys } from '../api/hooks';
 import {
   clearSession,
   loadSession,
@@ -41,7 +41,8 @@ export function AuthProvider({ children }: PropsWithChildren) {
   const endSession = useCallback(async () => {
     setAuthToken(null);
     setState({ status: 'signedOut' });
-    queryClient.removeQueries({ queryKey: ['properties', 'mine'] });
+    queryClient.removeQueries({ queryKey: queryKeys.mine });
+    queryClient.removeQueries({ queryKey: queryKeys.agencyDashboard });
     await clearSession();
   }, []);
 
