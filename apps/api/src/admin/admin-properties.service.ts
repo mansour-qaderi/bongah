@@ -6,10 +6,10 @@ import { adminPersonSelect, toAdminPerson } from '../common/admin-person.js';
 import { Prisma } from '../generated/prisma/client.js';
 import { restoreListing, takeDownListing } from '../moderation/moderation.actions.js';
 import { PrismaService } from '../prisma/prisma.service.js';
-import { toPropertyDto } from '../property/property.mapper.js';
+import { toPropertyDto, WITH_AGENCY_NAME } from '../property/property.mapper.js';
 import { PromotionService } from '../promotion/promotion.service.js';
 
-const propertyInclude = { user: { select: adminPersonSelect } } satisfies Prisma.PropertyInclude;
+const propertyInclude = { user: { select: adminPersonSelect }, ...WITH_AGENCY_NAME } satisfies Prisma.PropertyInclude;
 type PropertyRow = Prisma.PropertyGetPayload<{ include: typeof propertyInclude }>;
 
 @Injectable()

@@ -77,6 +77,7 @@ const listing = (overrides: Record<string, unknown> = {}) => ({
   id: '11111111-1111-4111-8111-111111111111',
   user_id: 'u1',
   agency_id: null,
+  agency_name: null,
   title: 'آپارتمان',
   description: 'تازه‌ساز',
   type: 'APARTMENT',
@@ -453,22 +454,26 @@ describe('HomeScreen: map view', () => {
     meta: { page: 1, limit: 20, total: data.length, total_pages: 1 },
   });
 
-  it('asks only for listings that have an exact pin when showing the map', async () => {
+  it('opens on the map and asks only for listings that have an exact pin; the list asks for everything', async () => {
     mockAuth = { status: 'signedOut', user: null };
     mockApi(fetchMock, {
       'GET /properties': { body: page([listing({ lat: 34.5, lng: 69.1 })]) },
+      'GET /agencies/map': { body: [] },
     });
     const tree = await render(screenElement(HomeScreen, navigation()));
     await settle();
-    expect(
-      callsTo(fetchMock).every(c => c.query.has_location === undefined),
-    ).toBe(true); // list view: everything
+    const propertyCalls = () =>
+      callsTo(fetchMock).filter(c => c.path === '/properties');
+    expect(propertyCalls().every(c => c.query.has_location === 'true')).toBe(
+      true,
+    ); // map first: only pinned listings
+    expect(mapParts(tree.root, 'Marker').map(m => m.props.id)).toEqual([
+      expect.stringMatching(/^property:/),
+    ]);
 
-    await press(tree.root, prs.home.map);
+    await press(tree.root, prs.home.list);
     await settle();
-    const last = callsTo(fetchMock).at(-1)!;
-    expect(last.query.has_location).toBe('true');
-    expect(mapParts(tree.root, 'GeoJSONSource')).toHaveLength(1);
+    expect(propertyCalls().at(-1)!.query.has_location).toBeUndefined();
   });
 
   it('explains an empty map instead of showing the list message', async () => {
@@ -483,37 +488,39 @@ describe('HomeScreen: map view', () => {
 });
 
 describe('PropertyMap', () => {
+  const baseProps = {
+    agencies: [],
+    selected: null,
+    userLocation: null,
+    onSelectProperty: jest.fn(),
+    onSelectAgency: jest.fn(),
+    onOpenCluster: jest.fn(),
+  };
+
   it('draws pinned listings only and reports which one was tapped', async () => {
     const pinned = listing({ id: 'a', lat: 34.5, lng: 69.1 });
     const unpinned = listing({ id: 'b' });
-    const onSelect = jest.fn();
+    const onSelectProperty = jest.fn();
     const tree = await render(
       <PropertyMap
+        {...baseProps}
         properties={[pinned, unpinned] as never}
         camera={AFGHANISTAN_CAMERA}
-        onSelect={onSelect}
+        onSelectProperty={onSelectProperty}
       />,
     );
-    const source = mapParts(tree.root, 'GeoJSONSource')[0];
-    expect(source.props.data.features.map((f: { id: string }) => f.id)).toEqual(
-      ['a'],
-    );
+    const markers = mapParts(tree.root, 'Marker');
+    expect(markers.map(m => m.props.id)).toEqual(['property:a']);
+    expect(markers[0].props.lngLat).toEqual([69.1, 34.5]);
 
-    source.props.onPress({
-      nativeEvent: { features: [{ properties: { id: 'a' } }] },
-    });
-    expect(onSelect).toHaveBeenCalledWith(pinned);
-    source.props.onPress({
-      nativeEvent: { features: [{ properties: { id: 'b' } }] },
-    });
-    source.props.onPress({ nativeEvent: { features: [] } });
-    expect(onSelect).toHaveBeenCalledTimes(1); // an unpinned or unknown id is never selected
+    markers[0].props.onPress();
+    expect(onSelectProperty).toHaveBeenCalledWith(pinned);
   });
 
   it('flies to a new view when the camera changes, but not on the first draw', async () => {
     const { __flyTo } = jest.requireMock('@maplibre/maplibre-react-native');
     __flyTo.mockClear();
-    const props = { properties: [], onSelect: jest.fn() };
+    const props = { ...baseProps, properties: [] };
     const tree = await render(
       <PropertyMap {...props} camera={AFGHANISTAN_CAMERA} />,
     );
@@ -531,9 +538,9 @@ describe('PropertyMap', () => {
   it('credits OpenStreetMap on the map', async () => {
     const tree = await render(
       <PropertyMap
+        {...baseProps}
         properties={[]}
         camera={AFGHANISTAN_CAMERA}
-        onSelect={jest.fn()}
       />,
     );
     expect(allText(tree.root)).toContain('© OpenStreetMap');

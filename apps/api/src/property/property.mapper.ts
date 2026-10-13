@@ -1,6 +1,12 @@
 import type { Property as PropertyRow } from '../generated/prisma/client.js';
 import type { PropertyDto } from './dto/property-response.dto.js';
 
+/** Load this with a listing so its agency's public name can be shown without a second query. */
+export const WITH_AGENCY_NAME = { agency: { select: { agencyName: true } } } as const;
+
+/** A listing row, optionally with its agency's name (see WITH_AGENCY_NAME). Without it `agency_name` is null. */
+export type PropertyRowWithAgency = PropertyRow & { agency?: { agencyName: string } | null };
+
 /**
  * Whether a paid featured promotion is running at `now`. THE definition: the flag alone goes
  * stale when the promotion ends, so it only counts while featured_until is still ahead.
@@ -10,11 +16,12 @@ export function isFeaturedAt(row: Pick<PropertyRow, 'isFeatured' | 'featuredUnti
 }
 
 /** Converts a database row to the public snake_case shape. `now` decides whether a promotion is still running. */
-export function toPropertyDto(row: PropertyRow, now: Date): PropertyDto {
+export function toPropertyDto(row: PropertyRowWithAgency, now: Date): PropertyDto {
   return {
     id: row.id,
     user_id: row.userId,
     agency_id: row.agencyId,
+    agency_name: row.agency?.agencyName ?? null,
     title: row.title,
     description: row.description,
     type: row.type,

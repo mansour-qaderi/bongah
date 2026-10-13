@@ -10,6 +10,7 @@ import type {
 } from '@bongah/validation';
 import type {
   AgencyDashboard,
+  AgencyMapPin,
   ChatCapabilities,
   ChatConversation,
   ChatImageUploaded,
@@ -162,6 +163,10 @@ export const archiveProperty = (id: string) =>
   request<void>('DELETE', `/properties/${id}`, { auth: true });
 
 // ───────────── Agency ─────────────
+
+/** Verified offices that placed a pin: what the home map draws. Public. */
+export const listAgencyMapPins = () =>
+  request<AgencyMapPin[]>('GET', '/agencies/map');
 
 export const getAgencyDashboard = () =>
   request<AgencyDashboard>('GET', '/agencies/me/dashboard', { auth: true });

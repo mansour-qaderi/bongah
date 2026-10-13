@@ -64,7 +64,7 @@ export default function MessageBubble({
     <View style={[styles.row, mine ? styles.mineRow : styles.theirsRow]}>
       <View style={[styles.bubble, mine ? styles.mine : styles.theirs]}>
         {view.autoReply ? (
-          <AppText variant="caption" color={colors.accent}>
+          <AppText variant="caption" color={colors.accentText}>
             {t('chat.autoReply')}
           </AppText>
         ) : null}

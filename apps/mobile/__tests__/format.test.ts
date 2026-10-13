@@ -1,4 +1,5 @@
 import {
+  compactAmount,
   formatDate,
   formatNumber,
   formatPhone,
@@ -80,5 +81,32 @@ describe('dates and phones', () => {
   it('formats canonical phone numbers', () => {
     expect(formatPhone('+93701234567')).toBe('+۹۳ ۷۰ ۱۲۳ ۴۵۶۷');
     expect(formatPhone('weird')).toBe('weird');
+  });
+});
+
+describe('compactAmount (short prices for map markers)', () => {
+  it.each([
+    [0, null, 0],
+    [999, null, 999],
+    [1000, 'thousand', 1],
+    [1500, 'thousand', 1.5],
+    [50_000, 'thousand', 50],
+    [999_000, 'thousand', 999],
+    [1_000_000, 'million', 1],
+    [2_500_000, 'million', 2.5],
+    [12_340_000, 'million', 12.3],
+    [1_200_000_000, 'billion', 1.2],
+  ])('%d is %s %d', (amount, unit, value) => {
+    expect(compactAmount(amount)).toEqual({ value, unit });
+  });
+
+  it('never writes "1000 thousand": rounding up carries into the next unit', () => {
+    expect(compactAmount(999_950)).toEqual({ value: 1, unit: 'million' });
+    expect(compactAmount(999_950_000)).toEqual({ value: 1, unit: 'billion' });
+  });
+
+  it('leaves unreadable numbers alone', () => {
+    expect(compactAmount(NaN).unit).toBeNull();
+    expect(compactAmount(Infinity).unit).toBeNull();
   });
 });

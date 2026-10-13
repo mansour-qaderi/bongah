@@ -5,7 +5,7 @@ import {
   NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
-import type { Agency, AgencyDashboard } from '@bongah/shared-types';
+import type { Agency, AgencyDashboard, AgencyMapPin } from '@bongah/shared-types';
 import {
   Prisma,
   AgencyVerificationStatus,
@@ -21,9 +21,53 @@ import { DAY_MS, findActiveSubscription, summariseSubscription } from './subscri
 
 const DASHBOARD_TOP_LISTINGS = 5;
 
+/** The most offices one map answer carries. Oldest first, so the answer is stable while the cap is not reached. */
+export const AGENCY_MAP_LIMIT = 500;
+
 @Injectable()
 export class AgenciesService {
   constructor(private readonly prisma: PrismaService) {}
+
+  /**
+   * Verified agency offices that have placed a pin: what the home map draws. Public.
+   * An unverified or rejected agency, one without a pin, and one whose account is banned never appear.
+   * `active_listings` counts what a visitor could actually open (active listings of an account in good standing).
+   */
+  async listMapPins(): Promise<AgencyMapPin[]> {
+    const rows = await this.prisma.agency.findMany({
+      where: {
+        verificationStatus: AgencyVerificationStatus.VERIFIED,
+        lat: { not: null },
+        lng: { not: null },
+        user: { bannedAt: null },
+      },
+      select: {
+        id: true,
+        agencyName: true,
+        address: true,
+        lat: true,
+        lng: true,
+        _count: { select: { properties: { where: { status: PropertyStatus.ACTIVE } } } },
+      },
+      orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+      take: AGENCY_MAP_LIMIT,
+    });
+    // The query guarantees both coordinates; the filter lets the compiler know it too.
+    return rows.flatMap((row) =>
+      row.lat === null || row.lng === null
+        ? []
+        : [
+            {
+              id: row.id,
+              agency_name: row.agencyName,
+              address: row.address,
+              lat: row.lat,
+              lng: row.lng,
+              active_listings: row._count.properties,
+            },
+          ],
+    );
+  }
 
   /**
    * Registers the signed-in user's real-estate office and switches the account to the AGENCY role.

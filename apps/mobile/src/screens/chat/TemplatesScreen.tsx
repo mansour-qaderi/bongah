@@ -221,7 +221,7 @@ function Manager({
         templates.map(template => (
           <View key={template.id} style={styles.card}>
             {template.is_auto_reply ? (
-              <AppText variant="caption" color={colors.accent}>
+              <AppText variant="caption" color={colors.accentText}>
                 {t('templates.autoOn')}
               </AppText>
             ) : null}

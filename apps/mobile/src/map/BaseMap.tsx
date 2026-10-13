@@ -4,6 +4,7 @@ import { Camera, Map, type CameraRef } from '@maplibre/maplibre-react-native';
 import AppText from '../components/AppText';
 import { MAP_ATTRIBUTION } from '../config';
 import { colors, radius, spacing } from '../theme';
+import type { Bounds } from './cluster';
 import { fromLngLat, type Coordinate, type MapCamera } from './geo';
 import { BASE_MAP_STYLE } from './style';
 
@@ -14,6 +15,8 @@ interface Props {
   interactive?: boolean;
   /** Called with the tapped point. */
   onPress?: (coordinate: Coordinate) => void;
+  /** Called when the person (or a fly-to) has finished moving the map: how far in, and what is visible. */
+  onViewChange?: (view: { zoom: number; bounds: Bounds }) => void;
   style?: StyleProp<ViewStyle>;
   testID?: string;
   children?: React.ReactNode;
@@ -27,6 +30,7 @@ export default function BaseMap({
   camera,
   interactive = true,
   onPress,
+  onViewChange,
   style,
   testID = 'map',
   children,
@@ -34,6 +38,7 @@ export default function BaseMap({
   const cameraRef = useRef<CameraRef>(null);
   const firstDraw = useRef(true);
   const [lng, lat] = camera.center;
+  const bottomPadding = camera.padding?.bottom ?? 0;
 
   useEffect(() => {
     if (firstDraw.current) {
@@ -43,9 +48,10 @@ export default function BaseMap({
     cameraRef.current?.flyTo({
       center: [lng, lat],
       zoom: camera.zoom,
+      padding: { bottom: bottomPadding },
       duration: 600,
     });
-  }, [lng, lat, camera.zoom]);
+  }, [lng, lat, camera.zoom, camera.nonce, bottomPadding]);
 
   return (
     <View style={[styles.box, style]}>
@@ -63,6 +69,15 @@ export default function BaseMap({
         logo={false}
         // The credit below is drawn by the app so it is always readable and always matches config.ts.
         attribution={false}
+        onRegionDidChange={
+          onViewChange
+            ? event =>
+                onViewChange({
+                  zoom: event.nativeEvent.zoom,
+                  bounds: event.nativeEvent.bounds,
+                })
+            : undefined
+        }
         onPress={
           onPress
             ? event => onPress(fromLngLat(event.nativeEvent.lngLat))
@@ -71,7 +86,11 @@ export default function BaseMap({
       >
         <Camera
           ref={cameraRef}
-          initialViewState={{ center: camera.center, zoom: camera.zoom }}
+          initialViewState={{
+            center: camera.center,
+            zoom: camera.zoom,
+            padding: { bottom: bottomPadding },
+          }}
         />
         {children}
       </Map>
@@ -90,7 +109,9 @@ const styles = StyleSheet.create({
   credit: {
     position: 'absolute',
     start: spacing.xs,
-    bottom: spacing.xs,
+    // At the top: the home screen slides a listing card over the bottom of the map, and the OpenStreetMap
+    // credit must stay readable.
+    top: spacing.xs,
     backgroundColor: 'rgba(255,255,255,0.8)',
     borderRadius: radius.sm,
     paddingHorizontal: spacing.xs,

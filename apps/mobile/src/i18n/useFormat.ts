@@ -2,7 +2,7 @@ import { useTranslation } from 'react-i18next';
 import type { Currency, Language } from '@bongah/shared-types';
 import { provinceLabel } from '../constants/provinces';
 import { DEFAULT_LANGUAGE, isLanguage } from './languages';
-import { formatNumber, formatPrice, sqmToJerib } from './format';
+import { compactAmount, formatNumber, formatPrice, sqmToJerib } from './format';
 
 /** Number/price/area formatting bound to the current language. */
 export function useFormat() {
@@ -15,6 +15,13 @@ export function useFormat() {
     language,
     price: (amount: number, currency: Currency) =>
       formatPrice(amount, t(`currency.${currency}`)),
+    /** "۲٫۵ میلیون ؋": the short form for map markers. */
+    compactPrice: (amount: number, currency: Currency) => {
+      const { value, unit } = compactAmount(amount);
+      const number = formatNumber(value, 1);
+      const words = unit ? `${number} ${t(`unit.${unit}`)}` : number;
+      return `${words} ${t(`currencySymbol.${currency}`)}`;
+    },
     area: (sqm: number) => `${formatNumber(sqm)} ${t('unit.sqm')}`,
     jerib: (sqm: number) =>
       `${formatNumber(sqmToJerib(sqm))} ${t('unit.jerib')}`,

@@ -1,6 +1,6 @@
-import { Body, Controller, Get, HttpCode, HttpStatus, Patch, Post, Put, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Header, HttpCode, HttpStatus, Patch, Post, Put, Query, UseGuards } from '@nestjs/common';
 import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
-import type { Agency, AgencyAnalytics, AgencyDashboard, BulkResponse, Property } from '@bongah/shared-types';
+import type { Agency, AgencyAnalytics, AgencyDashboard, AgencyMapPin, BulkResponse, Property } from '@bongah/shared-types';
 import {
   analyticsQuerySchema,
   bulkCreatePropertiesSchema,
@@ -32,6 +32,13 @@ export class AgenciesController {
     private readonly analytics: AgencyAnalyticsService,
     private readonly bulk: AgencyBulkService,
   ) {}
+
+  /** Verified offices with a map pin, for the home map. Public (browsing needs no account). */
+  @Get('map')
+  @Header('Cache-Control', 'public, max-age=60')
+  mapPins(): Promise<AgencyMapPin[]> {
+    return this.agencies.listMapPins();
+  }
 
   @Post('register')
   @UseGuards(JwtAuthGuard)

@@ -14,6 +14,7 @@ const listing = (overrides: Partial<Property>): Property => ({
   id: 'p1',
   user_id: 'u1',
   agency_id: null,
+  agency_name: null,
   title: 'x',
   description: 'x',
   type: 'APARTMENT',

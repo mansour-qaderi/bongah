@@ -58,10 +58,23 @@ export interface Agency {
   updated_at: string;
 }
 
+/** One verified agency office on the map. Only agencies that placed a pin appear; the owner's number is not public. */
+export interface AgencyMapPin {
+  id: string;
+  agency_name: string;
+  address: string;
+  lat: number;
+  lng: number;
+  /** Listings it has published that are active right now. */
+  active_listings: number;
+}
+
 export interface Property {
   id: string;
   user_id: string;
   agency_id: string | null;
+  /** Public name of the agency that published it; null for a private owner. (The owner's name and number stay behind the contact reveal.) */
+  agency_name: string | null;
   title: string;
   description: string;
   type: PropertyType;

@@ -3,6 +3,7 @@ import type { Language } from '@bongah/shared-types';
 import { registerPushDevice, removePushDevice } from '../api/endpoints';
 import { fetchPushToken } from './firebase';
 import { getPushPermission, requestPushPermission } from './permission';
+import { within } from '../utils/within';
 
 export type SyncOutcome =
   /** The server knows this phone. */
@@ -37,17 +38,6 @@ export async function syncPushDevice(
   });
   inFlight = current;
   return current;
-}
-
-/** Resolves with `fallback` if `promise` has not settled after `ms`; the timer never outlives the promise. */
-function within<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> {
-  let timer: ReturnType<typeof setTimeout>;
-  return Promise.race([
-    promise,
-    new Promise<T>(resolve => {
-      timer = setTimeout(() => resolve(fallback), ms);
-    }),
-  ]).finally(() => clearTimeout(timer));
 }
 
 async function run(
