@@ -8,12 +8,7 @@ import {
 } from '@bongah/shared-types';
 import type { InitiatePaymentInput } from '@bongah/validation';
 import { errorMessage } from '../../api/errors';
-import {
-  flattenPages,
-  useMapLocationStatus,
-  useMyProperties,
-  usePricing,
-} from '../../api/hooks';
+import { flattenPages, useMyProperties, usePricing } from '../../api/hooks';
 import { useAuth } from '../../auth/AuthContext';
 import AppText from '../../components/AppText';
 import Banner from '../../components/Banner';
@@ -30,7 +25,7 @@ import { usePaymentFlow } from '../../payments/usePaymentFlow';
 import { colors, spacing } from '../../theme';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Checkout'>;
-type Tab = 'subscription' | 'promotion' | 'map';
+type Tab = 'subscription' | 'promotion';
 type Promotion = 'LADDER' | 'FEATURED_AD';
 
 export default function CheckoutScreen({ navigation, route }: Props) {
@@ -50,7 +45,6 @@ export default function CheckoutScreen({ navigation, route }: Props) {
   const flow = usePaymentFlow();
 
   const pricing = usePricing();
-  const mapStatus = useMapLocationStatus(status === 'signedIn');
   const mine = useMyProperties(status === 'signedIn');
   const listings = flattenPages(mine.data).filter(p => p.status === 'ACTIVE');
 
@@ -76,19 +70,11 @@ export default function CheckoutScreen({ navigation, route }: Props) {
   const prices = pricing.data;
 
   const isAgency = user?.role === 'AGENCY';
-  // Accounts that already pin for free (an agency on an active plan, an admin) are not sold the add-on.
-  const alreadyUnlimited = mapStatus.data?.unlimited === true;
-
   let input: InitiatePaymentInput | null = null;
   let amount: number;
   if (tab === 'subscription') {
     amount = prices.subscription[pkg];
     if (isAgency) input = { purpose: 'SUBSCRIPTION', package_type: pkg };
-  } else if (tab === 'map') {
-    amount = prices.map_location;
-    if (mapStatus.isSuccess && !alreadyUnlimited) {
-      input = { purpose: 'MAP_LOCATION' };
-    }
   } else {
     amount = promotion === 'LADDER' ? prices.ladder : prices.featured_ad;
     if (propertyId) input = { purpose: promotion, property_id: propertyId };
@@ -112,7 +98,6 @@ export default function CheckoutScreen({ navigation, route }: Props) {
         options={[
           { value: 'subscription', label: t('checkout.tabSubscription') },
           { value: 'promotion', label: t('checkout.tabPromotion') },
-          { value: 'map', label: t('checkout.tabMap') },
         ]}
       />
       <View style={styles.section}>
@@ -137,22 +122,6 @@ export default function CheckoutScreen({ navigation, route }: Props) {
                 onPress={() => setPkg(p)}
               />
             ))}
-          </>
-        ) : tab === 'map' ? (
-          <>
-            <AppText color={colors.textMuted} style={styles.help}>
-              {t('checkout.mapHelp')}
-            </AppText>
-            {alreadyUnlimited ? (
-              <Banner kind="info" message={t('map.alreadyUnlimited')} />
-            ) : null}
-            <OptionCard
-              title={t('checkout.mapItem')}
-              subtitle={t('checkout.mapItemHelp')}
-              trailing={format.price(prices.map_location, prices.currency)}
-              selected
-              onPress={() => undefined}
-            />
           </>
         ) : (
           <>

@@ -2,7 +2,7 @@ import React from 'react';
 import ReactTestRenderer from 'react-test-renderer';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { initI18n } from '../src/i18n';
-import { formatNumber } from '../src/i18n/format';
+import { formatCurrency, formatNumber } from '../src/i18n/format';
 import prs from '../src/i18n/locales/prs.json';
 import {
   allText,
@@ -250,7 +250,9 @@ describe('AgencyDashboardScreen', () => {
     await press(tree.root, prs.dashboard.post);
     expect(nav.navigate).toHaveBeenCalledWith('AddProperty');
     await press(tree.root, prs.dashboard.manage);
-    expect(nav.navigate).toHaveBeenCalledWith('MyListings');
+    expect(nav.navigate).toHaveBeenCalledWith('Tabs', {
+      screen: 'MyListings',
+    });
   });
 
   it('says so when the agency profile is incomplete, with a way to retry', async () => {
@@ -348,8 +350,8 @@ describe('PromotionSheet', () => {
     expect(text).toContain('خانه حویلی');
     expect(text).toContain(prs.checkout.ladder);
     expect(text).toContain(prs.checkout.featured);
-    expect(text).toContain(`${formatNumber(50)} ${prs.currency.AFGHANI}`);
-    expect(text).toContain(`${formatNumber(100)} ${prs.currency.AFGHANI}`);
+    expect(text).toContain(formatCurrency(50));
+    expect(text).toContain(formatCurrency(100));
   });
 
   it('buys a featured ad with only the purpose and the listing id (the server sets the price)', async () => {

@@ -1,8 +1,12 @@
 import {
+  centroid,
   clusterPoints,
   CLUSTER_RADIUS_PX,
   inBounds,
   toPixels,
+  viewMoved,
+  zoomStep,
+  zoomToSeparate,
   type MapPoint,
 } from '../src/map/cluster';
 
@@ -135,5 +139,105 @@ describe('inBounds', () => {
   });
   it('can be strict', () => {
     expect(inBounds(34, 70.3, bounds, 0)).toBe(false);
+  });
+});
+
+describe('zoomStep', () => {
+  it('rounds to the nearest half', () => {
+    expect(zoomStep(11)).toBe(11);
+    expect(zoomStep(11.2)).toBe(11);
+    expect(zoomStep(11.3)).toBe(11.5);
+    expect(zoomStep(11.74)).toBe(11.5);
+    expect(zoomStep(11.76)).toBe(12);
+  });
+});
+
+describe('centroid', () => {
+  it('is the average position', () => {
+    expect(centroid([point('a', 34, 69), point('b', 36, 71)])).toEqual({
+      latitude: 35,
+      longitude: 70,
+    });
+  });
+  it('does not divide by zero for nothing', () => {
+    expect(centroid([])).toEqual({ latitude: 0, longitude: 0 });
+  });
+});
+
+describe('zoomToSeparate', () => {
+  const pair = [
+    point('a', KABUL.lat, KABUL.lng),
+    point('b', KABUL.lat + 0.001, KABUL.lng), // ~110 m
+  ];
+
+  it('returns a zoom at which the group has come apart, closer than where it started', () => {
+    const target = zoomToSeparate(pair, 11, 19)!;
+    expect(target).toBeGreaterThan(11);
+    expect(target).toBeLessThanOrEqual(19);
+    // Genuinely apart there (the half step it adds keeps them clear of touching).
+    expect(clusterPoints(pair, target)).toHaveLength(2);
+    // And it is the first split, plus at most the half-step margin.
+    expect(clusterPoints(pair, target - 1)).toHaveLength(1);
+  });
+
+  it('starts looking one step closer than the current zoom, so the map always moves', () => {
+    const wide = [
+      point('a', KABUL.lat, KABUL.lng),
+      point('b', KABUL.lat, KABUL.lng + 0.5),
+    ];
+    // Already apart at 11 (they would not be a cluster), but asked anyway: still moves forward.
+    expect(zoomToSeparate(wide, 11, 19)!).toBeGreaterThan(11);
+  });
+
+  it('is capped at the highest zoom the map has', () => {
+    const tight = [
+      point('a', KABUL.lat, KABUL.lng),
+      point('b', KABUL.lat + 0.0006, KABUL.lng),
+    ];
+    expect(zoomToSeparate(tight, 11, 17)).toBeLessThanOrEqual(17);
+  });
+
+  it('gives up with null when the points cannot be pulled apart, or there is only one', () => {
+    expect(
+      zoomToSeparate(
+        [point('a', KABUL.lat, KABUL.lng), point('b', KABUL.lat, KABUL.lng)],
+        11,
+        19,
+      ),
+    ).toBeNull();
+    expect(
+      zoomToSeparate([point('a', KABUL.lat, KABUL.lng)], 11, 19),
+    ).toBeNull();
+    expect(zoomToSeparate([], 11, 19)).toBeNull();
+  });
+});
+
+describe('viewMoved', () => {
+  const view = (
+    zoom: number,
+    bounds: [number, number, number, number] | null,
+  ) => ({
+    zoom,
+    bounds,
+  });
+  const base = view(12, [69, 34, 70, 35]);
+
+  it('counts the first known bounds as a move', () => {
+    expect(viewMoved(view(12, null), base)).toBe(true);
+    expect(viewMoved(view(12, null), view(12, null))).toBe(false);
+  });
+  it('ignores a small pan', () => {
+    expect(viewMoved(base, view(12, [69.05, 34.04, 70.05, 35.04]))).toBe(false);
+  });
+  it('counts a pan of more than 15% of the view in any direction', () => {
+    expect(viewMoved(base, view(12, [69.2, 34, 70.2, 35]))).toBe(true);
+    expect(viewMoved(base, view(12, [69, 34.2, 70, 35.2]))).toBe(true);
+  });
+  it('counts a change of zoom step but not a wobble inside one', () => {
+    expect(viewMoved(base, view(12.5, [69, 34, 70, 35]))).toBe(true);
+    expect(viewMoved(base, view(12.1, [69, 34, 70, 35]))).toBe(false);
+  });
+  it('counts a view that grew or shrank a lot even if its centre stayed', () => {
+    expect(viewMoved(base, view(12, [68.7, 33.7, 70.3, 35.3]))).toBe(true);
   });
 });

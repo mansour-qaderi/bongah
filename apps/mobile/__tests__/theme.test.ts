@@ -1,4 +1,10 @@
-import { colors, fontFamilyFor, fonts, typography } from '../src/theme';
+import {
+  colors,
+  dealColors,
+  fontFamilyFor,
+  fonts,
+  typography,
+} from '../src/theme';
 
 // The app has no @types/node (it is a React Native project); this test only needs a few Node calls.
 declare const __dirname: string;
@@ -49,6 +55,21 @@ describe('colour palette', () => {
   it('documents why plain gold is never used for small text', () => {
     expect(contrast(colors.textOnPrimary, colors.accent)).toBeLessThan(4.5);
     expect(contrast(colors.accent, colors.surface)).toBeLessThan(4.5);
+  });
+});
+
+describe('deal colours', () => {
+  it.each(Object.entries(dealColors))(
+    'a white icon is visible on the %s marker',
+    (_deal, { main }) => {
+      // 3:1 is the bar for graphics (WCAG 1.4.11); the marker also has a white ring and a shadow.
+      expect(contrast('#FFFFFF', main)).toBeGreaterThanOrEqual(3);
+    },
+  );
+
+  it('keeps the three deals apart', () => {
+    const mains = Object.values(dealColors).map(c => c.main);
+    expect(new Set(mains).size).toBe(mains.length);
   });
 });
 

@@ -1,18 +1,36 @@
 import {
   compactAmount,
+  formatCurrency,
   formatDate,
   formatNumber,
   formatPhone,
   formatPrice,
+  chatStamp,
   jeribToSqm,
   parseNumberInput,
   sqmToJerib,
+  toLatinDigits,
   toPersianDigits,
 } from '../src/i18n/format';
 
 describe('number formatting', () => {
   it('writes Persian digits', () => {
     expect(toPersianDigits('0123456789')).toBe('۰۱۲۳۴۵۶۷۸۹');
+  });
+
+  it('turns numbers and Arabic-Indic digits into Persian ones, and leaves everything else alone', () => {
+    expect(toPersianDigits(1200)).toBe('۱۲۰۰');
+    expect(toPersianDigits(-7.5)).toBe('-۷.۵');
+    expect(toPersianDigits('٠١٢٣٤٥٦٧٨٩')).toBe('۰۱۲۳۴۵۶۷۸۹'); // what an Arabic keyboard types
+    expect(toPersianDigits('اتاق 3 و A4')).toBe('اتاق ۳ و A۴');
+    expect(toPersianDigits('')).toBe('');
+  });
+
+  it('is idempotent, and toLatinDigits undoes it', () => {
+    const once = toPersianDigits('تماس 0701234567');
+    expect(toPersianDigits(once)).toBe(once);
+    expect(toLatinDigits(once)).toBe('تماس 0701234567');
+    expect(toLatinDigits('٠١٢')).toBe('012');
   });
 
   it('groups thousands and trims decimals', () => {
@@ -26,6 +44,14 @@ describe('number formatting', () => {
 
   it('formats a price with its currency word', () => {
     expect(formatPrice(12500000, 'افغانی')).toBe('۱۲٬۵۰۰٬۰۰۰ افغانی');
+  });
+
+  it('formats money with the currency sign: ؋ for Afghani (the default), $ for dollars', () => {
+    expect(formatCurrency(1200000)).toBe('۱٬۲۰۰٬۰۰۰ ؋');
+    expect(formatCurrency(1200000, 'AFGHANI')).toBe('۱٬۲۰۰٬۰۰۰ ؋');
+    expect(formatCurrency(85000.5, 'USD')).toBe('۸۵٬۰۰۰٫۵ $');
+    expect(formatCurrency(0)).toBe('۰ ؋');
+    expect(formatCurrency(Number.NaN)).toBe('');
   });
 });
 
@@ -79,8 +105,9 @@ describe('dates and phones', () => {
   });
 
   it('formats canonical phone numbers', () => {
-    expect(formatPhone('+93701234567')).toBe('+۹۳ ۷۰ ۱۲۳ ۴۵۶۷');
-    expect(formatPhone('weird')).toBe('weird');
+    // Wrapped in left-to-right marks so the groups keep their order inside a right-to-left line.
+    expect(formatPhone('+93701234567')).toBe('\u202A+۹۳ ۷۰ ۱۲۳ ۴۵۶۷\u202C');
+    expect(formatPhone('weird')).toBe('\u202Aweird\u202C');
   });
 });
 
@@ -108,5 +135,36 @@ describe('compactAmount (short prices for map markers)', () => {
   it('leaves unreadable numbers alone', () => {
     expect(compactAmount(NaN).unit).toBeNull();
     expect(compactAmount(Infinity).unit).toBeNull();
+  });
+});
+
+describe('chatStamp', () => {
+  // 2026-10-14 10:00 in Kabul (UTC+4:30) is 05:30 UTC.
+  const NOW = Date.parse('2026-10-14T05:30:00Z');
+
+  it('is the time of day for today, in Persian digits', () => {
+    expect(chatStamp('2026-10-14T04:00:00Z', NOW)).toEqual({
+      kind: 'time',
+      text: '۰۸:۳۰',
+    });
+  });
+
+  it('counts Kabul calendar days, not 24-hour spans', () => {
+    // 23:00 Kabul the evening before is "yesterday" although it is only 11 hours ago.
+    expect(chatStamp('2026-10-13T18:30:00Z', NOW)).toEqual({
+      kind: 'yesterday',
+    });
+    // 00:10 Kabul today is still today although it is in the previous UTC day.
+    expect(chatStamp('2026-10-13T19:40:00Z', NOW)?.kind).toBe('time');
+  });
+
+  it('is a date from two days back, never with Western digits', () => {
+    const stamp = chatStamp('2026-10-10T08:00:00Z', NOW);
+    expect(stamp?.kind).toBe('date');
+    expect(stamp && 'text' in stamp ? stamp.text : '').not.toMatch(/[0-9]/);
+  });
+
+  it('is null for something that is not a date', () => {
+    expect(chatStamp('not a date', NOW)).toBeNull();
   });
 });

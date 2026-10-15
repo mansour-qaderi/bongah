@@ -21,7 +21,6 @@ import type {
   Currency,
   DealType,
   Language,
-  MapLocationStatus,
   Paginated,
   PaymentInitiated,
   Pricing,
@@ -111,11 +110,35 @@ export interface PropertyFilters {
   currency?: Currency;
   /** true: only listings with an exact map pin (what the map can draw). */
   has_location?: boolean;
+  /**
+   * The part of the map on screen: only listings whose pin is inside this box. All four or none (the API
+   * refuses a partial box), and it already means "has a pin", so it is not sent together with has_location.
+   */
+  min_lat?: number;
+  max_lat?: number;
+  min_lng?: number;
+  max_lng?: number;
 }
 
-export const listProperties = (filters: PropertyFilters, page: number) =>
+/** The API reads degrees as plain decimals ("34.4375"); a bare String() of a tiny number could come out as "1e-7". */
+const degrees = (value: number | undefined) =>
+  value === undefined ? undefined : value.toFixed(6);
+
+export const listProperties = (
+  filters: PropertyFilters,
+  page: number,
+  limit: number = PAGE_SIZE,
+) =>
   request<Paginated<Property>>('GET', '/properties', {
-    query: { ...filters, page, limit: PAGE_SIZE },
+    query: {
+      ...filters,
+      min_lat: degrees(filters.min_lat),
+      max_lat: degrees(filters.max_lat),
+      min_lng: degrees(filters.min_lng),
+      max_lng: degrees(filters.max_lng),
+      page,
+      limit,
+    },
   });
 
 export const listMyProperties = (page: number) =>
@@ -183,11 +206,6 @@ export const redeemLadderToken = (propertyId: string) =>
     body: { property_id: propertyId },
   });
 
-// ───────────── Map location ─────────────
-
-export const getMapLocationStatus = () =>
-  request<MapLocationStatus>('GET', '/map-location/status', { auth: true });
-
 // ───────────── Chat ─────────────
 
 export const getChatCapabilities = () =>
@@ -215,10 +233,14 @@ export const sendMessageHttp = (
   conversationId: string,
   message: SendMessageInput,
 ) =>
-  request<ChatMessage>('POST', `/chat/conversations/${conversationId}/messages`, {
-    auth: true,
-    body: message,
-  });
+  request<ChatMessage>(
+    'POST',
+    `/chat/conversations/${conversationId}/messages`,
+    {
+      auth: true,
+      body: message,
+    },
+  );
 
 export const markConversationRead = (conversationId: string) =>
   request<{ marked: number }>(

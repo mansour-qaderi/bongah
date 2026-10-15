@@ -1,5 +1,5 @@
 import React from 'react';
-import { FlatList, Image, Pressable, StyleSheet, View } from 'react-native';
+import { FlatList, Pressable, StyleSheet, View } from 'react-native';
 import type { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
 import type { CompositeScreenProps } from '@react-navigation/native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -10,12 +10,13 @@ import { useConversations } from '../../api/hooks';
 import { useAuth } from '../../auth/AuthContext';
 import AppText from '../../components/AppText';
 import Button from '../../components/Button';
+import Avatar from '../../components/Avatar';
 import { Screen } from '../../components/Screen';
 import { EmptyView, ErrorView, LoadingView } from '../../components/States';
 import { messagePreview } from '../../chat/preview';
-import { formatNumber, formatTime } from '../../i18n/format';
+import { chatStamp, formatNumber } from '../../i18n/format';
 import type { RootStackParamList, TabParamList } from '../../navigation/types';
-import { colors, radius, spacing } from '../../theme';
+import { colors, radius, shadow, spacing, surfaces } from '../../theme';
 
 type Props = CompositeScreenProps<
   BottomTabScreenProps<TabParamList, 'Messages'>,
@@ -86,28 +87,44 @@ function ConversationRow({
     last_message: last,
     unread_count,
   } = conversation;
+  const name = counterpart.name ?? t('chat.counterpart');
+  const unread = unread_count > 0;
+  const stamp = conversation.last_message_at
+    ? chatStamp(conversation.last_message_at)
+    : null;
+  const stampText =
+    stamp === null
+      ? ''
+      : stamp.kind === 'yesterday'
+      ? t('chat.yesterday')
+      : stamp.text;
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={`${counterpart.name ?? t('chat.counterpart')} · ${
-        property.title
-      }`}
+      accessibilityLabel={`${name} · ${property.title}`}
       onPress={onPress}
-      style={({ pressed }) => [styles.row, pressed && styles.pressed]}
+      style={({ pressed }) => [
+        styles.row,
+        shadow.card,
+        pressed && styles.pressed,
+      ]}
     >
-      {property.cover_image ? (
-        <Image source={{ uri: property.cover_image }} style={styles.thumb} />
-      ) : (
-        <View style={[styles.thumb, styles.noThumb]} />
-      )}
+      <Avatar name={name} seed={counterpart.id} size={52} />
       <View style={styles.main}>
         <View style={styles.line}>
-          <AppText variant="label" numberOfLines={1} style={styles.name}>
-            {counterpart.name ?? t('chat.counterpart')}
+          <AppText
+            variant="label"
+            numberOfLines={1}
+            style={[styles.name, unread ? styles.strong : null]}
+          >
+            {name}
           </AppText>
-          {conversation.last_message_at ? (
-            <AppText variant="caption" color={colors.textMuted}>
-              {formatTime(conversation.last_message_at)}
+          {stampText ? (
+            <AppText
+              variant="caption"
+              color={unread ? colors.primary : colors.textMuted}
+            >
+              {stampText}
             </AppText>
           ) : null}
         </View>
@@ -117,19 +134,19 @@ function ConversationRow({
         <View style={styles.line}>
           <AppText
             variant="caption"
-            color={unread_count > 0 ? colors.text : colors.textMuted}
+            color={unread ? colors.text : colors.textMuted}
             numberOfLines={1}
             style={styles.preview}
           >
             {last ? messagePreview(last, myId, t) : ''}
           </AppText>
-          {unread_count > 0 ? (
+          {unread ? (
             <View
               style={styles.badge}
-              accessibilityLabel={String(unread_count)}
+              accessibilityLabel={t('chat.unread', { count: unread_count })}
             >
               <AppText variant="caption" color={colors.textOnPrimary}>
-                {formatNumber(unread_count, 0)}
+                {formatNumber(Math.min(unread_count, 99), 0)}
               </AppText>
             </View>
           ) : null}
@@ -140,21 +157,21 @@ function ConversationRow({
 }
 
 const styles = StyleSheet.create({
-  list: { flexGrow: 1, paddingBottom: spacing.xl },
+  list: { flexGrow: 1, paddingVertical: spacing.md, paddingBottom: spacing.xl },
   row: {
     flexDirection: 'row',
+    alignItems: 'center',
     gap: spacing.md,
-    padding: spacing.lg,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-    backgroundColor: colors.surface,
+    padding: spacing.md,
+    marginHorizontal: spacing.lg,
+    marginBottom: spacing.sm + 2,
+    ...surfaces.tile,
   },
   pressed: { opacity: 0.85 },
-  thumb: { width: 56, height: 56, borderRadius: radius.md },
-  noThumb: { backgroundColor: colors.primarySoft },
   main: { flex: 1, gap: 2 },
   line: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   name: { flex: 1 },
+  strong: { fontWeight: '700' },
   preview: { flex: 1 },
   badge: {
     minWidth: 22,

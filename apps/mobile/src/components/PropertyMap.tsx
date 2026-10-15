@@ -1,20 +1,20 @@
-import React, { useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import { Marker } from '@maplibre/maplibre-react-native';
 import type { AgencyMapPin, Property } from '@bongah/shared-types';
 import BaseMap from '../map/BaseMap';
 import {
   clusterPoints,
   inBounds,
+  viewMoved,
+  zoomStep,
   type Bounds,
   type Cluster,
+  type MapView,
 } from '../map/cluster';
 import { toLngLat, type Coordinate, type MapCamera } from '../map/geo';
-import {
-  agencyKey,
-  buildItems,
-  propertyKey,
-  type MapItem,
-} from '../map/items';
+import PlotLayer from '../map/PlotLayer';
+import { buildPlots, plotAt } from '../map/plots';
+import { agencyKey, buildItems, propertyKey, type MapItem } from '../map/items';
 import {
   AgencyMarker,
   ClusterMarker,
@@ -39,22 +39,39 @@ interface Props {
   onSelectAgency: (agency: AgencyMapPin) => void;
   /** A group of several listings/offices in one place was tapped. */
   onOpenCluster: (items: MapItem[]) => void;
-  /** The map settled at this zoom. Lets the screen fly to a chosen listing without zooming out. */
-  onZoomChange?: (zoom: number) => void;
+  /**
+   * The map settled: how far in it is and what part of the world it shows. Lets the screen fly to a chosen
+   * listing without zooming out, and ask the server for just what is on screen.
+   */
+  onViewChange?: (view: {
+    zoom: number;
+    bounds: Bounds;
+    userMoved: boolean;
+  }) => void;
+  /** Empty map was tapped: not a marker, not a cluster and not inside a plot. */
+  onPressMap?: () => void;
 }
+
+/**
+ * A marker sits on top of the map, and whether the same finger-tap is also reported to the map underneath
+ * depends on the platform. If it is, "tap the map to close" would close a card the instant a marker opened
+ * it. So a map tap this soon after a marker tap is taken to be the same tap and ignored.
+ */
+export const MARKER_TAP_GRACE_MS = 300;
 
 /** The most markers drawn at once. Each one is a native view, so this keeps panning smooth. */
 const MAX_MARKERS = 120;
-
-/** Zoom is clustered in half steps: finer than that changes nothing the eye can see. */
-const zoomStep = (zoom: number) => Math.round(zoom * 2) / 2;
+/** From here on, markers carry their price (or name): the map is close enough that there is room for it. */
+export const LABEL_ZOOM = 14;
 
 /**
- * Interactive map of listings and verified offices, with a "you are here" dot.
+ * Interactive map of listings and verified offices, with a "you are here" dot and, where a listing has one,
+ * its plot outline.
  *
  * Markers are real views (price, seller, name), which a map layer cannot draw without a glyph server, so the
  * work of keeping it fast is done here: items that overlap at this zoom collapse into one counted cluster
- * (tapping it opens a list), and only what is on or just off screen is drawn.
+ * (tapping it zooms in), and only what is on or just off screen is drawn. Plot outlines are native layers,
+ * not views, so they cost nothing per frame; a tap inside one chooses its listing.
  */
 export default function PropertyMap({
   properties,
@@ -65,9 +82,10 @@ export default function PropertyMap({
   onSelectProperty,
   onSelectAgency,
   onOpenCluster,
-  onZoomChange,
+  onViewChange,
+  onPressMap,
 }: Props) {
-  const [view, setView] = useState<{ zoom: number; bounds: Bounds | null }>({
+  const [view, setView] = useState<MapView>({
     zoom: zoomStep(camera.zoom),
     bounds: null,
   });
@@ -79,6 +97,22 @@ export default function PropertyMap({
   const clusters = useMemo(
     () => clusterPoints(items, view.zoom),
     [items, view.zoom],
+  );
+
+  const plots = useMemo(() => buildPlots(properties), [properties]);
+  const lastMarkerTap = useRef(0);
+  const fromMarker = (action: () => void) => () => {
+    lastMarkerTap.current = Date.now();
+    action();
+  };
+  const onPress = useCallback(
+    (point: Coordinate) => {
+      if (Date.now() - lastMarkerTap.current < MARKER_TAP_GRACE_MS) return;
+      const hit = plotAt(plots, point);
+      if (hit) onSelectProperty(hit);
+      else onPressMap?.();
+    },
+    [plots, onSelectProperty, onPressMap],
   );
 
   const selectedKey = selected
@@ -100,15 +134,29 @@ export default function PropertyMap({
     ].slice(-MAX_MARKERS);
   }, [clusters, view.bounds, selectedKey]);
 
+  const showLabels = view.zoom >= LABEL_ZOOM;
+
   return (
     <BaseMap
       camera={camera}
       testID="property-map"
+      onPress={onPress}
       onViewChange={next => {
-        setView({ zoom: zoomStep(next.zoom), bounds: next.bounds });
-        onZoomChange?.(next.zoom);
+        // A small pan changes nothing that is drawn: keep the same state so nothing re-renders.
+        setView(previous => {
+          const updated = {
+            zoom: zoomStep(next.zoom),
+            bounds: next.bounds,
+          };
+          return viewMoved(previous, updated) ? updated : previous;
+        });
+        onViewChange?.(next);
       }}
     >
+      <PlotLayer
+        plots={plots}
+        selectedId={selected?.kind === 'property' ? selected.id : null}
+      />
       {drawn.map(cluster => {
         const count = cluster.items.length;
         const at = toLngLat({ latitude: cluster.lat, longitude: cluster.lng });
@@ -118,9 +166,12 @@ export default function PropertyMap({
               key={`${cluster.key}#${count}`}
               id={`cluster:${cluster.key}#${count}`}
               lngLat={at}
-              onPress={() => onOpenCluster(cluster.items)}
+              onPress={fromMarker(() => onOpenCluster(cluster.items))}
             >
-              <ClusterMarker count={count} />
+              <ClusterMarker
+                count={count}
+                onlyProperties={cluster.items.every(i => i.kind === 'property')}
+              />
             </Marker>
           );
         }
@@ -132,9 +183,13 @@ export default function PropertyMap({
             id={item.key}
             lngLat={at}
             anchor="bottom"
-            onPress={() => onSelectProperty(item.property)}
+            onPress={fromMarker(() => onSelectProperty(item.property))}
           >
-            <PropertyMarker property={item.property} selected={isSelected} />
+            <PropertyMarker
+              property={item.property}
+              selected={isSelected}
+              showPrice={showLabels}
+            />
           </Marker>
         ) : (
           <Marker
@@ -142,9 +197,13 @@ export default function PropertyMap({
             id={item.key}
             lngLat={at}
             anchor="bottom"
-            onPress={() => onSelectAgency(item.agency)}
+            onPress={fromMarker(() => onSelectAgency(item.agency))}
           >
-            <AgencyMarker agency={item.agency} selected={isSelected} />
+            <AgencyMarker
+              agency={item.agency}
+              selected={isSelected}
+              showPrice={showLabels}
+            />
           </Marker>
         );
       })}

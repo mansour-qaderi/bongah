@@ -2,7 +2,12 @@ import { useTranslation } from 'react-i18next';
 import type { Currency, Language } from '@bongah/shared-types';
 import { provinceLabel } from '../constants/provinces';
 import { DEFAULT_LANGUAGE, isLanguage } from './languages';
-import { compactAmount, formatNumber, formatPrice, sqmToJerib } from './format';
+import {
+  compactAmount,
+  formatCurrency,
+  formatNumber,
+  sqmToJerib,
+} from './format';
 
 /** Number/price/area formatting bound to the current language. */
 export function useFormat() {
@@ -13,8 +18,9 @@ export function useFormat() {
     : DEFAULT_LANGUAGE;
   return {
     language,
+    /** "۱٬۲۰۰٬۰۰۰ ؋": the full price, with the currency's sign. */
     price: (amount: number, currency: Currency) =>
-      formatPrice(amount, t(`currency.${currency}`)),
+      formatCurrency(amount, currency),
     /** "۲٫۵ میلیون ؋": the short form for map markers. */
     compactPrice: (amount: number, currency: Currency) => {
       const { value, unit } = compactAmount(amount);

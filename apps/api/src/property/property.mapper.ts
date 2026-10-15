@@ -1,11 +1,37 @@
+import type { SubscriptionPackage } from '@bongah/shared-types';
 import type { Property as PropertyRow } from '../generated/prisma/client.js';
 import type { PropertyDto } from './dto/property-response.dto.js';
 
-/** Load this with a listing so its agency's public name can be shown without a second query. */
-export const WITH_AGENCY_NAME = { agency: { select: { agencyName: true } } } as const;
+/**
+ * Load this with a listing so its agency's public name and current plan can be shown without a second query.
+ * Every ACTIVE subscription is loaded (an agency has a handful at most) and `toPropertyDto` picks the one that is
+ * running at its `now`, so the choice of "now" stays with the caller and nothing here goes stale.
+ */
+export const WITH_AGENCY_NAME = {
+  agency: {
+    select: {
+      agencyName: true,
+      subscriptions: {
+        where: { status: 'ACTIVE' },
+        select: { packageType: true, startDate: true, endDate: true },
+      },
+    },
+  },
+} as const;
 
-/** A listing row, optionally with its agency's name (see WITH_AGENCY_NAME). Without it `agency_name` is null. */
-export type PropertyRowWithAgency = PropertyRow & { agency?: { agencyName: string } | null };
+/** A listing row, optionally with its agency (see WITH_AGENCY_NAME). Without it `agency_name` and `agency_plan` are null. */
+export type PropertyRowWithAgency = PropertyRow & {
+  agency?: {
+    agencyName: string;
+    subscriptions?: { packageType: SubscriptionPackage; startDate: Date; endDate: Date }[];
+  } | null;
+};
+
+/** The plan the listing's agency has running at `now`, or null (private owner, no plan, or a lapsed one). */
+export function runningPlanAt(row: PropertyRowWithAgency, now: Date): SubscriptionPackage | null {
+  const running = row.agency?.subscriptions?.find((s) => s.startDate <= now && s.endDate > now);
+  return running?.packageType ?? null;
+}
 
 /**
  * Whether a paid featured promotion is running at `now`. THE definition: the flag alone goes
@@ -22,6 +48,7 @@ export function toPropertyDto(row: PropertyRowWithAgency, now: Date): PropertyDt
     user_id: row.userId,
     agency_id: row.agencyId,
     agency_name: row.agency?.agencyName ?? null,
+    agency_plan: runningPlanAt(row, now),
     title: row.title,
     description: row.description,
     type: row.type,

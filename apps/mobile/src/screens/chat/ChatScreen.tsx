@@ -9,9 +9,7 @@ import {
   ActivityIndicator,
   FlatList,
   Image,
-  KeyboardAvoidingView,
   Modal,
-  Platform,
   Pressable,
   StyleSheet,
   TextInput,
@@ -62,6 +60,7 @@ import { newClientId } from '../../chat/uuid';
 import AppText from '../../components/AppText';
 import Banner from '../../components/Banner';
 import Button from '../../components/Button';
+import { KeyboardAvoider } from '../../components/KeyboardAware';
 import { Chip, ChipRow } from '../../components/Chip';
 import LocationPicker from '../../components/LocationPicker';
 import MessageBubble from '../../components/MessageBubble';
@@ -355,11 +354,7 @@ export default function ChatScreen({ navigation, route }: Props) {
         </AppText>
       </Pressable>
 
-      <KeyboardAvoidingView
-        style={styles.flex}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
-      >
+      <KeyboardAvoider style={styles.flex}>
         <FlatList
           inverted
           data={items}
@@ -491,7 +486,7 @@ export default function ChatScreen({ navigation, route }: Props) {
             </View>
           </SafeAreaView>
         )}
-      </KeyboardAvoidingView>
+      </KeyboardAvoider>
 
       <Modal
         visible={pickingLocation}

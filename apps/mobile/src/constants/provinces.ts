@@ -199,3 +199,36 @@ export function findProvince(
 export function provinceLabel(value: string, language: Language): string {
   return findProvince(value)?.name[language] ?? value;
 }
+
+/** Words that only say "this is a province": dropped before names are compared. */
+const PROVINCE_WORDS =
+  /\b(province|wilayat|velayat)\b|ولایت|ولايت|ولایة|ولاية/gi;
+const letters = (value: string): string =>
+  normalizePlaceName(value)
+    .toLowerCase()
+    .replace(PROVINCE_WORDS, '')
+    .replace(/[^\p{L}]/gu, '');
+
+/**
+ * Finds the province a place-name service means by "Kabul Province", "ولایت کابل", "Sar-e Pol" and the like: the
+ * Latin id, the Dari name, the Pashto name or the capital's name, ignoring the word "province", spacing and
+ * hyphens. Null when nothing fits, so the caller can say "unknown" rather than guess.
+ */
+export function matchProvince(
+  value: string | null | undefined,
+): Province | null {
+  const wanted = value ? letters(value) : '';
+  if (wanted.length < 3) return null;
+  const same = (candidate: string | undefined) =>
+    candidate !== undefined && letters(candidate) === wanted;
+  return (
+    PROVINCES.find(
+      p =>
+        same(p.id) ||
+        same(p.name.prs) ||
+        same(p.name.ps) ||
+        same(p.capital?.prs) ||
+        same(p.capital?.ps),
+    ) ?? null
+  );
+}

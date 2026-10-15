@@ -7,13 +7,13 @@ import {
   type InfiniteData,
 } from '@tanstack/react-query';
 import type { Language, Paginated, Property } from '@bongah/shared-types';
+import type { Area } from '../map/viewport';
 import { ApiError } from './client';
 import {
   getAgencyDashboard,
   listAgencyMapPins,
   getChatCapabilities,
   getContactAccess,
-  getMapLocationStatus,
   getPricing,
   getProperty,
   getReferralSummary,
@@ -41,6 +41,9 @@ export const queryClient = new QueryClient({
 export const queryKeys = {
   properties: ['properties'] as const,
   list: (filters: PropertyFilters) => ['properties', 'list', filters] as const,
+  /** The home map: the listings inside one area. Under `properties`, so a new listing refreshes it too. */
+  map: (filters: PropertyFilters, area: Area) =>
+    ['properties', 'map', filters, area] as const,
   mine: ['properties', 'mine'] as const,
   /**
    * Sits under `properties` on purpose: everything on the dashboard (counts, subscription days,
@@ -50,7 +53,6 @@ export const queryKeys = {
   agencyDashboard: ['properties', 'agency-dashboard'] as const,
   property: (id: string) => ['properties', 'detail', id] as const,
   pricing: ['pricing'] as const,
-  mapLocation: ['map-location'] as const,
   referral: ['referral'] as const,
   /** Everything about a listing's owner number: the allowance and who has been revealed. A payment or a reveal refreshes it all. */
   contact: ['contact'] as const,
@@ -58,7 +60,8 @@ export const queryKeys = {
   /** Everything chat. Signing out removes it all. */
   chat: ['chat'] as const,
   conversations: ['chat', 'conversations'] as const,
-  messages: (conversationId: string) => ['chat', 'messages', conversationId] as const,
+  messages: (conversationId: string) =>
+    ['chat', 'messages', conversationId] as const,
   chatCapabilities: ['chat', 'capabilities'] as const,
   templates: ['chat', 'templates'] as const,
   agencyPins: ['agency-map-pins'] as const,
@@ -72,12 +75,44 @@ export const flattenPages = (
   data: InfiniteData<Paginated<Property>> | undefined,
 ): Property[] => data?.pages.flatMap(page => page.data) ?? [];
 
-export function usePropertyList(filters: PropertyFilters) {
+export function usePropertyList(filters: PropertyFilters, enabled = true) {
   return useInfiniteQuery({
     queryKey: queryKeys.list(filters),
     queryFn: ({ pageParam }) => listProperties(filters, pageParam),
     initialPageParam: 1,
     getNextPageParam: nextPage,
+    enabled,
+  });
+}
+
+/** The API's largest page: the map wants listings quickly, and each page is one more round trip. */
+export const MAP_PAGE_SIZE = 50;
+
+/**
+ * The listings inside one area of the map (and matching the other filters), 50 to a page.
+ *
+ * While the next area loads, the previous one stays on screen (so panning never blanks the map). That only
+ * holds for the same filters: a changed filter must not show the old filter's pins as if they matched.
+ */
+export function useMapProperties(
+  filters: PropertyFilters,
+  area: Area,
+  enabled = true,
+) {
+  return useInfiniteQuery({
+    queryKey: queryKeys.map(filters, area),
+    queryFn: ({ pageParam }) =>
+      listProperties({ ...filters, ...area }, pageParam, MAP_PAGE_SIZE),
+    initialPageParam: 1,
+    getNextPageParam: nextPage,
+    enabled,
+    placeholderData: (previous, previousQuery) => {
+      const before = previousQuery?.queryKey[2];
+      return before !== undefined &&
+        JSON.stringify(before) === JSON.stringify(filters)
+        ? previous
+        : undefined;
+    },
   });
 }
 
@@ -91,10 +126,11 @@ export function useMyProperties(enabled: boolean) {
   });
 }
 
-export function usePropertyDetail(id: string) {
+export function usePropertyDetail(id: string, enabled = true) {
   return useQuery({
     queryKey: queryKeys.property(id),
     queryFn: () => getProperty(id),
+    enabled,
   });
 }
 
@@ -171,17 +207,6 @@ export function useRedeemLadderToken() {
       client.invalidateQueries({ queryKey: queryKeys.properties });
       client.invalidateQueries({ queryKey: queryKeys.referral });
     },
-  });
-}
-
-/** Whether I can pin exact coordinates (unlimited plan, or how many prepaid pins I hold). */
-export function useMapLocationStatus(enabled: boolean) {
-  return useQuery({
-    queryKey: queryKeys.mapLocation,
-    queryFn: getMapLocationStatus,
-    enabled,
-    // It changes the moment a payment lands or a pin is spent, so never trust an old answer.
-    staleTime: 0,
   });
 }
 

@@ -32,11 +32,11 @@ jest.mock('../src/navigation/useRequireAuth', () => ({
 }));
 
 // Imported after the mocks so the screens pick them up.
-import CheckoutScreen from '../src/screens/payments/CheckoutScreen';
 import HomeScreen from '../src/screens/home/HomeScreen';
-import AddPropertyScreen from '../src/screens/property/AddPropertyScreen';
+import AddPropertyScreen, {
+  LOOKUP_DELAY_MS,
+} from '../src/screens/property/AddPropertyScreen';
 import PropertyDetailsScreen from '../src/screens/property/PropertyDetailsScreen';
-import SetLocationScreen from '../src/screens/property/SetLocationScreen';
 import PropertyMap from '../src/components/PropertyMap';
 import { AFGHANISTAN_CAMERA } from '../src/map/geo';
 
@@ -47,32 +47,6 @@ const user = {
   full_name: null,
   avatar: null,
 };
-const PRICING = {
-  currency: 'AFGHANI',
-  subscription: { MONTHLY: 1000, QUARTERLY: 2700, YEARLY: 9600 },
-  ladder: 50,
-  featured_ad: 100,
-  map_location: 30,
-  featured_ad_days: 7,
-  contact_credits: 40,
-  contact_credits_per_pack: 10,
-};
-const STATUS_NONE = {
-  unlimited: false,
-  unlimited_reason: null,
-  tokens_available: 0,
-};
-const STATUS_TOKENS = {
-  unlimited: false,
-  unlimited_reason: null,
-  tokens_available: 2,
-};
-const STATUS_AGENCY = {
-  unlimited: true,
-  unlimited_reason: 'AGENCY_SUBSCRIPTION',
-  tokens_available: 0,
-};
-
 const listing = (overrides: Record<string, unknown> = {}) => ({
   id: '11111111-1111-4111-8111-111111111111',
   user_id: 'u1',
@@ -107,6 +81,7 @@ const navigation = () => ({
   navigate: jest.fn(),
   replace: jest.fn(),
   goBack: jest.fn(),
+  setOptions: jest.fn(),
 });
 /** Renders a screen with a fake navigator (and route) inside a fresh query cache. */
 const screenElement = <P extends object>(
@@ -175,7 +150,48 @@ const type = (
     inputLabelled(root, label).props.onChangeText(text);
   });
 
-/** Fills in everything the form requires except the pin. */
+/** Waits out the pause between the last tap on the map and the address question, then lets the answer land. */
+const afterLookupDelay = () =>
+  act(async () => {
+    await new Promise<void>(resolve =>
+      setTimeout(() => resolve(), LOOKUP_DELAY_MS + 60),
+    );
+  });
+
+type Reverse = { address?: Record<string, string> } | 'down';
+/**
+ * Puts the address service in front of the API mock: it answers the geocoder's own URL (the API client reads
+ * text, the geocoder reads json, so it needs a reply of its own) and hands everything else on.
+ */
+function answerGeocoder(
+  reverse: Reverse,
+  routes: Parameters<typeof mockApi>[1],
+) {
+  mockApi(fetchMock, routes);
+  const api = fetchMock.getMockImplementation()!;
+  fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+    if (!url.startsWith('https://nominatim.openstreetmap.org/')) {
+      return api(url, init);
+    }
+    if (reverse === 'down') throw new Error('offline');
+    return { ok: true, status: 200, json: async () => reverse };
+  });
+}
+const geocoderCalls = () =>
+  fetchMock.mock.calls.filter(([url]) =>
+    String(url).startsWith('https://nominatim.openstreetmap.org/'),
+  );
+
+const KABUL_SPOT: Reverse = {
+  address: {
+    state: 'Kabul',
+    city_district: 'ناحیه سوم',
+    suburb: 'شهر نو',
+    road: 'سرک چهارم',
+  },
+};
+
+/** Fills in everything the form requires when there is no pin: the written address included. */
 async function fillForm(root: ReactTestRenderer.ReactTestInstance) {
   await type(root, prs.add.titleField, 'آپارتمان سه‌خوابه');
   await type(root, prs.add.price, '1200000');
@@ -183,87 +199,170 @@ async function fillForm(root: ReactTestRenderer.ReactTestInstance) {
   await type(root, prs.add.district, 'شهر نو');
   await type(root, prs.add.neighborhood, 'قلعه فتح‌الله');
   await type(root, prs.add.address, 'سرک چهارم، نزدیک پارک');
-  await type(root, prs.add.descriptionField, 'تازه‌ساز و روشن');
   await press(root, prs.home.selectProvince); // opens the province list
   await press(root, 'کابل');
 }
+/** The same, up to and including the basics, but no address at all: the pin is meant to supply it. */
+async function fillBasics(root: ReactTestRenderer.ReactTestInstance) {
+  await type(root, prs.add.titleField, 'آپارتمان سه‌خوابه');
+  await type(root, prs.add.price, '1200000');
+  await type(root, prs.add.area, '120');
+}
+const optional = (label: string) => `${label} (${prs.common.optional})`;
+const posted = () =>
+  callsTo(fetchMock).find(c => c.method === 'POST' && c.path === '/properties');
 
-describe('AddPropertyScreen: exact map location', () => {
-  const routes = (status: object) => ({
-    'GET /map-location/status': { body: status },
-    'GET /hesabpay/pricing': { body: PRICING },
+describe('AddPropertyScreen: location is free and has two ways in', () => {
+  const routes = {
     'POST /properties': { status: 201, body: listing() },
-  });
+  };
 
-  it('keeps the map picker away from people who have not paid, and shows the price instead', async () => {
-    mockApi(fetchMock, routes(STATUS_NONE));
-    const nav = navigation();
-    const tree = await render(screenElement(AddPropertyScreen, nav));
+  it('shows the map to everyone, with no price, no buy button and no payment calls', async () => {
+    answerGeocoder(KABUL_SPOT, routes);
+    const tree = await render(screenElement(AddPropertyScreen, navigation()));
     await settle();
 
-    expect(mapParts(tree.root, 'Map')).toHaveLength(0);
+    expect(mapParts(tree.root, 'Map')).toHaveLength(1);
     const text = allText(tree.root);
-    expect(text).toContain('۳۰'); // the price, in Persian digits
-    expect(text).toContain(prs.map.buy);
-
-    await press(tree.root, prs.map.buy);
-    expect(nav.navigate).toHaveBeenCalledWith('Checkout', { tab: 'map' });
+    expect(text).toContain(prs.map.tapToPlace);
+    expect(text).not.toContain('۳۰');
+    expect(text).not.toContain('؋ ۳۰');
+    expect(
+      callsTo(fetchMock).filter(
+        c => c.path.includes('map-location') || c.path.includes('hesabpay'),
+      ),
+    ).toHaveLength(0);
   });
 
-  it('still lets them write province, district and neighborhood and publish without a pin', async () => {
-    mockApi(fetchMock, routes(STATUS_NONE));
+  it('shows the same free map to an agency', async () => {
+    answerGeocoder(KABUL_SPOT, routes);
+    mockAuth = { status: 'signedIn', user: { ...user, role: 'AGENCY' } };
+    const tree = await render(screenElement(AddPropertyScreen, navigation()));
+    await settle();
+    expect(mapParts(tree.root, 'Map')).toHaveLength(1);
+  });
+
+  it('requires the written address while there is no pin, and says so', async () => {
+    answerGeocoder(KABUL_SPOT, routes);
+    const tree = await render(screenElement(AddPropertyScreen, navigation()));
+    await settle();
+    expect(allText(tree.root)).toContain(prs.add.addressRequired);
+
+    await fillBasics(tree.root);
+    await press(tree.root, prs.add.submit);
+    await settle();
+    expect(posted()).toBeUndefined();
+    expect(allText(tree.root)).toContain(prs.add.required);
+  });
+
+  it('lets them write the address and publish without any pin', async () => {
+    answerGeocoder(KABUL_SPOT, routes);
     const tree = await render(screenElement(AddPropertyScreen, navigation()));
     await settle();
     await fillForm(tree.root);
     await press(tree.root, prs.add.submit);
     await settle();
 
-    const post = callsTo(fetchMock).find(
-      c => c.method === 'POST' && c.path === '/properties',
-    );
-    expect(post?.body).toMatchObject({
+    expect(posted()?.body).toMatchObject({
       province: 'کابل',
       district: 'شهر نو',
       neighborhood: 'قلعه فتح‌الله',
     });
-    expect(post?.body).not.toHaveProperty('lat');
-    expect(post?.body).not.toHaveProperty('lng');
+    expect(posted()?.body).not.toHaveProperty('lat');
+    expect(posted()?.body).not.toHaveProperty('lng');
+    expect(geocoderCalls()).toHaveLength(0); // no pin, nothing to ask
   });
 
-  it('shows the picker to someone holding a prepaid pin and sends the tapped point', async () => {
-    mockApi(fetchMock, routes(STATUS_TOKENS));
+  it('fills province, district, neighbourhood and street from a pin, and sends the pin', async () => {
+    answerGeocoder(KABUL_SPOT, routes);
     const tree = await render(screenElement(AddPropertyScreen, navigation()));
     await settle();
-    expect(allText(tree.root)).toContain(prs.map.usesCredit);
-    expect(mapParts(tree.root, 'Marker')).toHaveLength(0);
-
-    await fillForm(tree.root);
+    await fillBasics(tree.root);
     await act(async () =>
       tapMap(tree.root, 'location-picker-map', [69.1, 34.5]),
     );
     expect(mapParts(tree.root, 'Marker')).toHaveLength(1);
+    expect(allText(tree.root)).toContain(prs.add.addressOptional);
+    await afterLookupDelay();
+
+    expect(geocoderCalls()).toHaveLength(1);
+    expect(String(geocoderCalls()[0][0])).toContain('lat=34.5');
+    expect(String(geocoderCalls()[0][0])).toContain('lon=69.1');
+    expect(allText(tree.root)).toContain(prs.add.filled);
+    expect(
+      inputLabelled(tree.root, optional(prs.add.district)).props.value,
+    ).toBe('ناحیه سوم');
+    expect(
+      inputLabelled(tree.root, optional(prs.add.neighborhood)).props.value,
+    ).toBe('شهر نو');
+    expect(
+      inputLabelled(tree.root, optional(prs.add.address)).props.value,
+    ).toBe('سرک چهارم');
+
     await press(tree.root, prs.add.submit);
     await settle();
-
-    const post = callsTo(fetchMock).find(
-      c => c.method === 'POST' && c.path === '/properties',
-    );
-    expect(post?.body).toMatchObject({ lat: 34.5, lng: 69.1 }); // latitude is the second map coordinate
+    expect(posted()?.body).toMatchObject({
+      lat: 34.5,
+      lng: 69.1, // latitude is the second map coordinate
+      province: 'کابل',
+      district: 'ناحیه سوم',
+    });
   });
 
-  it('shows the picker to a subscribed agency without mentioning credits', async () => {
-    mockApi(fetchMock, routes(STATUS_AGENCY));
-    mockAuth = { status: 'signedIn', user: { ...user, role: 'AGENCY' } };
+  it('publishes with a pin and no written address when the service knows nothing, guessing the province', async () => {
+    answerGeocoder('down', routes);
     const tree = await render(screenElement(AddPropertyScreen, navigation()));
     await settle();
-    const text = allText(tree.root);
-    expect(text).toContain(prs.map.includedPlan);
-    expect(text).not.toContain(prs.map.usesCredit);
-    expect(mapParts(tree.root, 'Map')).toHaveLength(1);
+    await fillBasics(tree.root);
+    await act(async () =>
+      tapMap(tree.root, 'location-picker-map', [69.1, 34.5]),
+    );
+    await afterLookupDelay();
+    expect(allText(tree.root)).toContain(prs.add.provinceGuessed);
+
+    await press(tree.root, prs.add.submit);
+    await settle();
+    expect(posted()?.body).toMatchObject({
+      lat: 34.5,
+      lng: 69.1,
+      province: 'کابل',
+    });
+  });
+
+  it('asks the service once for a burst of taps, about the last spot', async () => {
+    answerGeocoder(KABUL_SPOT, routes);
+    const tree = await render(screenElement(AddPropertyScreen, navigation()));
+    await settle();
+    await act(async () => {
+      tapMap(tree.root, 'location-picker-map', [69.0, 34.4]);
+      tapMap(tree.root, 'location-picker-map', [69.1, 34.5]);
+    });
+    await afterLookupDelay();
+    expect(geocoderCalls()).toHaveLength(1);
+    expect(String(geocoderCalls()[0][0])).toContain('lat=34.5');
+  });
+
+  it('never overwrites what the person typed when the pin moves', async () => {
+    answerGeocoder(KABUL_SPOT, routes);
+    const tree = await render(screenElement(AddPropertyScreen, navigation()));
+    await settle();
+    await act(async () =>
+      tapMap(tree.root, 'location-picker-map', [69.1, 34.5]),
+    );
+    await afterLookupDelay();
+    await type(tree.root, optional(prs.add.address), 'خانه‌ی شماره ۵');
+
+    await act(async () =>
+      tapMap(tree.root, 'location-picker-map', [69.2, 34.6]),
+    );
+    await afterLookupDelay();
+    expect(
+      inputLabelled(tree.root, optional(prs.add.address)).props.value,
+    ).toBe('خانه‌ی شماره ۵');
   });
 
   it('ignores a tap outside Afghanistan and says why', async () => {
-    mockApi(fetchMock, routes(STATUS_TOKENS));
+    answerGeocoder(KABUL_SPOT, routes);
     const tree = await render(screenElement(AddPropertyScreen, navigation()));
     await settle();
     await act(async () =>
@@ -271,180 +370,114 @@ describe('AddPropertyScreen: exact map location', () => {
     );
     expect(mapParts(tree.root, 'Marker')).toHaveLength(0);
     expect(allText(tree.root)).toContain(prs.map.outside);
+    await afterLookupDelay();
+    expect(geocoderCalls()).toHaveLength(0);
+  });
+});
+
+describe('AddPropertyScreen: the form itself', () => {
+  const routes = { 'POST /properties': { status: 201, body: listing() } };
+
+  it('lists the property types in the agreed order', async () => {
+    answerGeocoder(KABUL_SPOT, routes);
+    const tree = await render(screenElement(AddPropertyScreen, navigation()));
+    await settle();
+    const text = allText(tree.root);
+    const order = [
+      prs.propertyType.HOUSE_HAWILI,
+      prs.propertyType.APARTMENT,
+      prs.propertyType.OFFICE_SHOP,
+      prs.propertyType.LAND,
+      prs.propertyType.GARDEN_VILLA,
+      prs.propertyType.GARAGE_OTHER,
+    ].map(label => text.indexOf(label));
+    expect(order.every(index => index >= 0)).toBe(true);
+    expect([...order].sort((a, b) => a - b)).toEqual(order);
   });
 
-  it('offers to buy when the server says the pin needs the add-on (balance was stale)', async () => {
-    mockApi(fetchMock, {
-      ...routes(STATUS_TOKENS),
-      'POST /properties': {
-        status: 403,
-        body: { code: 'MAP_LOCATION_REQUIRED', message: 'x' },
-      },
-    });
-    const nav = navigation();
-    const tree = await render(screenElement(AddPropertyScreen, nav));
+  it('puts rooms and bathrooms next to price and area, and sends what the steppers say', async () => {
+    answerGeocoder(KABUL_SPOT, routes);
+    const tree = await render(screenElement(AddPropertyScreen, navigation()));
     await settle();
+    const text = allText(tree.root);
+    expect(text).toContain(prs.add.bedrooms);
+    expect(text).toContain(prs.add.bathrooms);
+
     await fillForm(tree.root);
-    await act(async () =>
-      tapMap(tree.root, 'location-picker-map', [69.1, 34.5]),
-    );
+    const plus = (label: string) =>
+      act(async () => {
+        tree.root
+          .find(
+            n =>
+              typeof n.props.onPress === 'function' &&
+              n.props.accessibilityLabel === `${label}: ${prs.common.increase}`,
+          )
+          .props.onPress();
+      });
+    await plus(prs.add.bedrooms);
+    await plus(prs.add.bedrooms);
+    await plus(prs.add.bathrooms);
     await press(tree.root, prs.add.submit);
     await settle();
+    expect(posted()?.body).toMatchObject({ bedrooms: 2, bathrooms: 1 });
+  });
 
-    expect(allText(tree.root)).toContain(prs.map.required);
-    // The balance is fetched again, since it was evidently out of date.
-    expect(
-      callsTo(fetchMock).filter(c => c.path === '/map-location/status').length,
-    ).toBeGreaterThan(1);
-    await press(tree.root, prs.map.buy);
-    expect(nav.navigate).toHaveBeenCalledWith('Checkout', { tab: 'map' });
+  it('hides the room counts for land', async () => {
+    answerGeocoder(KABUL_SPOT, routes);
+    const tree = await render(screenElement(AddPropertyScreen, navigation()));
+    await settle();
+    await press(tree.root, prs.propertyType.LAND);
+    expect(allText(tree.root)).not.toContain(prs.add.bedrooms);
+  });
+
+  it('treats the description as optional', async () => {
+    answerGeocoder(KABUL_SPOT, routes);
+    const tree = await render(screenElement(AddPropertyScreen, navigation()));
+    await settle();
+    expect(allText(tree.root)).toContain(prs.add.descriptionField);
+    await fillForm(tree.root); // fillForm leaves the description empty
+    await press(tree.root, prs.add.submit);
+    await settle();
+    expect(posted()).toBeDefined();
   });
 });
 
-describe('SetLocationScreen', () => {
+describe('AddPropertyScreen: editing my listing', () => {
   const id = '11111111-1111-4111-8111-111111111111';
-  const route = { params: { propertyId: id } };
 
-  it('lets someone with a prepaid pin place the first pin and saves exactly lat/lng', async () => {
-    mockApi(fetchMock, {
-      [`GET /properties/${id}`]: { body: listing() },
-      'GET /map-location/status': { body: STATUS_TOKENS },
-      'GET /hesabpay/pricing': { body: PRICING },
-      [`PATCH /properties/${id}`]: { body: listing({ lat: 34.5, lng: 69.1 }) },
+  it('opens filled in, saves with PATCH and goes back', async () => {
+    answerGeocoder(KABUL_SPOT, {
+      [`GET /properties/${id}`]: {
+        body: listing({ lat: 34.5, lng: 69.1, province: 'کابل' }),
+      },
+      [`PATCH /properties/${id}`]: { body: listing({ title: 'تازه' }) },
     });
     const nav = navigation();
-    const tree = await render(screenElement(SetLocationScreen, nav, route));
+    const tree = await render(
+      screenElement(AddPropertyScreen, nav, { params: { propertyId: id } }),
+    );
     await settle();
 
-    await press(tree.root, prs.map.save);
-    expect(allText(tree.root)).toContain(prs.map.pickFirst); // nothing chosen yet
-    expect(callsTo(fetchMock).some(c => c.method === 'PATCH')).toBe(false);
-
-    await act(async () =>
-      tapMap(tree.root, 'location-picker-map', [69.1, 34.5]),
+    expect(inputLabelled(tree.root, prs.add.titleField).props.value).toBe(
+      'آپارتمان',
     );
-    await press(tree.root, prs.map.save);
+    expect(mapParts(tree.root, 'Marker')).toHaveLength(1); // the existing pin
+    expect(allText(tree.root)).toContain(prs.add.save);
+    expect(nav.setOptions).toHaveBeenCalledWith({ title: prs.add.editTitle });
+    expect(geocoderCalls()).toHaveLength(0); // loading a pin is not placing one
+
+    await type(tree.root, prs.add.titleField, 'آپارتمان تازه');
+    await press(tree.root, prs.add.save);
     await settle();
     const patch = callsTo(fetchMock).find(c => c.method === 'PATCH');
-    expect(patch?.body).toEqual({ lat: 34.5, lng: 69.1 });
+    expect(patch?.path).toBe(`/properties/${id}`);
+    expect(patch?.body).toMatchObject({
+      title: 'آپارتمان تازه',
+      lat: 34.5,
+      lng: 69.1,
+    });
+    expect(callsTo(fetchMock).some(c => c.method === 'POST')).toBe(false);
     expect(nav.goBack).toHaveBeenCalled();
-  });
-
-  it('sends people without a pin or a plan to buy instead of showing a map', async () => {
-    mockApi(fetchMock, {
-      [`GET /properties/${id}`]: { body: listing() },
-      'GET /map-location/status': { body: STATUS_NONE },
-      'GET /hesabpay/pricing': { body: PRICING },
-    });
-    const nav = navigation();
-    const tree = await render(screenElement(SetLocationScreen, nav, route));
-    await settle();
-    expect(mapParts(tree.root, 'Map')).toHaveLength(0);
-    await press(tree.root, prs.map.buy);
-    expect(nav.navigate).toHaveBeenCalledWith('Checkout', { tab: 'map' });
-  });
-
-  it('lets anyone move a pin that is already there, without asking about credits', async () => {
-    mockApi(fetchMock, {
-      [`GET /properties/${id}`]: { body: listing({ lat: 34.5, lng: 69.1 }) },
-      [`PATCH /properties/${id}`]: { body: listing({ lat: 34.6, lng: 69.2 }) },
-    });
-    const tree = await render(
-      screenElement(SetLocationScreen, navigation(), route),
-    );
-    await settle();
-    expect(allText(tree.root)).toContain(prs.map.moveFree);
-    expect(mapParts(tree.root, 'Map')).toHaveLength(1);
-    expect(mapParts(tree.root, 'Marker')).toHaveLength(1); // the existing pin
-    expect(
-      callsTo(fetchMock).some(c => c.path === '/map-location/status'),
-    ).toBe(false);
-
-    await act(async () =>
-      tapMap(tree.root, 'location-picker-map', [69.2, 34.6]),
-    );
-    await press(tree.root, prs.map.save);
-    await settle();
-    expect(callsTo(fetchMock).find(c => c.method === 'PATCH')?.body).toEqual({
-      lat: 34.6,
-      lng: 69.2,
-    });
-  });
-});
-
-describe('CheckoutScreen: map location tab', () => {
-  const route = { params: { tab: 'map' } };
-  const base = {
-    'GET /hesabpay/pricing': { body: PRICING },
-    'GET /properties/mine': {
-      body: {
-        data: [],
-        meta: { page: 1, limit: 20, total: 0, total_pages: 0 },
-      },
-    },
-  };
-  const openUrl = jest.fn(async () => true);
-  beforeEach(() => {
-    jest
-      .spyOn(require('react-native').Linking, 'openURL')
-      .mockImplementation(openUrl);
-  });
-
-  it('buys the add-on with nothing but the purpose (the server sets the price)', async () => {
-    mockApi(fetchMock, {
-      ...base,
-      'GET /map-location/status': { body: STATUS_NONE },
-      'POST /hesabpay/payments': {
-        status: 201,
-        body: {
-          id: 'pay1',
-          purpose: 'MAP_LOCATION',
-          status: 'PENDING',
-          amount: 30,
-          currency: 'AFGHANI',
-          created_at: '2026-10-12T00:00:00Z',
-          payment_url: 'https://pay.example/x',
-        },
-      },
-      'GET /hesabpay/payments/pay1': {
-        body: {
-          id: 'pay1',
-          purpose: 'MAP_LOCATION',
-          status: 'SUCCESS',
-          amount: 30,
-          currency: 'AFGHANI',
-          created_at: '2026-10-12T00:00:00Z',
-        },
-      },
-    });
-    const tree = await render(
-      screenElement(CheckoutScreen, navigation(), route),
-    );
-    await settle();
-    expect(allText(tree.root)).toContain(prs.checkout.mapItem);
-
-    await press(tree.root, prs.checkout.pay);
-    await settle();
-    const post = callsTo(fetchMock).find(
-      c => c.method === 'POST' && c.path === '/hesabpay/payments',
-    );
-    expect(post?.body).toEqual({ purpose: 'MAP_LOCATION' });
-    expect(openUrl).toHaveBeenCalledWith('https://pay.example/x');
-  });
-
-  it('does not sell the add-on to an account that already pins for free', async () => {
-    mockApi(fetchMock, {
-      ...base,
-      'GET /map-location/status': { body: STATUS_AGENCY },
-    });
-    const tree = await render(
-      screenElement(CheckoutScreen, navigation(), route),
-    );
-    await settle();
-    expect(allText(tree.root)).toContain(prs.map.alreadyUnlimited);
-    expect(pressableWith(tree.root, prs.checkout.pay).props.disabled).toBe(
-      true,
-    );
   });
 });
 
@@ -454,7 +487,7 @@ describe('HomeScreen: map view', () => {
     meta: { page: 1, limit: 20, total: data.length, total_pages: 1 },
   });
 
-  it('opens on the map and asks only for listings that have an exact pin; the list asks for everything', async () => {
+  it('opens on the map and asks only for the listings in view; the list asks for everything', async () => {
     mockAuth = { status: 'signedOut', user: null };
     mockApi(fetchMock, {
       'GET /properties': { body: page([listing({ lat: 34.5, lng: 69.1 })]) },
@@ -464,15 +497,22 @@ describe('HomeScreen: map view', () => {
     await settle();
     const propertyCalls = () =>
       callsTo(fetchMock).filter(c => c.path === '/properties');
-    expect(propertyCalls().every(c => c.query.has_location === 'true')).toBe(
-      true,
-    ); // map first: only pinned listings
+    // Map first: an area of the map (which only pinned listings can be inside), never "everything".
+    expect(
+      propertyCalls().every(
+        c =>
+          c.query.min_lat !== undefined &&
+          c.query.max_lng !== undefined &&
+          c.query.has_location === undefined,
+      ),
+    ).toBe(true);
     expect(mapParts(tree.root, 'Marker').map(m => m.props.id)).toEqual([
       expect.stringMatching(/^property:/),
     ]);
 
     await press(tree.root, prs.home.list);
     await settle();
+    expect(propertyCalls().at(-1)!.query.min_lat).toBeUndefined();
     expect(propertyCalls().at(-1)!.query.has_location).toBeUndefined();
   });
 
@@ -480,8 +520,6 @@ describe('HomeScreen: map view', () => {
     mockAuth = { status: 'signedOut', user: null };
     mockApi(fetchMock, { 'GET /properties': { body: page([]) } });
     const tree = await render(screenElement(HomeScreen, navigation()));
-    await settle();
-    await press(tree.root, prs.home.map);
     await settle();
     expect(allText(tree.root)).toContain(prs.home.noMapResults);
   });
@@ -535,7 +573,7 @@ describe('PropertyMap', () => {
     );
   });
 
-  it('credits OpenStreetMap on the map', async () => {
+  it('draws no credit, button or label on the map itself (the credit is in the Account tab)', async () => {
     const tree = await render(
       <PropertyMap
         {...baseProps}
@@ -543,7 +581,16 @@ describe('PropertyMap', () => {
         camera={AFGHANISTAN_CAMERA}
       />,
     );
-    expect(allText(tree.root)).toContain('© OpenStreetMap');
+    expect(allText(tree.root)).not.toContain('OpenStreetMap');
+    expect(
+      tree.root.findAll(
+        n =>
+          n.props.testID === 'map-credit-button' ||
+          n.props.testID === 'map-credit-text',
+      ),
+    ).toHaveLength(0);
+    // And MapLibre's own attribution control is switched off too.
+    expect(mapParts(tree.root, 'Map')[0].props.attribution).toBe(false);
   });
 });
 

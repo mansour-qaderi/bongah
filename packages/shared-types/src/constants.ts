@@ -4,12 +4,14 @@
 // prs = Dari (Afghan Persian), ps = Pashto. Both are written right-to-left.
 export const LANGUAGES = ['prs', 'ps'] as const;
 export const ROLES = ['USER', 'AGENCY', 'ADMIN'] as const;
+/** In the order the apps list them (pickers, filters): house first, then apartment, shop/office, land, garden, other. */
 export const PROPERTY_TYPES = [
-  'APARTMENT',
   'HOUSE_HAWILI',
-  'LAND',
+  'APARTMENT',
   'OFFICE_SHOP',
+  'LAND',
   'GARDEN_VILLA',
+  'GARAGE_OTHER',
 ] as const;
 export const DEAL_TYPES = ['SALE', 'RENT', 'MORTGAGE_GROWI'] as const;
 export const CURRENCIES = ['AFGHANI', 'USD'] as const;

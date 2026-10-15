@@ -1,9 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import { StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 import { Camera, Map, type CameraRef } from '@maplibre/maplibre-react-native';
-import AppText from '../components/AppText';
-import { MAP_ATTRIBUTION } from '../config';
-import { colors, radius, spacing } from '../theme';
 import type { Bounds } from './cluster';
 import { fromLngLat, type Coordinate, type MapCamera } from './geo';
 import { BASE_MAP_STYLE } from './style';
@@ -15,8 +12,15 @@ interface Props {
   interactive?: boolean;
   /** Called with the tapped point. */
   onPress?: (coordinate: Coordinate) => void;
-  /** Called when the person (or a fly-to) has finished moving the map: how far in, and what is visible. */
-  onViewChange?: (view: { zoom: number; bounds: Bounds }) => void;
+  /**
+   * Called when the person (or a fly-to) has finished moving the map: how far in, what is visible, and whether a
+   * finger (rather than a fly-to the app asked for) moved it.
+   */
+  onViewChange?: (view: {
+    zoom: number;
+    bounds: Bounds;
+    userMoved: boolean;
+  }) => void;
   style?: StyleProp<ViewStyle>;
   testID?: string;
   children?: React.ReactNode;
@@ -67,7 +71,7 @@ export default function BaseMap({
         touchPitch={false}
         compass={false}
         logo={false}
-        // The credit below is drawn by the app so it is always readable and always matches config.ts.
+        // No credit is drawn on the map. The OpenStreetMap credit its licence asks for is in the Account tab.
         attribution={false}
         onRegionDidChange={
           onViewChange
@@ -75,6 +79,7 @@ export default function BaseMap({
                 onViewChange({
                   zoom: event.nativeEvent.zoom,
                   bounds: event.nativeEvent.bounds,
+                  userMoved: event.nativeEvent.userInteraction === true,
                 })
             : undefined
         }
@@ -94,11 +99,6 @@ export default function BaseMap({
         />
         {children}
       </Map>
-      <View pointerEvents="none" style={styles.credit}>
-        <AppText variant="caption" color={colors.textMuted}>
-          {MAP_ATTRIBUTION}
-        </AppText>
-      </View>
     </View>
   );
 }
@@ -106,14 +106,4 @@ export default function BaseMap({
 const styles = StyleSheet.create({
   box: { flex: 1, overflow: 'hidden' },
   map: { flex: 1 },
-  credit: {
-    position: 'absolute',
-    start: spacing.xs,
-    // At the top: the home screen slides a listing card over the bottom of the map, and the OpenStreetMap
-    // credit must stay readable.
-    top: spacing.xs,
-    backgroundColor: 'rgba(255,255,255,0.8)',
-    borderRadius: radius.sm,
-    paddingHorizontal: spacing.xs,
-  },
 });

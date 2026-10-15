@@ -12,6 +12,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { formatNumber } from '../i18n/format';
 import { useFormat } from '../i18n/useFormat';
 import type { MapItem } from '../map/items';
+import { comparePriority } from '../map/priority';
 import { PROPERTY_ICONS, useSellerLabel } from '../map/markers';
 import { colors, radius, spacing } from '../theme';
 import AppText from './AppText';
@@ -34,9 +35,12 @@ export default function ClusterListSheet({ items, onPick, onClose }: Props) {
   const format = useFormat();
   const sellerOf = useSellerLabel();
 
+  // Listings first, the paying ones at the top (see comparePriority); then the offices.
   const ordered = React.useMemo(
     () => [
-      ...(items ?? []).filter(i => i.kind === 'property'),
+      ...(items ?? [])
+        .filter(i => i.kind === 'property')
+        .sort((a, b) => comparePriority(a.property, b.property)),
       ...(items ?? []).filter(i => i.kind === 'agency'),
     ],
     [items],
@@ -139,8 +143,8 @@ const styles = StyleSheet.create({
   sheet: {
     maxHeight: '65%',
     backgroundColor: colors.surface,
-    borderTopLeftRadius: radius.lg,
-    borderTopRightRadius: radius.lg,
+    borderTopLeftRadius: radius.sheet,
+    borderTopRightRadius: radius.sheet,
   },
   header: {
     flexDirection: 'row',

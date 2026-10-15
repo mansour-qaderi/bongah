@@ -31,10 +31,6 @@ export function errorMessage(
       return t('add.subscriptionRequired');
     case 'AGENCY_PROFILE_REQUIRED':
       return t('add.agencyProfileRequired');
-    case 'MAP_LOCATION_REQUIRED':
-      return t('map.required');
-    case 'MAP_LOCATION_ALREADY_UNLIMITED':
-      return t('map.alreadyUnlimited');
     case 'INVALID_REFERRAL_CODE':
       return t('auth.referralInvalid');
     case 'NO_LADDER_TOKEN':
@@ -91,10 +87,6 @@ export function errorMessage(
 /** Sign-up was refused only because the referral code does not exist (the OTP is still usable). */
 export const isInvalidReferralCode = (error: unknown): boolean =>
   error instanceof ApiError && error.code === 'INVALID_REFERRAL_CODE';
-
-/** The server refused an exact pin because the account has neither a subscription nor a prepaid pin. */
-export const isMapLocationRequired = (error: unknown): boolean =>
-  error instanceof ApiError && error.code === 'MAP_LOCATION_REQUIRED';
 
 /** The quota/subscription failures that have a clear next step (buy a subscription). */
 export const isSubscriptionRequired = (error: unknown): boolean =>

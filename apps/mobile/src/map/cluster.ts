@@ -125,3 +125,71 @@ export function inBounds(
     lat <= north + padLat
   );
 }
+
+/** Zoom is clustered in half steps: finer than that changes nothing the eye can see. */
+export const zoomStep = (zoom: number): number => Math.round(zoom * 2) / 2;
+
+/** The middle of a group: the average of its points, which is also where its marker is drawn. */
+export function centroid(points: readonly MapPoint[]): {
+  latitude: number;
+  longitude: number;
+} {
+  const count = Math.max(points.length, 1);
+  return {
+    latitude: points.reduce((sum, p) => sum + p.lat, 0) / count,
+    longitude: points.reduce((sum, p) => sum + p.lng, 0) / count,
+  };
+}
+
+/**
+ * The zoom to fly to so that a cluster breaks up and its pins can be told apart, or null when no zoom up to
+ * `maxZoom` does it (they are at the same spot): the caller then lists them instead.
+ *
+ * It searches in the same half steps the map clusters in, starting one step closer than `fromZoom`, and goes
+ * half a step past the first split so the pins are clearly apart, not just touching.
+ */
+export function zoomToSeparate(
+  points: readonly MapPoint[],
+  fromZoom: number,
+  maxZoom: number,
+  radiusPx: number = CLUSTER_RADIUS_PX,
+): number | null {
+  if (points.length < 2) return null;
+  for (let zoom = zoomStep(fromZoom) + 0.5; zoom <= maxZoom; zoom += 0.5) {
+    if (clusterPoints(points, zoom, radiusPx).length > 1) {
+      return Math.min(zoom + 0.5, maxZoom);
+    }
+  }
+  return null;
+}
+
+/** What the map last told us about what it shows. */
+export interface MapView {
+  zoom: number;
+  bounds: Bounds | null;
+}
+
+/**
+ * Whether the map has moved enough that markers must be re-clustered and re-culled. A small pan changes
+ * nothing the eye can see (markers just off-screen are already kept ready, see `inBounds`), so ignoring it
+ * saves a full redraw of every marker. Any change of zoom step, or a shift of more than `tolerance` of the
+ * view's size in any direction, counts.
+ */
+export function viewMoved(
+  previous: MapView,
+  next: MapView,
+  tolerance = 0.15,
+): boolean {
+  if (zoomStep(previous.zoom) !== zoomStep(next.zoom)) return true;
+  if (!previous.bounds || !next.bounds) return previous.bounds !== next.bounds;
+  const [west, south, east, north] = previous.bounds;
+  const spanLng = east - west;
+  const spanLat = north - south;
+  const [w, s, e, n] = next.bounds;
+  return (
+    Math.abs(w - west) > spanLng * tolerance ||
+    Math.abs(e - east) > spanLng * tolerance ||
+    Math.abs(s - south) > spanLat * tolerance ||
+    Math.abs(n - north) > spanLat * tolerance
+  );
+}

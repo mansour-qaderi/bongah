@@ -1,7 +1,5 @@
 import React, { useState } from 'react';
 import { RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
-import type { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
-import type { CompositeScreenProps } from '@react-navigation/native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useTranslation } from 'react-i18next';
 import type { AgencyDashboard, DashboardListing } from '@bongah/shared-types';
@@ -16,13 +14,10 @@ import { Screen } from '../../components/Screen';
 import { EmptyView, ErrorView, LoadingView } from '../../components/States';
 import { formatDate, formatNumber } from '../../i18n/format';
 import { useFormat } from '../../i18n/useFormat';
-import type { RootStackParamList, TabParamList } from '../../navigation/types';
-import { colors, radius, spacing } from '../../theme';
+import type { RootStackParamList } from '../../navigation/types';
+import { colors, radius, spacing, surfaces } from '../../theme';
 
-type Props = CompositeScreenProps<
-  BottomTabScreenProps<TabParamList, 'Dashboard'>,
-  NativeStackScreenProps<RootStackParamList>
->;
+type Props = NativeStackScreenProps<RootStackParamList, 'Dashboard'>;
 
 /**
  * The agency's CRM home: how many listings it has and how many people looked at them, how long
@@ -93,7 +88,9 @@ export default function AgencyDashboardScreen({ navigation }: Props) {
             title={t('dashboard.manage')}
             variant="outline"
             style={styles.action}
-            onPress={() => navigation.navigate('MyListings')}
+            onPress={() =>
+              navigation.navigate('Tabs', { screen: 'MyListings' })
+            }
           />
         </View>
 
@@ -288,9 +285,8 @@ const styles = StyleSheet.create({
   pillGood: { backgroundColor: colors.successSoft },
   pillMuted: { backgroundColor: colors.border },
   card: {
+    ...surfaces.card,
     padding: spacing.lg,
-    borderRadius: radius.lg,
-    borderWidth: 1,
     gap: spacing.sm,
   },
   cardGood: { backgroundColor: colors.surface, borderColor: colors.border },
@@ -306,26 +302,20 @@ const styles = StyleSheet.create({
   },
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.md },
   tile: {
+    ...surfaces.tile,
     flexBasis: '47%',
     flexGrow: 1,
     padding: spacing.lg,
-    borderRadius: radius.lg,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.surface,
   },
   sectionTitle: { marginTop: spacing.md },
   actions: { flexDirection: 'row', gap: spacing.md },
   action: { flex: 1 },
   row: {
+    ...surfaces.tile,
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.md,
     padding: spacing.md,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.surface,
   },
   rowText: { flex: 1, gap: spacing.xs },
   chipWrap: { flexDirection: 'row' },

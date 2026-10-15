@@ -39,7 +39,7 @@ describe.skipIf(!hasDb)('Map location rules (e2e)', () => {
   const row = (id: string) => ctx.prisma.property.findUniqueOrThrow({ where: { id } });
 
   describe('creating a listing', () => {
-    it('lets a regular user publish with province, district and neighborhood but no pin', async () => {
+    it('lets a regular user publish with a written place and no pin', async () => {
       const user = await ctx.user();
       const res = await ctx.post('/properties', propertyBody(), user.token).expect(201);
       expect(res.body).toMatchObject({
@@ -51,65 +51,67 @@ describe.skipIf(!hasDb)('Map location rules (e2e)', () => {
       });
     });
 
-    it('requires the neighborhood', async () => {
+    it('requires the written place while there is no pin, naming each missing part', async () => {
       const user = await ctx.user();
-      const res = await ctx.post('/properties', propertyBody({ neighborhood: undefined }), user.token).expect(400);
-      expect(res.body.errors.map((e: { field: string }) => e.field)).toContain('neighborhood');
+      const res = await ctx
+        .post('/properties', propertyBody({ district: undefined, neighborhood: undefined, address: undefined }), user.token)
+        .expect(400);
+      expect(res.body.errors.map((e: { field: string }) => e.field)).toEqual(
+        expect.arrayContaining(['district', 'neighborhood', 'address']),
+      );
     });
 
-    it('refuses a pin from a regular user with no token, with a code the app can act on', async () => {
+    it('lets a regular user with no token pin a listing: the pin is free', async () => {
       const user = await ctx.user();
-      const res = await ctx.post('/properties', propertyBody({ ...PIN }), user.token).expect(403);
-      expect(res.body.code).toBe('MAP_LOCATION_REQUIRED');
+      const res = await ctx.post('/properties', propertyBody({ ...PIN }), user.token).expect(201);
+      expect(res.body).toMatchObject(PIN);
+      expect(await tokens(user.id)).toHaveLength(0);
     });
 
-    it('publishes nothing and uses up no free listing when the pin is refused', async () => {
+    it('makes the written place optional once there is a pin, and stores what was left out as empty', async () => {
       const user = await ctx.user();
-      await ctx.post('/properties', propertyBody({ ...PIN }), user.token).expect(403);
-      expect(await ctx.prisma.property.count({ where: { userId: user.id } })).toBe(0);
-      // The month's free listing is still there.
-      await ctx.post('/properties', propertyBody(), user.token).expect(201);
+      const res = await ctx
+        .post(
+          '/properties',
+          propertyBody({ ...PIN, district: undefined, neighborhood: undefined, address: undefined, description: undefined }),
+          user.token,
+        )
+        .expect(201);
+      expect(res.body).toMatchObject({ ...PIN, district: '', neighborhood: null, address: '', description: '' });
+      const stored = await row(res.body.id);
+      expect([stored.district, stored.neighborhood, stored.address, stored.description]).toEqual(['', null, '', '']);
     });
 
-    it('spends one token for a pinned listing and records which listing it went to', async () => {
+    it('treats the description as optional with or without a pin', async () => {
+      const user = await ctx.user(Role.ADMIN);
+      const res = await ctx.post('/properties', propertyBody({ description: undefined }), user.token).expect(201);
+      expect(res.body.description).toBe('');
+    });
+
+    it('does not spend a token an account happens to hold', async () => {
       const user = await ctx.user();
       await ctx.giveTokens(user.id, 2);
-      const res = await ctx.post('/properties', propertyBody({ ...PIN }), user.token).expect(201);
-
-      expect(res.body).toMatchObject(PIN);
-      const spent = (await tokens(user.id)).filter((t) => t.consumedAt !== null);
-      expect(spent).toHaveLength(1);
-      expect(spent[0].propertyId).toBe(res.body.id);
-      expect(await unspent(user.id)).toBe(1);
+      await ctx.post('/properties', propertyBody({ ...PIN }), user.token).expect(201);
+      expect(await unspent(user.id)).toBe(2);
     });
 
-    it('spends no token on a listing without a pin', async () => {
+    it('still counts a pinned listing against the free monthly limit', async () => {
       const user = await ctx.user();
-      await ctx.giveTokens(user.id, 1);
-      await ctx.post('/properties', propertyBody(), user.token).expect(201);
-      expect(await unspent(user.id)).toBe(1);
-    });
-
-    it('does not spend the token when the free monthly limit stops the listing', async () => {
-      const user = await ctx.user();
-      await ctx.post('/properties', propertyBody(), user.token).expect(201);
-      await ctx.giveTokens(user.id, 1);
+      await ctx.post('/properties', propertyBody({ ...PIN }), user.token).expect(201);
       const res = await ctx.post('/properties', propertyBody({ ...PIN }), user.token).expect(403);
       expect(res.body.code).toBe('FREE_LISTING_LIMIT_REACHED');
-      expect(await unspent(user.id)).toBe(1);
     });
 
-    it('rejects half a pin and out-of-range pins before any entitlement check', async () => {
+    it('rejects half a pin and out-of-range pins', async () => {
       const user = await ctx.user();
-      await ctx.giveTokens(user.id, 1);
       await ctx.post('/properties', propertyBody({ lat: 34.5 }), user.token).expect(400);
       await ctx.post('/properties', propertyBody({ lng: 69.1 }), user.token).expect(400);
       await ctx.post('/properties', propertyBody({ lat: null, lng: null }), user.token).expect(400);
       await ctx.post('/properties', propertyBody({ lat: 51.5, lng: -0.1 }), user.token).expect(400);
-      expect(await unspent(user.id)).toBe(1);
+      expect(await ctx.prisma.property.count({ where: { userId: user.id } })).toBe(0);
     });
 
-    it('lets an agency with an active subscription pin every listing, without tokens', async () => {
+    it('lets an agency with an active subscription pin every listing', async () => {
       const agency = await ctx.agency(true);
       for (let i = 0; i < 3; i += 1) {
         const res = await ctx.post('/properties', propertyBody({ ...PIN }), agency.token).expect(201);
@@ -118,161 +120,81 @@ describe.skipIf(!hasDb)('Map location rules (e2e)', () => {
       expect(await tokens(agency.id)).toHaveLength(0);
     });
 
-    it('does not use up an agency\'s prepaid tokens', async () => {
-      const agency = await ctx.agency(true);
-      await ctx.giveTokens(agency.id, 1);
-      await ctx.post('/properties', propertyBody({ ...PIN }), agency.token).expect(201);
-      expect(await unspent(agency.id)).toBe(1);
-    });
-
-    it('lets an admin pin without tokens', async () => {
+    it('lets an admin pin', async () => {
       const admin = await ctx.user(Role.ADMIN);
       await ctx.post('/properties', propertyBody({ ...PIN }), admin.token).expect(201);
     });
 
-    it('treats an agency whose subscription lapsed like a regular user: no new listings at all', async () => {
+    it('still gives an agency whose subscription lapsed no new listings at all', async () => {
       const lapsed = await ctx.lapsedAgency();
       const res = await ctx.post('/properties', propertyBody({ ...PIN }), lapsed.token).expect(403);
       expect(res.body.code).toBe('SUBSCRIPTION_REQUIRED');
     });
-
-    it('decides from the database, not from the role in the token', async () => {
-      const user = await ctx.user();
-      const forged = await ctx.tokenFor(user.id, Role.ADMIN);
-      const res = await ctx.post('/properties', propertyBody({ ...PIN }), forged).expect(403);
-      expect(res.body.code).toBe('MAP_LOCATION_REQUIRED');
-    });
   });
 
   describe('adding or moving a pin on an existing listing', () => {
-    it('needs a token for the first pin and spends exactly one', async () => {
+    it('lets the owner add the first pin without any token', async () => {
       const user = await ctx.user();
       const target = await seed(user);
-      expect((await pin(user, target.id).expect(403)).body.code).toBe('MAP_LOCATION_REQUIRED');
-      expect((await row(target.id)).lat).toBeNull();
-
-      await ctx.giveTokens(user.id, 1);
       const res = await pin(user, target.id).expect(200);
       expect(res.body).toMatchObject(PIN);
-      expect(await unspent(user.id)).toBe(0);
-      expect((await tokens(user.id))[0].propertyId).toBe(target.id);
+      expect((await row(target.id)).lat).toBe(PIN.lat);
+      expect(await tokens(user.id)).toHaveLength(0);
     });
 
-    it('lets the owner move a pin that is already there for free', async () => {
+    it('lets the owner move a pin as often as they like', async () => {
       const user = await ctx.user();
-      await ctx.giveTokens(user.id, 1);
       const target = await seed(user);
       await pin(user, target.id).expect(200);
-      expect(await unspent(user.id)).toBe(0);
-
       const res = await pin(user, target.id, OTHER_PIN).expect(200);
       expect(res.body).toMatchObject(OTHER_PIN);
-      expect(await tokens(user.id)).toHaveLength(1); // nothing extra spent or created
     });
 
-    it('lets a listing that already had a pin before this feature be moved for free', async () => {
-      const user = await ctx.user();
-      const target = await seed(user, { ...PIN });
-      await pin(user, target.id, OTHER_PIN).expect(200);
-    });
-
-    it('does not need a token for edits that leave the pin alone', async () => {
-      const user = await ctx.user();
-      const target = await seed(user);
-      await ctx.patch(`/properties/${target.id}`, { title: 'New title', neighborhood: 'Taimani' }, user.token).expect(200);
-      expect((await row(target.id)).neighborhood).toBe('Taimani');
-    });
-
-    it('spends one token per listing', async () => {
+    it('spends no token on any pin, even when the account holds some', async () => {
       const user = await ctx.user();
       await ctx.giveTokens(user.id, 1);
       const [a, b] = [await seed(user), await seed(user)];
       await pin(user, a.id).expect(200);
-      expect((await pin(user, b.id).expect(403)).body.code).toBe('MAP_LOCATION_REQUIRED');
-      expect((await row(b.id)).lat).toBeNull();
+      await pin(user, b.id).expect(200);
+      expect(await unspent(user.id)).toBe(1);
     });
 
-    it('spends the oldest token first', async () => {
+    it('lets edits race for the same listing without trouble', async () => {
       const user = await ctx.user();
-      await ctx.prisma.mapLocationToken.create({
-        data: { userId: user.id, source: 'REFERRAL', createdAt: new Date(Date.now() - 86_400_000) },
-      });
-      await ctx.giveTokens(user.id, 1);
       const target = await seed(user);
-      await pin(user, target.id).expect(200);
-      expect((await tokens(user.id)).find((t) => t.consumedAt)!.source).toBe('REFERRAL');
-    });
-
-    it('spends ONE token however many edits race for the same listing', async () => {
-      const user = await ctx.user();
-      await ctx.giveTokens(user.id, 3);
-      const target = await seed(user);
-
-      // Hold the listing's row lock while the edits arrive, so they all start at the same moment
-      // instead of happening to run one after another.
-      const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-      const holder = ctx.prisma.$transaction(
-        async (tx) => {
-          await tx.$queryRaw`SELECT id FROM properties WHERE id = ${target.id}::uuid FOR UPDATE`;
-          await sleep(500);
-        },
-        { timeout: 10_000 },
-      );
-      await sleep(100);
       const results = await Promise.all(
         Array.from({ length: 8 }, (_v, i) => pin(user, target.id, { lat: 34.5 + i / 100, lng: 69.1 })),
       );
-      await holder;
-
       expect(results.map((r) => r.status)).toEqual(Array(8).fill(200));
-      expect(await unspent(user.id)).toBe(2);
     });
 
-    it('lets only as many listings be pinned at once as there are tokens', async () => {
-      const user = await ctx.user();
-      await ctx.giveTokens(user.id, 2);
-      const listings = await Promise.all(Array.from({ length: 5 }, () => seed(user)));
-      const results = await Promise.all(listings.map((l) => pin(user, l.id)));
-
-      expect(results.filter((r) => r.status === 200)).toHaveLength(2);
-      expect(results.filter((r) => r.status === 403).every((r) => r.body.code === 'MAP_LOCATION_REQUIRED')).toBe(true);
-      expect(await unspent(user.id)).toBe(0);
-      const pinned = await ctx.prisma.property.count({ where: { userId: user.id, lat: { not: null } } });
-      expect(pinned).toBe(2);
-    });
-
-    it('lets a subscribed agency pin and move freely, but not once the subscription lapses', async () => {
+    it('lets a subscribed agency, a lapsed one and an admin pin their own or others\' listings by the usual ownership rules', async () => {
       const agency = await ctx.agency(true);
-      const target = await seed(agency);
-      await pin(agency, target.id).expect(200);
-      await pin(agency, target.id, OTHER_PIN).expect(200);
-      expect(await tokens(agency.id)).toHaveLength(0);
+      const own = await seed(agency);
+      await pin(agency, own.id).expect(200);
 
       const lapsed = await ctx.lapsedAgency();
-      const unpinned = await seed(lapsed);
-      expect((await pin(lapsed, unpinned.id).expect(403)).body.code).toBe('MAP_LOCATION_REQUIRED');
-      // ...but a token still works for them.
-      await ctx.giveTokens(lapsed.id, 1);
-      await pin(lapsed, unpinned.id).expect(200);
-    });
+      const lapsedOwn = await seed(lapsed);
+      await pin(lapsed, lapsedOwn.id).expect(200); // editing what they already have is not gated by the pin
 
-    it('lets an admin pin someone else\'s listing without touching the owner\'s tokens', async () => {
       const [owner, admin] = [await ctx.user(), await ctx.user(Role.ADMIN)];
-      await ctx.giveTokens(owner.id, 1);
       const target = await seed(owner);
       await pin(admin, target.id).expect(200);
-      expect(await unspent(owner.id)).toBe(1);
-      expect(await tokens(admin.id)).toHaveLength(0);
     });
 
-    it('never lets a stranger pin (or spend tokens on) someone else\'s listing', async () => {
+    it('never lets a stranger pin someone else\'s listing', async () => {
       const [owner, stranger] = [await ctx.user(), await ctx.user()];
-      await ctx.giveTokens(stranger.id, 1);
       const target = await seed(owner);
       const res = await pin(stranger, target.id).expect(403);
-      expect(res.body.code).toBeUndefined(); // "not yours", not "buy the add-on"
-      expect(await unspent(stranger.id)).toBe(1);
+      expect(res.body.code).toBeUndefined(); // "not yours"
       expect((await row(target.id)).lat).toBeNull();
+    });
+
+    it('does not need anything special for edits that leave the pin alone', async () => {
+      const user = await ctx.user();
+      const target = await seed(user);
+      await ctx.patch(`/properties/${target.id}`, { title: 'New title', neighborhood: 'Taimani' }, user.token).expect(200);
+      expect((await row(target.id)).neighborhood).toBe('Taimani');
     });
 
     it('cannot clear a pin by sending null', async () => {
@@ -303,7 +225,7 @@ describe.skipIf(!hasDb)('Map location rules (e2e)', () => {
       await ctx.get('/map-location/status').expect(401);
     });
 
-    it('reports a regular user\'s prepaid pins', async () => {
+    it('reports a regular user\'s balance of prepaid pins bought before pinning became free', async () => {
       const user = await ctx.user();
       expect((await ctx.get('/map-location/status', user.token).expect(200)).body).toEqual({
         unlimited: false,
@@ -312,8 +234,9 @@ describe.skipIf(!hasDb)('Map location rules (e2e)', () => {
       });
       await ctx.giveTokens(user.id, 2);
       expect((await ctx.get('/map-location/status', user.token).expect(200)).body.tokens_available).toBe(2);
+      // Pinning is free now: it leaves a balance bought earlier untouched.
       await pin(user, (await seed(user)).id).expect(200);
-      expect((await ctx.get('/map-location/status', user.token).expect(200)).body.tokens_available).toBe(1);
+      expect((await ctx.get('/map-location/status', user.token).expect(200)).body.tokens_available).toBe(2);
     });
 
     it('reports unlimited for a subscribed agency and for an admin', async () => {

@@ -9,7 +9,7 @@ import Banner from '../../components/Banner';
 import Button from '../../components/Button';
 import { useFormat } from '../../i18n/useFormat';
 import { enablePush } from '../../push/registration';
-import { colors, radius, spacing } from '../../theme';
+import { colors, spacing, surfaces } from '../../theme';
 
 /**
  * The on/off switch for the morning message ("پیام‌های انرژی‌بخش صبحگاهی"). Turning it on also asks the phone for permission to
@@ -18,7 +18,12 @@ import { colors, radius, spacing } from '../../theme';
  * The switch moves at once and goes back if the server says no. If the phone refuses notifications the choice is still
  * saved (it is what the person asked for) and a line explains where to allow them.
  */
-export default function MorningMessagesCard() {
+export default function MorningMessagesCard({
+  embedded = false,
+}: {
+  /** Drawn inside a card of the screen's own, without a box of its own. */
+  embedded?: boolean;
+}) {
   const { t } = useTranslation();
   const { language } = useFormat();
   const { user, updateUser } = useAuth();
@@ -41,7 +46,9 @@ export default function MorningMessagesCard() {
     setBlocked(false);
     await updateUser({ ...user, enable_daily_motivation: next });
     try {
-      await updateUser(await updatePreferences({ enable_daily_motivation: next }));
+      await updateUser(
+        await updatePreferences({ enable_daily_motivation: next }),
+      );
     } catch (error) {
       if (latest.current) {
         await updateUser({ ...latest.current, enable_daily_motivation: !next });
@@ -55,10 +62,12 @@ export default function MorningMessagesCard() {
   };
 
   return (
-    <View style={styles.card}>
+    <View style={embedded ? styles.embedded : styles.card}>
       <View style={styles.row}>
         <View style={styles.text}>
-          <AppText variant="heading">{t('account.morningMessages')}</AppText>
+          <AppText variant={embedded ? 'label' : 'heading'}>
+            {t('account.morningMessages')}
+          </AppText>
           <AppText variant="caption" color={colors.textMuted}>
             {t('account.morningMessagesHint')}
           </AppText>
@@ -86,11 +95,9 @@ export default function MorningMessagesCard() {
 }
 
 const styles = StyleSheet.create({
+  embedded: { gap: spacing.md },
   card: {
-    backgroundColor: colors.surface,
-    borderRadius: radius.lg,
-    borderWidth: 1,
-    borderColor: colors.border,
+    ...surfaces.card,
     padding: spacing.lg,
     marginBottom: spacing.lg,
     gap: spacing.md,

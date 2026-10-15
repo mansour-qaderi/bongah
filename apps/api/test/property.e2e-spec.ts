@@ -60,9 +60,9 @@ describe.skipIf(!hasDb)('Properties (e2e)', () => {
       expect(res.body.laddered_at).toBe(res.body.created_at);
     });
 
-    it('accepts every property type, including GARDEN_VILLA, and returns it unchanged', async () => {
+    it('accepts every property type, including GARDEN_VILLA and GARAGE_OTHER, and returns it unchanged', async () => {
       const admin = await ctx.user(Role.ADMIN); // no monthly cap, so one user can try every type
-      for (const type of ['APARTMENT', 'HOUSE_HAWILI', 'LAND', 'OFFICE_SHOP', 'GARDEN_VILLA']) {
+      for (const type of ['HOUSE_HAWILI', 'APARTMENT', 'OFFICE_SHOP', 'LAND', 'GARDEN_VILLA', 'GARAGE_OTHER']) {
         const res = await ctx.post('/properties', propertyBody({ type }), admin.token).expect(201);
         expect(res.body.type).toBe(type);
         const stored = await ctx.prisma.property.findUniqueOrThrow({ where: { id: res.body.id } });
@@ -271,6 +271,15 @@ describe.skipIf(!hasDb)('Properties (e2e)', () => {
       expect(await ids('min_price=200&currency=USD')).toBe(2);
       expect(await ids('min_price=200&max_price=600&currency=USD')).toBe(1);
       expect(await ids('max_price=600&currency=AFGHANI')).toBe(1);
+    });
+
+    it('filters by GARAGE_OTHER', async () => {
+      const owner = await ctx.user();
+      const province = uniqueProvince();
+      await seed(owner, { province, type: 'GARAGE_OTHER' });
+      await seed(owner, { province, type: 'LAND' });
+      const res = await ctx.get(`/properties?province=${province}&type=GARAGE_OTHER`).expect(200);
+      expect(res.body.data.map((p: { type: string }) => p.type)).toEqual(['GARAGE_OTHER']);
     });
 
     it('filters by GARDEN_VILLA', async () => {
