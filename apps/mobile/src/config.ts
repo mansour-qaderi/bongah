@@ -34,6 +34,20 @@ export const MAP_TILE_URL = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
 export const MAP_TILE_MAX_ZOOM = 19;
 /** Shown on every map. Required by OpenStreetMap's licence (ODbL). */
 export const MAP_ATTRIBUTION = '© OpenStreetMap contributors';
+/** Where the credit leads when it is tapped. */
+export const MAP_ATTRIBUTION_URL = 'https://www.openstreetmap.org/copyright';
+
+/**
+ * Turns a spot on the map into a place name (province, district, neighbourhood, street): OpenStreetMap's Nominatim.
+ * No account and no key, like the tiles, and with the same catch: nominatim.openstreetmap.org is a shared server
+ * whose usage policy (operations.osmfoundation.org/policies/nominatim) asks for at most one request a second,
+ * an identifying User-Agent and no heavy use. That fits a person placing one pin per listing, not a public
+ * launch. Before release point this at a geocoder you host or pay for; the answer's shape is the Nominatim one.
+ */
+export const GEOCODER_URL = 'https://nominatim.openstreetmap.org/reverse';
+export const GEOCODER_USER_AGENT = 'Bongah/1.0 (real-estate app, Afghanistan)';
+/** The place lookup is a convenience: after this long the person types the address themselves. */
+export const GEOCODER_TIMEOUT_MS = 8_000;
 
 /** Give up on a request after this long (slow mobile networks are expected, hanging forever is not). */
 export const REQUEST_TIMEOUT_MS = 20_000;

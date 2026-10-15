@@ -1,3 +1,4 @@
+import type { Currency } from '@bongah/shared-types';
 import { toAsciiDigits } from '@bongah/validation';
 
 const PERSIAN_DIGITS = '۰۱۲۳۴۵۶۷۸۹';
@@ -10,10 +11,21 @@ export const SQM_PER_JERIB = 2000;
 export const sqmToJerib = (sqm: number): number => sqm / SQM_PER_JERIB;
 export const jeribToSqm = (jerib: number): number => jerib * SQM_PER_JERIB;
 
-/** 0-9 → ۰-۹ (Dari and Pashto both write numbers with these digits). */
+/**
+ * Any digits → Persian ۰-۹. Western 0-9 and Arabic-Indic ٠-٩ (what some keyboards type) both become the
+ * Persian forms, because that is what Dari and Pashto readers expect on screen. Everything else is left alone.
+ * Takes a number too: `toPersianDigits(1200)` is "۱۲۰۰" (no separators; use `formatNumber` for those).
+ */
 export function toPersianDigits(input: string | number): string {
-  return String(input).replace(/\d/g, d => PERSIAN_DIGITS[Number(d)]);
+  return String(input).replace(/[0-9٠-٩]/g, ch => {
+    const code = ch.charCodeAt(0);
+    // ٠-٩ are U+0660-0669; the Persian forms ۰-۹ are U+06F0-06F9, ten places along.
+    return PERSIAN_DIGITS[code >= 0x660 ? code - 0x660 : code - 0x30];
+  });
 }
+
+/** Persian or Arabic-Indic digits → 0-9. The form the API and the validators expect. */
+export { toAsciiDigits as toLatinDigits };
 
 /** 1234567.5 → ۱٬۲۳۴٬۵۶۷٫۵ (at most `maxFraction` decimals, no trailing zeros). */
 export function formatNumber(value: number, maxFraction = 2): string {
@@ -31,6 +43,24 @@ export function formatNumber(value: number, maxFraction = 2): string {
 /** The currency word comes from the translations (currency.AFGHANI / currency.USD). */
 export function formatPrice(amount: number, currencyLabel: string): string {
   return `${formatNumber(amount)} ${currencyLabel}`;
+}
+
+/** The sign written after a price: ؋ for Afghani, $ for dollars. */
+export const CURRENCY_SYMBOLS: Record<Currency, string> = {
+  AFGHANI: '؋',
+  USD: '$',
+};
+
+/**
+ * An amount of money the way the app shows it everywhere: Persian digits, ٬ between thousands, then the sign.
+ * `formatCurrency(1200000)` is "۱٬۲۰۰٬۰۰۰ ؋". Afghani unless told otherwise.
+ */
+export function formatCurrency(
+  amount: number,
+  currency: Currency = 'AFGHANI',
+): string {
+  if (!Number.isFinite(amount)) return '';
+  return `${formatNumber(amount)} ${CURRENCY_SYMBOLS[currency]}`;
 }
 
 export type AmountUnit = 'billion' | 'million' | 'thousand';
@@ -101,9 +131,39 @@ export function formatTime(iso: string): string {
   return toPersianDigits(`${hh}:${mm}`);
 }
 
-/** Formats a phone number in canonical +93 form for display: +۹۳ ۷۰ ۱۲۳ ۴۵۶۷. */
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/** How a conversation's last message is dated in the list: the time today, "yesterday", or the date. */
+export type ChatStamp =
+  | { kind: 'time'; text: string }
+  | { kind: 'yesterday' }
+  | { kind: 'date'; text: string };
+
+/** Decides which of the three a timestamp is, by Kabul calendar days (not by 24-hour spans). `null` if unreadable. */
+export function chatStamp(
+  iso: string,
+  now: number = Date.now(),
+): ChatStamp | null {
+  const time = Date.parse(iso);
+  if (Number.isNaN(time)) return null;
+  const day = (ms: number) => Math.floor((ms + KABUL_OFFSET_MS) / DAY_MS);
+  const age = day(now) - day(time);
+  if (age === 0) return { kind: 'time', text: formatTime(iso) };
+  if (age === 1) return { kind: 'yesterday' };
+  return { kind: 'date', text: formatDate(iso) };
+}
+
+/** Left-to-right embedding marks: text between them keeps its own order inside a right-to-left line. */
+const LTR_START = '\u202A';
+const LTR_END = '\u202C';
+
+/**
+ * Formats a phone number in canonical +93 form for display: +۹۳ ۷۰ ۱۲۳ ۴۵۶۷.
+ * A phone number reads left to right, but in a right-to-left line its groups of digits would be laid out in
+ * reverse ("۴۵۶۷ ۱۲۳ ۷۰ ۹۳+"), so it is wrapped in direction marks that keep it in order.
+ */
 export function formatPhone(e164: string): string {
   const m = /^\+93(\d{2})(\d{3})(\d{4})$/.exec(e164);
   const text = m ? `+93 ${m[1]} ${m[2]} ${m[3]}` : e164;
-  return toPersianDigits(text);
+  return `${LTR_START}${toPersianDigits(text)}${LTR_END}`;
 }

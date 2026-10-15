@@ -63,7 +63,7 @@ describe('createPropertySchema', () => {
   });
 
   it('accepts every property type in create, update and list filters', () => {
-    for (const type of ['APARTMENT', 'HOUSE_HAWILI', 'LAND', 'OFFICE_SHOP', 'GARDEN_VILLA']) {
+    for (const type of ['HOUSE_HAWILI', 'APARTMENT', 'OFFICE_SHOP', 'LAND', 'GARDEN_VILLA', 'GARAGE_OTHER']) {
       expect(createPropertySchema.safeParse({ ...valid, type }).success).toBe(true);
       expect(updatePropertySchema.safeParse({ type }).success).toBe(true);
       expect(listPropertiesQuerySchema.safeParse({ type }).success).toBe(true);
@@ -76,9 +76,30 @@ describe('createPropertySchema', () => {
     expect(createPropertySchema.safeParse(noPin).success).toBe(true);
     expect(createPropertySchema.safeParse({ ...noPin, lat: 34.5 }).success).toBe(false);
     expect(createPropertySchema.safeParse({ ...noPin, lng: 69.1 }).success).toBe(false);
-    // The neighbourhood is mandatory: it is what a listing without a pin is located by.
-    const { neighborhood: _n, ...noNeighborhood } = valid;
-    expect(createPropertySchema.safeParse(noNeighborhood).success).toBe(false);
+  });
+
+  it('needs the written place while there is no pin, and makes it optional once there is one', () => {
+    const { lat: _lat, lng: _lng, district: _d, neighborhood: _n, address: _a, ...bare } = valid;
+    // A pin stands in for the district, neighbourhood and street.
+    expect(createPropertySchema.safeParse({ ...bare, lat: 34.5, lng: 69.1 }).success).toBe(true);
+    // Without one, each of the three is missing for a reason the app can show on that field.
+    const noPin = createPropertySchema.safeParse(bare);
+    expect(noPin.success).toBe(false);
+    expect(fields(noPin)).toEqual(expect.arrayContaining(['district', 'neighborhood', 'address']));
+    // Giving all three is enough on its own.
+    const written = { district: 'Shar-e-Naw', neighborhood: 'Qala-e-Fathullah', address: 'Street 4' };
+    expect(createPropertySchema.safeParse({ ...bare, ...written }).success).toBe(true);
+    // Empty text is the same as missing.
+    expect(createPropertySchema.safeParse({ ...bare, ...written, address: '' }).success).toBe(false);
+    expect(createPropertySchema.safeParse({ ...bare, lat: 34.5, lng: 69.1, address: '' }).success).toBe(true);
+    // What is given must still be well formed.
+    expect(createPropertySchema.safeParse({ ...bare, lat: 34.5, lng: 69.1, neighborhood: 'x' }).success).toBe(false);
+  });
+
+  it('treats the description as optional', () => {
+    const { description: _desc, ...noDescription } = valid;
+    expect(createPropertySchema.safeParse(noDescription).success).toBe(true);
+    expect(createPropertySchema.safeParse({ ...valid, description: '' }).success).toBe(true);
   });
 
   it('allows null/absent rooms and leaves images undefined (the service defaults it)', () => {
@@ -123,6 +144,36 @@ describe('listPropertiesQuerySchema', () => {
     [{ has_location: 'yes' }],
     [{ has_location: '1' }],
   ])('rejects %j', (query) => {
+    expect(listPropertiesQuerySchema.safeParse(query).success).toBe(false);
+  });
+});
+
+describe('listPropertiesQuerySchema: map area', () => {
+  const area = { min_lat: '34.25', max_lat: '34.875', min_lng: '68.9375', max_lng: '69.4375' };
+  it('reads the four edges as numbers, and an area alone is fine', () => {
+    expect(listPropertiesQuerySchema.parse(area)).toMatchObject({
+      min_lat: 34.25,
+      max_lat: 34.875,
+      min_lng: 68.9375,
+      max_lng: 69.4375,
+    });
+    expect(listPropertiesQuerySchema.parse({ ...area, has_location: 'true', type: 'LAND' })).toMatchObject({
+      has_location: true,
+      type: 'LAND',
+    });
+    expect(listPropertiesQuerySchema.parse({ ...area, min_lat: '-34.5', max_lat: '-34' })).toMatchObject({ min_lat: -34.5 });
+  });
+  it.each([
+    ['only some of the edges', { min_lat: '34', max_lat: '35' }],
+    ['a single edge', { max_lng: '69' }],
+    ['south above north', { ...area, min_lat: '35', max_lat: '34' }],
+    ['west east of east', { ...area, min_lng: '70', max_lng: '69' }],
+    ['a latitude beyond the pole', { ...area, max_lat: '91' }],
+    ['a longitude beyond the date line', { ...area, min_lng: '-181' }],
+    ['more than eight decimals', { ...area, min_lat: '34.123456789' }],
+    ['an edge that is not a number', { ...area, max_lng: 'abc' }],
+    ['an area together with has_location=false', { ...area, has_location: 'false' }],
+  ])('rejects %s', (_name, query) => {
     expect(listPropertiesQuerySchema.safeParse(query).success).toBe(false);
   });
 });

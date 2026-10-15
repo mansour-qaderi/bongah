@@ -7,7 +7,6 @@ import {
 } from '@nestjs/common';
 import { findActiveSubscription } from '../agencies/subscription.js';
 import { Prisma, PropertyStatus, Role } from '../generated/prisma/client.js';
-import { MapLocationService } from '../map-location/map-location.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import type { CreatePropertyDto } from './dto/create-property.dto.js';
 import type { ListPropertiesDto, PaginationDto } from './dto/list-properties.dto.js';
@@ -29,10 +28,7 @@ const LISTING_ORDER: Prisma.PropertyOrderByWithRelationInput[] = [
 export class PropertyService {
   private readonly logger = new Logger(PropertyService.name);
 
-  constructor(
-    private readonly prisma: PrismaService,
-    private readonly mapLocation: MapLocationService,
-  ) {}
+  constructor(private readonly prisma: PrismaService) {}
 
   /** Public search: active listings only, and never those of a banned account. */
   async list(query: ListPropertiesDto): Promise<PropertyPageDto> {
@@ -46,6 +42,14 @@ export class PropertyService {
       dealType: query.deal_type,
       // true: listings with an exact pin (the map); false: those without; omitted: all.
       ...(query.has_location === undefined ? {} : { lat: query.has_location ? { not: null } : null }),
+      // The part of the map on screen (all four are given together; the schema guarantees it). Only listings with a
+      // pin can be inside, so a null lat/lng never matches.
+      ...(query.min_lat === undefined
+        ? {}
+        : {
+            lat: { gte: query.min_lat, lte: query.max_lat },
+            lng: { gte: query.min_lng, lte: query.max_lng },
+          }),
       // The schema guarantees a currency whenever a price bound is present.
       currency: query.currency,
       ...(hasPriceRange ? { price: { gte: query.min_price, lte: query.max_price } } : {}),
@@ -95,8 +99,9 @@ export class PropertyService {
    *            whatever its status, so archiving or deleting a listing can't be used to get another.
    *  - AGENCY: needs an agency profile and a currently active subscription; no monthly cap.
    *  - ADMIN:  unrestricted.
-   * Exact coordinates (lat/lng) are optional and are accepted only from an active agency, an admin,
-   * or a user who spends a prepaid Map Location token on this listing (403 MAP_LOCATION_REQUIRED).
+   * An exact map pin (lat/lng) is free for everyone and optional. Without one the written place
+   * (district, neighbourhood, address) is required; with one it is optional (the schema enforces that),
+   * and anything left out is stored as an empty string / null.
    *
    * The role is read from the database (the JWT's copy may be days old), and the user row is
    * locked for the transaction, so two simultaneous requests can't both pass the quota check.
@@ -149,10 +154,15 @@ export class PropertyService {
           break;
       }
 
-      const { deal_type, area_sqm, bedrooms, bathrooms, images, ...rest } = input;
+      const { deal_type, area_sqm, bedrooms, bathrooms, images, description, district, neighborhood, address, ...rest } =
+        input;
       const created = await tx.property.create({
         data: {
           ...rest,
+          description: description ?? '',
+          district: district ?? '',
+          neighborhood: neighborhood ?? null,
+          address: address ?? '',
           userId,
           agencyId,
           dealType: deal_type,
@@ -166,12 +176,6 @@ export class PropertyService {
         },
         include: WITH_AGENCY_NAME,
       });
-      // An exact pin is a paid feature (agency subscription or a prepaid token). Charged in this
-      // same transaction, so a refusal also undoes the listing: nothing is published unpinned
-      // by surprise and no free monthly listing is used up.
-      if (input.lat !== undefined) {
-        await this.mapLocation.chargeForPin(tx, userId, users[0].role, created.id, now);
-      }
       return created;
     });
 
@@ -179,19 +183,16 @@ export class PropertyService {
   }
 
   /**
-   * Edits a listing. Only its owner (or an admin) may.
-   *
-   * Giving a listing its FIRST pin is the paid step (same rule as on create). Moving a pin that is
-   * already there is free. The listing row is locked while this runs, so two simultaneous edits
-   * can't both see "no pin yet" and spend two tokens on one listing.
+   * Edits a listing. Only its owner (or an admin) may. Adding or moving the map pin is free.
+   * The listing row is locked while this runs, so two simultaneous edits apply one after the other.
    */
   async update(userId: string, id: string, input: UpdatePropertyDto): Promise<PropertyDto> {
     const now = new Date();
     const { deal_type, area_sqm, ...rest } = input;
 
     const row = await this.prisma.$transaction(async (tx) => {
-      const locked = await tx.$queryRaw<{ user_id: string; lat: number | null; removed_by_admin_at: Date | null }[]>`
-        SELECT user_id, lat, removed_by_admin_at FROM properties WHERE id = ${id}::uuid FOR UPDATE`;
+      const locked = await tx.$queryRaw<{ user_id: string; removed_by_admin_at: Date | null }[]>`
+        SELECT user_id, removed_by_admin_at FROM properties WHERE id = ${id}::uuid FOR UPDATE`;
       if (locked.length === 0) throw new NotFoundException('Property not found.');
       const actorRole = await this.assertCanModify(tx, userId, locked[0].user_id);
       // A listing an admin took down stays down: only an admin can touch it (restore it, say).
@@ -200,10 +201,6 @@ export class PropertyService {
           message: 'This listing was removed by the Bongah team.',
           code: 'LISTING_REMOVED',
         });
-      }
-
-      if (input.lat !== undefined && locked[0].lat === null) {
-        await this.mapLocation.chargeForPin(tx, userId, actorRole, id, now);
       }
 
       return tx.property.update({

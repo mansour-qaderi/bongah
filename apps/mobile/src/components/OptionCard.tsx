@@ -57,7 +57,7 @@ const styles = StyleSheet.create({
     gap: spacing.md,
     padding: spacing.lg,
     marginBottom: spacing.sm,
-    borderRadius: radius.md,
+    borderRadius: radius.lg,
     borderWidth: 1.5,
     borderColor: colors.border,
     backgroundColor: colors.surface,

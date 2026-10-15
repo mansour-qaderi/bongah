@@ -1,15 +1,16 @@
 import React from 'react';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { useTranslation } from 'react-i18next';
+import AgencyDashboardScreen from '../screens/agency/AgencyDashboardScreen';
 import ChatScreen from '../screens/chat/ChatScreen';
 import TemplatesScreen from '../screens/chat/TemplatesScreen';
 import AddPropertyScreen from '../screens/property/AddPropertyScreen';
 import PropertyDetailsScreen from '../screens/property/PropertyDetailsScreen';
-import SetLocationScreen from '../screens/property/SetLocationScreen';
 import CheckoutScreen from '../screens/payments/CheckoutScreen';
 import ReferralScreen from '../screens/referral/ReferralScreen';
 import AuthNavigator from './AuthNavigator';
 import MainTabs from './MainTabs';
+import { stackScreenOptions } from './screenOptions';
 import type { RootStackParamList } from './types';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -22,7 +23,7 @@ const Stack = createNativeStackNavigator<RootStackParamList>();
 export default function RootNavigator() {
   const { t } = useTranslation();
   return (
-    <Stack.Navigator screenOptions={{ headerTitleAlign: 'center' }}>
+    <Stack.Navigator screenOptions={stackScreenOptions}>
       <Stack.Screen
         name="Tabs"
         component={MainTabs}
@@ -34,14 +35,14 @@ export default function RootNavigator() {
         options={{ title: t('nav.propertyDetails') }}
       />
       <Stack.Screen
+        name="Dashboard"
+        component={AgencyDashboardScreen}
+        options={{ title: t('nav.dashboard') }}
+      />
+      <Stack.Screen
         name="AddProperty"
         component={AddPropertyScreen}
         options={{ title: t('nav.addProperty') }}
-      />
-      <Stack.Screen
-        name="SetLocation"
-        component={SetLocationScreen}
-        options={{ title: t('nav.setLocation') }}
       />
       <Stack.Screen
         name="Checkout"
@@ -57,7 +58,8 @@ export default function RootNavigator() {
         name="Chat"
         component={ChatScreen}
         options={({ route }) => ({
-          title: route.params.conversation.counterpart.name ?? t('chat.counterpart'),
+          title:
+            route.params.conversation.counterpart.name ?? t('chat.counterpart'),
         })}
       />
       <Stack.Screen

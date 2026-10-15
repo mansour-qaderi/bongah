@@ -110,6 +110,7 @@ export default function PhoneScreen({ navigation }: Props) {
         autoCapitalize="characters"
         autoCorrect={false}
         maxLength={24}
+        digits="keep"
         ltr
         error={referralError}
         onSubmitEditing={submit}

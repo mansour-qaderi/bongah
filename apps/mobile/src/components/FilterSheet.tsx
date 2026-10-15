@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { Modal, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import {
   CURRENCIES,
   DEAL_TYPES,
@@ -16,13 +15,19 @@ import {
   provinceValue,
   type Province,
 } from '../constants/provinces';
-import { formatNumber, parseNumberInput } from '../i18n/format';
+import { formatCurrency, formatNumber, parseNumberInput } from '../i18n/format';
+import { priceStops } from '../constants/priceStops';
 import { useFormat } from '../i18n/useFormat';
-import { colors, spacing } from '../theme';
+import { colors, radius, spacing } from '../theme';
 import AppText from './AppText';
 import Button from './Button';
+import BottomSheet from './BottomSheet';
+import Card from './Card';
 import { Chip } from './Chip';
+import { KeyboardAwareScrollView } from './KeyboardAware';
 import ProvincePicker from './ProvincePicker';
+import RangeSlider from './RangeSlider';
+import SegmentedControl from './SegmentedControl';
 import TextField from './TextField';
 
 interface Props {
@@ -39,6 +44,14 @@ function readPrice(text: string): number | undefined | null {
   if (!text.trim()) return undefined;
   const n = parseNumberInput(text);
   return n === null || n > MAX_PRICE_INPUT ? null : Math.round(n * 100) / 100;
+}
+
+/** The amount typed so far, written as money ("۱٬۲۰۰٬۰۰۰ ؋"), or nothing while the box is empty or unreadable. */
+function priceHelper(text: string, currency: Currency): string | undefined {
+  const amount = readPrice(text);
+  return typeof amount === 'number'
+    ? formatCurrency(amount, currency)
+    : undefined;
 }
 
 export default function FilterSheet({
@@ -68,8 +81,12 @@ export default function FilterSheet({
     setType(value.type);
     setDeal(value.deal_type);
     setCurrency(value.currency ?? 'AFGHANI');
-    setMinText(value.min_price !== undefined ? String(value.min_price) : '');
-    setMaxText(value.max_price !== undefined ? String(value.max_price) : '');
+    setMinText(
+      value.min_price !== undefined ? formatNumber(value.min_price) : '',
+    );
+    setMaxText(
+      value.max_price !== undefined ? formatNumber(value.max_price) : '',
+    );
     setError(false);
   }, [visible, value]);
 
@@ -106,170 +123,198 @@ export default function FilterSheet({
     setError(false);
   };
 
+  // The slider speaks in stops; the boxes below it hold the exact numbers and stay in step with it.
+  const minValue = readPrice(minText) ?? undefined;
+  const maxValue = readPrice(maxText) ?? undefined;
+  const stops = priceStops(deal, currency);
+  const describeStop = (amount: number | undefined) =>
+    amount === undefined ? t('home.noLimit') : formatCurrency(amount, currency);
+  const summary = t('home.priceFromTo', {
+    from: describeStop(minValue),
+    to: describeStop(maxValue),
+  });
+
   return (
-    <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
-      <SafeAreaView style={styles.screen}>
-        <View style={styles.header}>
-          <AppText variant="heading">{t('home.filters')}</AppText>
-          <Pressable accessibilityRole="button" onPress={onClose} hitSlop={12}>
-            <AppText variant="label" color={colors.primary}>
-              {t('common.close')}
-            </AppText>
-          </Pressable>
-        </View>
-
-        <ScrollView
-          contentContainerStyle={styles.content}
-          keyboardShouldPersistTaps="handled"
-        >
-          <AppText variant="label">{t('home.province')}</AppText>
-          <Pressable
-            accessibilityRole="button"
-            onPress={() => setPickerOpen(true)}
-            style={styles.select}
-          >
-            <AppText>
-              {province ? province.name[language] : t('home.allProvinces')}
-            </AppText>
-          </Pressable>
-
-          <TextField
-            label={t('home.district')}
-            value={district}
-            onChangeText={setDistrict}
-            placeholder={t('home.districtPlaceholder')}
-          />
-
-          <AppText variant="label">{t('home.type')}</AppText>
-          <View style={styles.wrap}>
-            <Chip
-              label={t('home.allTypes')}
-              selected={!type}
-              onPress={() => setType(undefined)}
+    <>
+      <BottomSheet
+        visible={visible}
+        onClose={onClose}
+        title={t('home.filters')}
+        footer={
+          <>
+            <Button
+              title={t('home.clearFilters')}
+              variant="outline"
+              onPress={clear}
+              style={styles.footerSmall}
             />
-            {PROPERTY_TYPES.map(p => (
-              <Chip
-                key={p}
-                label={t(`propertyType.${p}`)}
-                selected={type === p}
-                onPress={() => setType(p)}
-              />
-            ))}
-          </View>
-
-          <AppText variant="label">{t('home.dealType')}</AppText>
-          <View style={styles.wrap}>
-            <Chip
-              label={t('home.allDeals')}
-              selected={!deal}
-              onPress={() => setDeal(undefined)}
+            <Button
+              title={t('home.applyFilters')}
+              onPress={apply}
+              style={styles.footerMain}
             />
-            {DEAL_TYPES.map(d => (
-              <Chip
-                key={d}
-                label={t(`dealType.${d}`)}
-                selected={deal === d}
-                onPress={() => setDeal(d)}
-              />
-            ))}
-          </View>
+          </>
+        }
+      >
+        <KeyboardAwareScrollView contentContainerStyle={styles.content}>
+          <Card>
+            <AppText variant="label">{t('home.province')}</AppText>
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => setPickerOpen(true)}
+              style={styles.select}
+            >
+              <AppText color={province ? colors.text : colors.textMuted}>
+                {province ? province.name[language] : t('home.allProvinces')}
+              </AppText>
+            </Pressable>
+            <TextField
+              label={t('home.district')}
+              value={district}
+              onChangeText={setDistrict}
+              placeholder={t('home.districtPlaceholder')}
+              style={styles.field}
+            />
+          </Card>
 
-          <AppText variant="label">{t('home.currency')}</AppText>
-          <View style={styles.wrap}>
-            {CURRENCIES.map(c => (
+          <Card>
+            <AppText variant="label">{t('home.type')}</AppText>
+            <View style={styles.wrap}>
               <Chip
-                key={c}
-                label={t(`currency.${c}`)}
-                selected={currency === c}
-                onPress={() => setCurrency(c)}
+                compact
+                label={t('home.allTypes')}
+                selected={!type}
+                onPress={() => setType(undefined)}
               />
-            ))}
-          </View>
+              {PROPERTY_TYPES.map(p => (
+                <Chip
+                  compact
+                  key={p}
+                  label={t(`propertyType.${p}`)}
+                  selected={type === p}
+                  onPress={() => setType(p)}
+                />
+              ))}
+            </View>
 
-          <View style={styles.priceRow}>
-            <View style={styles.priceBox}>
-              <TextField
-                label={t('home.minPrice')}
-                value={minText}
-                onChangeText={setMinText}
-                keyboardType="decimal-pad"
-                ltr
-                placeholder={formatNumber(0)}
+            <AppText variant="label">{t('home.dealType')}</AppText>
+            <View style={styles.wrap}>
+              <Chip
+                compact
+                label={t('home.allDeals')}
+                selected={!deal}
+                onPress={() => setDeal(undefined)}
+              />
+              {DEAL_TYPES.map(d => (
+                <Chip
+                  compact
+                  key={d}
+                  label={t(`dealType.${d}`)}
+                  selected={deal === d}
+                  onPress={() => setDeal(d)}
+                />
+              ))}
+            </View>
+          </Card>
+
+          <Card>
+            <View style={styles.priceHead}>
+              <AppText variant="label">{t('home.priceRange')}</AppText>
+              <SegmentedControl
+                options={CURRENCIES.map(c => ({
+                  value: c,
+                  label: t(`currency.${c}`),
+                }))}
+                value={currency}
+                onChange={setCurrency}
               />
             </View>
-            <View style={styles.priceBox}>
-              <TextField
-                label={t('home.maxPrice')}
-                value={maxText}
-                onChangeText={setMaxText}
-                keyboardType="decimal-pad"
-                ltr
-              />
-            </View>
-          </View>
-          {error ? (
-            <AppText variant="caption" color={colors.danger}>
-              {t('errors.validation')}
+            <AppText variant="label" color={colors.primaryDark}>
+              {summary}
             </AppText>
-          ) : null}
-        </ScrollView>
+            <RangeSlider
+              stops={stops}
+              low={minValue}
+              high={maxValue}
+              onChange={(low, high) => {
+                setMinText(low === undefined ? '' : String(low));
+                setMaxText(high === undefined ? '' : String(high));
+                setError(false);
+              }}
+              describe={describeStop}
+              lowLabel={t('home.minPrice')}
+              highLabel={t('home.maxPrice')}
+            />
+            <AppText variant="caption" color={colors.textMuted}>
+              {t('home.priceSliderHint')}
+            </AppText>
+            <View style={styles.priceRow}>
+              <View style={styles.priceBox}>
+                <TextField
+                  label={t('home.minPrice')}
+                  value={minText}
+                  onChangeText={setMinText}
+                  keyboardType="decimal-pad"
+                  ltr
+                  placeholder={formatNumber(0)}
+                  helper={priceHelper(minText, currency)}
+                  style={styles.field}
+                />
+              </View>
+              <View style={styles.priceBox}>
+                <TextField
+                  label={t('home.maxPrice')}
+                  value={maxText}
+                  onChangeText={setMaxText}
+                  keyboardType="decimal-pad"
+                  ltr
+                  helper={priceHelper(maxText, currency)}
+                  style={styles.field}
+                />
+              </View>
+            </View>
+            {error ? (
+              <AppText variant="caption" color={colors.danger}>
+                {t('errors.validation')}
+              </AppText>
+            ) : null}
+          </Card>
+        </KeyboardAwareScrollView>
+      </BottomSheet>
 
-        <View style={styles.footer}>
-          <Button
-            title={t('home.clearFilters')}
-            variant="outline"
-            onPress={clear}
-            style={styles.footerButton}
-          />
-          <Button
-            title={t('home.applyFilters')}
-            onPress={apply}
-            style={styles.footerButton}
-          />
-        </View>
-
-        <ProvincePicker
-          visible={pickerOpen}
-          selectedId={province?.id ?? null}
-          allowAll
-          onClose={() => setPickerOpen(false)}
-          onSelect={p => {
-            setProvince(p);
-            setPickerOpen(false);
-          }}
-        />
-      </SafeAreaView>
-    </Modal>
+      <ProvincePicker
+        visible={pickerOpen}
+        selectedId={province?.id ?? null}
+        allowAll
+        onClose={() => setPickerOpen(false)}
+        onSelect={p => {
+          setProvince(p);
+          setPickerOpen(false);
+        }}
+      />
+    </>
   );
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.background },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: spacing.lg,
-  },
-  content: { padding: spacing.lg, gap: spacing.sm },
+  content: { padding: spacing.lg, paddingBottom: spacing.xl },
   select: {
     minHeight: 48,
     justifyContent: 'center',
     borderWidth: 1,
     borderColor: colors.border,
-    borderRadius: 12,
+    borderRadius: radius.md,
     backgroundColor: colors.surface,
     paddingHorizontal: spacing.md,
-    marginBottom: spacing.lg,
   },
-  wrap: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing.sm,
-    marginBottom: spacing.lg,
+  // The cards already space their content; a field needs no margin of its own inside one.
+  field: { marginBottom: 0 },
+  wrap: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
+  priceHead: {
+    gap: spacing.md,
   },
   priceRow: { flexDirection: 'row', gap: spacing.md },
   priceBox: { flex: 1 },
-  footer: { flexDirection: 'row', gap: spacing.md, padding: spacing.lg },
-  footerButton: { flex: 1 },
+  footerSmall: { flex: 1 },
+  footerMain: { flex: 2 },
 });

@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import OtpScreen from '../screens/auth/OtpScreen';
 import PhoneScreen from '../screens/auth/PhoneScreen';
 import ProfileSetupScreen from '../screens/auth/ProfileSetupScreen';
+import { stackScreenOptions } from './screenOptions';
 import type { AuthStackParamList } from './types';
 
 const Stack = createNativeStackNavigator<AuthStackParamList>();
@@ -11,7 +12,7 @@ const Stack = createNativeStackNavigator<AuthStackParamList>();
 export default function AuthNavigator() {
   const { t } = useTranslation();
   return (
-    <Stack.Navigator>
+    <Stack.Navigator screenOptions={stackScreenOptions}>
       <Stack.Screen
         name="Phone"
         component={PhoneScreen}

@@ -39,7 +39,7 @@ describe.skipIf(!hasDb)('Agencies on the map, and the seller on a listing (e2e)'
   const pinOf = async (agency: { agencyId: string }) => (await pins()).find((p) => p.id === agency.agencyId);
   const publish = async (agency: TestUser, overrides: Record<string, unknown> = {}) =>
     (await ctx.post('/properties', propertyBody({ province: uniqueProvince(), ...overrides }), agency.token).expect(201))
-      .body as { id: string };
+      .body as { id: string; province: string; agency_plan: string | null };
 
   describe('GET /agencies/map', () => {
     it('is public, short-cacheable, and lists a verified agency that placed a pin', async () => {
@@ -116,6 +116,39 @@ describe.skipIf(!hasDb)('Agencies on the map, and the seller on a listing (e2e)'
       const created = (await ctx.post('/properties', propertyBody({ province: uniqueProvince() }), owner.token).expect(201)).body;
       expect(created.agency_name).toBeNull();
       expect((await ctx.get(`/properties/${created.id}`).expect(200)).body.agency_name).toBeNull();
+    });
+
+    it('carries the plan the agency has running, so the app can put paying listings first', async () => {
+      const agency = await makeAgency(); // the helper gives a MONTHLY plan
+      const created = await publish(agency);
+      expect(created.agency_plan).toBe('MONTHLY');
+      expect((await ctx.get(`/properties/${created.id}`).expect(200)).body.agency_plan).toBe('MONTHLY');
+
+      // A longer plan bought later and running now wins; one that has not started yet does not count.
+      const yearly = await makeAgency();
+      await ctx.prisma.subscription.deleteMany({ where: { agencyId: yearly.agencyId } });
+      await ctx.prisma.subscription.createMany({
+        data: [
+          { agencyId: yearly.agencyId, packageType: 'YEARLY', startDate: new Date(Date.now() - 86_400_000), endDate: new Date(Date.now() + 300 * 86_400_000) },
+          { agencyId: yearly.agencyId, packageType: 'QUARTERLY', startDate: new Date(Date.now() + 300 * 86_400_000), endDate: new Date(Date.now() + 400 * 86_400_000) },
+        ],
+      });
+      const listing = await publish(yearly);
+      expect(listing.agency_plan).toBe('YEARLY');
+    });
+
+    it('is null for a private owner, and once the agency\'s plan has run out', async () => {
+      const owner = await ctx.user();
+      const own = (await ctx.post('/properties', propertyBody({ province: uniqueProvince() }), owner.token).expect(201)).body;
+      expect(own.agency_plan).toBeNull();
+
+      const agency = await makeAgency();
+      const created = await publish(agency);
+      await ctx.prisma.subscription.updateMany({ where: { agencyId: agency.agencyId }, data: { endDate: new Date(Date.now() - 1000) } });
+      expect((await ctx.get(`/properties/${created.id}`).expect(200)).body.agency_plan).toBeNull();
+      expect(
+        (await ctx.get(`/properties?province=${encodeURIComponent(created.province)}`).expect(200)).body.data[0].agency_plan,
+      ).toBeNull();
     });
 
     it('follows an edit: still the agency name after the listing is updated', async () => {

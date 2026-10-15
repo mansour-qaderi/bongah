@@ -138,7 +138,10 @@ function SheetBody({
                     </AppText>
                   ) : null}
                   {spend.isError ? (
-                    <Banner kind="error" message={errorMessage(spend.error, t)} />
+                    <Banner
+                      kind="error"
+                      message={errorMessage(spend.error, t)}
+                    />
                   ) : null}
                   <Button
                     title={t('contact.useCredit')}
@@ -155,7 +158,10 @@ function SheetBody({
                 {t('contact.buyTitle')}
               </AppText>
               {flow.startError ? (
-                <Banner kind="error" message={errorMessage(flow.startError, t)} />
+                <Banner
+                  kind="error"
+                  message={errorMessage(flow.startError, t)}
+                />
               ) : null}
               {pricing.isPending ? (
                 <ActivityIndicator color={colors.primary} />
@@ -217,8 +223,8 @@ const styles = StyleSheet.create({
   sheet: {
     maxHeight: '85%',
     backgroundColor: colors.background,
-    borderTopLeftRadius: radius.lg,
-    borderTopRightRadius: radius.lg,
+    borderTopLeftRadius: radius.sheet,
+    borderTopRightRadius: radius.sheet,
   },
   header: {
     flexDirection: 'row',

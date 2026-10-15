@@ -69,6 +69,15 @@ export interface AgencyMapPin {
   active_listings: number;
 }
 
+/**
+ * The outline of a plot, as GeoJSON (RFC 7946): a Polygon whose rings hold [longitude, latitude] pairs,
+ * outer ring first, each ring closed. The same shape agvmap stores for a plot.
+ */
+export interface PlotBoundary {
+  type: 'Polygon';
+  coordinates: number[][][];
+}
+
 export interface Property {
   id: string;
   user_id: string;
@@ -93,7 +102,18 @@ export interface Property {
   /** Exact map pin. Null (together with lng) when the listing has none: pins are a paid feature. */
   lat: number | null;
   lng: number | null;
+  /**
+   * The plot's outline, when the listing has one. Optional because the API does not send it yet: the app draws
+   * it if it is there and ignores it if it is missing or malformed.
+   */
+  boundary?: PlotBoundary | null;
   images: string[];
+  /**
+   * The plan the publishing agency is on right now, or null (a private owner, or a lapsed plan). Public on
+   * purpose: the apps put listings of subscribed agencies first where several share one spot. Optional because
+   * an older API does not send it.
+   */
+  agency_plan?: SubscriptionPackage | null;
   status: PropertyStatus;
   /** True only while a paid featured promotion is running. */
   is_featured: boolean;

@@ -35,6 +35,7 @@ enum PropertyType {
   LAND
   OFFICE_SHOP
   GARDEN_VILLA
+  GARAGE_OTHER
 
   @@map("property_type")
 }
@@ -364,8 +365,8 @@ model Property {
   /// Neighbourhood (محله / ولسوالی گذر) as free text. Null only on listings created before it existed.
   neighborhood  String?
   address       String
-  /// Exact map pin. Null for listings without one: placing a pin needs an active agency
-  /// subscription or a map location token (see src/map-location). Both set or both null.
+  /// Exact map pin, free for everyone. Null for listings without one (they then carry a written
+  /// district / neighbourhood / address instead). Both set or both null.
   lat           Float?
   lng           Float?
   images        String[]       @default([])

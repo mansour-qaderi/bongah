@@ -6,11 +6,12 @@ import { useAuth } from '../auth/AuthContext';
 import { useContactActions } from '../contact/useContactActions';
 import { formatNumber } from '../i18n/format';
 import { useFormat } from '../i18n/useFormat';
-import { PROPERTY_ICONS, useSellerLabel } from '../map/markers';
-import { colors, radius, shadow, spacing } from '../theme';
+import { PROPERTY_LINE_ICONS, useSellerLabel } from '../map/markers';
+import { colors, dealColors, radius, shadow, spacing } from '../theme';
 import AppText from './AppText';
 import ContactActionBar from './ContactActionBar';
 import ContactLockSheet from './ContactLockSheet';
+import Icon from './Icon';
 
 interface Props {
   property: Property;
@@ -71,7 +72,12 @@ export default function PropertyPreviewCard({
                 accessibilityIgnoresInvertColors
               />
             ) : (
-              <AppText variant="title">{PROPERTY_ICONS[property.type]}</AppText>
+              <Icon
+                name={PROPERTY_LINE_ICONS[property.type]}
+                size={40}
+                color={dealColors[property.deal_type].main}
+                background={colors.primarySoft}
+              />
             )}
           </View>
 

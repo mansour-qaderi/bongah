@@ -1,19 +1,29 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import {
   ActivityIndicator,
+  AppState,
   FlatList,
   Linking,
-  Pressable,
+  Platform,
   StyleSheet,
   View,
+  useWindowDimensions,
 } from 'react-native';
 import type { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
-import type { Property } from '@bongah/shared-types';
+import type { AgencyMapPin, DealType, Property } from '@bongah/shared-types';
 import { errorMessage } from '../../api/errors';
 import {
   flattenPages,
   useAgencyMapPins,
+  useMapProperties,
   usePropertyList,
 } from '../../api/hooks';
 import type { PropertyFilters } from '../../api/endpoints';
@@ -21,21 +31,18 @@ import AgencyPreviewCard from '../../components/AgencyPreviewCard';
 import AppText from '../../components/AppText';
 import Banner from '../../components/Banner';
 import Button from '../../components/Button';
-import { Chip, ChipRow } from '../../components/Chip';
 import ClusterListSheet from '../../components/ClusterListSheet';
 import FilterSheet from '../../components/FilterSheet';
+import LocationPermissionModal, {
+  type LocationProblem,
+} from '../../components/LocationPermissionModal';
 import PropertyCard from '../../components/PropertyCard';
 import PropertyMap from '../../components/PropertyMap';
-import PropertyPreviewCard from '../../components/PropertyPreviewCard';
-import { Screen } from '../../components/Screen';
-import SegmentedControl from '../../components/SegmentedControl';
+import PropertyBottomSheet from '../../components/PropertyBottomSheet';
 import { EmptyView, ErrorView, LoadingView } from '../../components/States';
-import {
-  PROVINCES,
-  QUICK_PROVINCE_IDS,
-  findProvince,
-  provinceValue,
-} from '../../constants/provinces';
+import { findProvince } from '../../constants/provinces';
+import { MAP_TILE_MAX_ZOOM } from '../../config';
+import { centroid, zoomToSeparate, type Bounds } from '../../map/cluster';
 import {
   AFGHANISTAN_CAMERA,
   KABUL_CAMERA,
@@ -45,15 +52,26 @@ import {
   type MapCamera,
 } from '../../map/geo';
 import type { MapItem } from '../../map/items';
-import { locate, type LocateResult } from '../../map/location';
+import { locate } from '../../map/location';
+import {
+  areaFor,
+  boundsFromCamera,
+  nextArea,
+  type Area,
+} from '../../map/viewport';
 import { formatNumber } from '../../i18n/format';
-import { useFormat } from '../../i18n/useFormat';
-import { useRequireAuth } from '../../navigation/useRequireAuth';
+import { floatingBarClearance } from '../../navigation/FloatingTabBar';
 import type { RootStackParamList, TabParamList } from '../../navigation/types';
-import { colors, radius, shadow, spacing } from '../../theme';
-import type { AgencyMapPin } from '@bongah/shared-types';
+import { colors, spacing } from '../../theme';
 import type { CompositeScreenProps } from '@react-navigation/native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
+import {
+  DealFilter,
+  LOCATE_SIZE,
+  ModeToggle,
+  RoundButton,
+  StatusPill,
+} from './MapControls';
 
 type Props = CompositeScreenProps<
   BottomTabScreenProps<TabParamList, 'Home'>,
@@ -68,8 +86,8 @@ type Selection =
   | { kind: 'agency'; agency: AgencyMapPin }
   | null;
 
-/** The map keeps fetching pages until it has this many (20 listings each); "show more" covers the rest. */
-const MAP_MAX_PAGES = 10;
+/** The map keeps fetching pages (50 listings each) until it has this many; the markers drawn are capped anyway. */
+const MAP_MAX_PAGES = 3;
 /** How close the map zooms to the person's own position. */
 const LOCATION_ZOOM = 14;
 /** Never zoom out when a listing is chosen; zoom in to at least street-block level. */
@@ -93,10 +111,20 @@ function activeFilterCount(filters: PropertyFilters): number {
   ].filter(value => value !== undefined).length;
 }
 
+/**
+ * Home: the map, edge to edge. Everything else floats over it: the profile and filter buttons and the quick
+ * deal filter along the top, "my location", the offices switch and the add button on one edge, the list switch
+ * at the foot, and the tab bar below. The list of listings is one tap away for people who prefer rows.
+ *
+ * The map asks the server only for what is on screen (plus a margin), so panning from Kabul to Herat to
+ * Mazar fills each place in as it arrives. On start it asks for the phone's position once; if that is refused
+ * or the GPS is off, a card explains and offers the settings, and the map simply stays on Kabul.
+ */
 export default function HomeScreen({ navigation }: Props) {
   const { t } = useTranslation();
-  const { language } = useFormat();
-  const requireAuth = useRequireAuth();
+  const insets = useSafeAreaInsets();
+  const { width, height } = useWindowDimensions();
+  const clearance = floatingBarClearance(insets.bottom);
 
   const [filters, setFilters] = useState<PropertyFilters>({});
   // The map is the first thing people see; the list is one tap away.
@@ -104,15 +132,22 @@ export default function HomeScreen({ navigation }: Props) {
   const [filterOpen, setFilterOpen] = useState(false);
   const [selection, setSelection] = useState<Selection>(null);
   const [clusterItems, setClusterItems] = useState<MapItem[] | null>(null);
-  const [showAgencies, setShowAgencies] = useState(true);
   const [camera, setCamera] = useState<MapCamera>(KABUL_CAMERA);
   const [me, setMe] = useState<Coordinate | null>(null);
-  const [locateState, setLocateState] = useState<
-    'idle' | 'locating' | Exclude<LocateResult['status'], 'ok'>
-  >('idle');
+  const [locating, setLocating] = useState(false);
+  const [outside, setOutside] = useState(false);
+  const [problem, setProblem] = useState<LocationProblem | null>(null);
+  // Until the map reports what it shows, ask for the area its starting camera implies.
+  const [area, setArea] = useState<Area>(() =>
+    areaFor(
+      boundsFromCamera(KABUL_CAMERA.center, KABUL_CAMERA.zoom, width, height),
+    ),
+  );
   const zoom = useRef(KABUL_CAMERA.zoom);
   // Set once the person has chosen where to look, so a slow first GPS fix does not yank the map away.
   const steered = useRef(false);
+  // The person was sent to the phone's settings to allow location; ask again when they come back.
+  const awaitingSettings = useRef(false);
   const mounted = useRef(true);
   useEffect(
     () => () => {
@@ -121,16 +156,20 @@ export default function HomeScreen({ navigation }: Props) {
     [],
   );
 
-  // The map can only draw listings that have an exact pin, so it asks the server for just those.
-  const query = usePropertyList(
-    mode === 'map' ? { ...filters, has_location: true } : filters,
+  // On the map the viewport is the filter, so the province (which only moves the camera there) is not sent.
+  const mapFilters = useMemo<PropertyFilters>(
+    () => ({ ...filters, province: undefined }),
+    [filters],
   );
+  const mapQuery = useMapProperties(mapFilters, area, mode === 'map');
+  const listQuery = usePropertyList(filters, mode === 'list');
+  const query = mode === 'map' ? mapQuery : listQuery;
   const properties = useMemo(() => flattenPages(query.data), [query.data]);
   const total = query.data?.pages[0]?.meta.total ?? 0;
 
-  // On the map, keep fetching pages (up to a limit) so the whole area fills in without button presses.
-  const loadedPages = query.data?.pages.length ?? 0;
-  const { hasNextPage, isFetchingNextPage, fetchNextPage } = query;
+  // Keep fetching pages (up to a limit) so the whole area fills in without button presses.
+  const loadedPages = mapQuery.data?.pages.length ?? 0;
+  const { hasNextPage, isFetchingNextPage, fetchNextPage } = mapQuery;
   useEffect(() => {
     if (
       mode === 'map' &&
@@ -142,13 +181,15 @@ export default function HomeScreen({ navigation }: Props) {
     }
   }, [mode, hasNextPage, isFetchingNextPage, loadedPages, fetchNextPage]);
 
-  const agencyQuery = useAgencyMapPins(mode === 'map' && showAgencies);
-  const agencies = useMemo(
-    () => (mode === 'map' && showAgencies ? agencyQuery.data ?? [] : []),
-    [mode, showAgencies, agencyQuery.data],
-  );
+  // Everything in the area has arrived: zooming in cannot reveal more, so there is no need to ask again.
+  const mapComplete = useRef(false);
+  mapComplete.current = mapQuery.data !== undefined && !mapQuery.hasNextPage;
 
-  const province = findProvince(filters.province);
+  const agencyQuery = useAgencyMapPins(mode === 'map');
+  const agencies = useMemo(
+    () => (mode === 'map' ? agencyQuery.data ?? [] : []),
+    [mode, agencyQuery.data],
+  );
 
   const flyTo = (center: Coordinate, toZoom: number, cardPadding: number) =>
     setCamera(current => ({
@@ -166,32 +207,60 @@ export default function HomeScreen({ navigation }: Props) {
     }));
   };
 
-  // A quiet first look at where the phone is: never shows a permission prompt, so it only works for people
-  // who already allowed location. Everyone else uses the "my location" button.
-  useEffect(() => {
-    locate({ ask: false }).then(result => {
-      if (!mounted.current || result.status !== 'ok') return;
-      setMe(result.coordinate);
-      if (!steered.current) flyTo(result.coordinate, LOCATION_ZOOM, 0);
-    });
-  }, []);
-
-  const onLocate = async () => {
-    setLocateState('locating');
+  /**
+   * Where is the phone? `auto` is the look at start-up: it only moves the map if nobody has steered it yet.
+   * The button (not auto) always moves it. Either way a refusal or a dead GPS opens the explanation card.
+   */
+  const findMe = useCallback(async (auto: boolean) => {
+    setLocating(true);
+    setOutside(false);
     const result = await locate({ ask: true });
     if (!mounted.current) return;
+    setLocating(false);
     if (result.status === 'ok') {
       setMe(result.coordinate);
-      setLocateState('idle');
+      if (auto && steered.current) return;
       steered.current = true;
       flyTo(result.coordinate, LOCATION_ZOOM, 0);
+    } else if (result.status === 'outside') {
+      setOutside(true);
     } else {
-      setLocateState(result.status);
+      setProblem(result.status);
+    }
+  }, []);
+
+  // Ask once, as soon as the app opens.
+  useEffect(() => {
+    findMe(true);
+  }, [findMe]);
+
+  // Back from the phone's settings: try again, the person may have just switched it on.
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', state => {
+      if (state === 'active' && awaitingSettings.current) {
+        awaitingSettings.current = false;
+        findMe(false);
+      }
+    });
+    return () => subscription.remove();
+  }, [findMe]);
+
+  const openPhoneSettings = () => {
+    awaitingSettings.current = true;
+    const kind = problem;
+    setProblem(null);
+    // A switched-off GPS has its own settings page on Android; everything else is the app's page.
+    if (kind === 'unavailable' && Platform.OS === 'android') {
+      Linking.sendIntent('android.settings.LOCATION_SOURCE_SETTINGS').catch(
+        () => Linking.openSettings(),
+      );
+    } else {
+      Linking.openSettings();
     }
   };
 
   const selectProperty = (property: Property) => {
-    setLocateState('idle');
+    setOutside(false);
     setSelection({ kind: 'property', property });
     if (property.lat !== null && property.lng !== null) {
       flyTo(
@@ -202,7 +271,7 @@ export default function HomeScreen({ navigation }: Props) {
     }
   };
   const selectAgency = (agency: AgencyMapPin) => {
-    setLocateState('idle');
+    setOutside(false);
     setSelection({ kind: 'agency', agency });
     flyTo(
       { latitude: agency.lat, longitude: agency.lng },
@@ -210,188 +279,181 @@ export default function HomeScreen({ navigation }: Props) {
       AGENCY_CARD_PADDING,
     );
   };
+  /**
+   * A counted cluster was tapped: fly in to where its pins come apart. Pins that sit on the same spot can never
+   * come apart, so for those the list sheet is the way to reach each one.
+   */
+  const openCluster = (items: MapItem[]) => {
+    const target = zoomToSeparate(items, zoom.current, MAP_TILE_MAX_ZOOM);
+    if (target === null) {
+      setClusterItems(items);
+      return;
+    }
+    setOutside(false);
+    setSelection(null);
+    flyTo(centroid(items), target, 0);
+  };
+  const clearSelection = () => setSelection(null);
   const pickFromCluster = (item: MapItem) => {
     setClusterItems(null);
     if (item.kind === 'property') selectProperty(item.property);
     else selectAgency(item.agency);
   };
 
+  const onViewChange = useCallback(
+    (view: { zoom: number; bounds: Bounds; userMoved: boolean }) => {
+      // A finger moved the map: it is theirs now, and a late GPS fix must not take it back.
+      if (view.userMoved) steered.current = true;
+      zoom.current = view.zoom;
+      setArea(current => nextArea(current, view.bounds, mapComplete.current));
+    },
+    [],
+  );
+
   const applyFilters = (next: PropertyFilters) => {
     setFilters(next);
     setSelection(null);
     setFilterOpen(false);
-    lookAtProvince(next.province);
+    // Choosing a province takes the map there. Clearing it leaves the map where it is: on the map the
+    // viewport already decides what is shown.
+    if (next.province) lookAtProvince(next.province);
   };
 
-  const toggleQuickProvince = (id: string) => {
-    const target = PROVINCES.find(p => p.id === id)!;
-    const value = provinceValue(target);
+  const chooseDeal = (deal: DealType | undefined) => {
     setSelection(null);
-    const next = filters.province === value ? undefined : value;
-    setFilters({ ...filters, province: next });
-    lookAtProvince(next);
+    setFilters(current => ({ ...current, deal_type: deal }));
   };
 
-  const openAdd = () => requireAuth(() => navigation.navigate('AddProperty'));
   const openDetails = (property: Property) =>
     navigation.navigate('PropertyDetails', { id: property.id });
 
   const filterCount = activeFilterCount(filters);
+  // A card is open over the foot of the map: the tab bar steps aside so nothing sits on top of its buttons.
+  const covered = mode === 'map' && selection !== null;
+  useEffect(() => {
+    navigation.setOptions({
+      tabBarStyle: covered ? { display: 'none' } : undefined,
+    });
+  }, [navigation, covered]);
 
-  const footer = query.hasNextPage ? (
-    <View style={styles.footer}>
-      {query.isFetchingNextPage ? (
-        <ActivityIndicator color={colors.primary} />
-      ) : (
-        <Button
-          title={t('home.loadMore')}
-          variant="outline"
-          onPress={() => query.fetchNextPage()}
-        />
-      )}
-    </View>
-  ) : undefined;
+  const topControls = (
+    <>
+      <DealFilter value={filters.deal_type} onChange={chooseDeal} />
+      <RoundButton
+        testID="open-filters"
+        icon="filter"
+        label={t('home.filters')}
+        active={filterCount > 0}
+        badge={filterCount ? formatNumber(filterCount, 0) : undefined}
+        onPress={() => setFilterOpen(true)}
+      />
+    </>
+  );
 
   let body: React.ReactNode;
   if (mode === 'list') {
-    if (query.isPending) {
-      body = <LoadingView />;
-    } else if (query.isError) {
-      body = (
+    let list: React.ReactNode;
+    if (listQuery.isPending) {
+      list = <LoadingView />;
+    } else if (listQuery.isError) {
+      list = (
         <ErrorView
-          message={errorMessage(query.error, t)}
-          onRetry={() => query.refetch()}
+          message={errorMessage(listQuery.error, t)}
+          onRetry={() => listQuery.refetch()}
         />
       );
     } else if (properties.length === 0) {
-      body = <EmptyView message={t('home.noResults')} />;
+      list = <EmptyView message={t('home.noResults')} />;
     } else {
-      body = (
+      list = (
         <FlatList
           data={properties}
           keyExtractor={p => p.id}
           renderItem={({ item }) => (
             <PropertyCard property={item} onPress={() => openDetails(item)} />
           )}
-          contentContainerStyle={styles.list}
+          contentContainerStyle={{ paddingBottom: clearance + 72 }}
           onEndReached={() => {
-            if (query.hasNextPage && !query.isFetchingNextPage)
-              query.fetchNextPage();
+            if (listQuery.hasNextPage && !listQuery.isFetchingNextPage)
+              listQuery.fetchNextPage();
           }}
           onEndReachedThreshold={0.6}
-          refreshing={query.isRefetching && !query.isFetchingNextPage}
-          onRefresh={() => query.refetch()}
-          ListFooterComponent={footer}
+          refreshing={listQuery.isRefetching && !listQuery.isFetchingNextPage}
+          onRefresh={() => listQuery.refetch()}
+          ListFooterComponent={
+            listQuery.hasNextPage ? (
+              <View style={styles.footer}>
+                {listQuery.isFetchingNextPage ? (
+                  <ActivityIndicator color={colors.primary} />
+                ) : (
+                  <Button
+                    title={t('home.loadMore')}
+                    variant="outline"
+                    onPress={() => listQuery.fetchNextPage()}
+                  />
+                )}
+              </View>
+            ) : undefined
+          }
         />
       );
     }
+    body = (
+      <View style={styles.listRoot}>
+        <View
+          style={[styles.listHeader, { paddingTop: insets.top + spacing.sm }]}
+        >
+          <View style={styles.topRow}>{topControls}</View>
+          {!listQuery.isPending && !listQuery.isError ? (
+            <AppText
+              variant="caption"
+              color={colors.textMuted}
+              style={styles.count}
+            >
+              {t('home.resultsCount', { count: formatNumber(total, 0) })}
+              {filters.district ? ` · ${filters.district}` : ''}
+            </AppText>
+          ) : null}
+        </View>
+        <View style={styles.listBody}>{list}</View>
+        <View
+          pointerEvents="box-none"
+          style={[styles.toggleDock, { bottom: clearance + spacing.md }]}
+        >
+          <ModeToggle
+            mode="list"
+            mapLabel={t('home.map')}
+            listLabel={t('home.list')}
+            onChange={setMode}
+          />
+        </View>
+      </View>
+    );
   } else {
     // The map is always on screen (even while loading or empty): the phone's position and the offices
     // are useful on their own, and a blank screen is the worst first impression for a map app.
-    let status: React.ReactNode;
-    if (query.isPending) {
-      status = (
-        <View style={[styles.pill, shadow.card]}>
-          <ActivityIndicator color={colors.primary} />
-          <AppText variant="caption">{t('common.loading')}</AppText>
-        </View>
-      );
-    } else if (query.isError) {
-      status = (
-        <View style={styles.notice}>
-          <Banner kind="error" message={errorMessage(query.error, t)}>
-            <Button
-              title={t('common.retry')}
-              variant="outline"
-              onPress={() => query.refetch()}
-            />
-          </Banner>
-        </View>
-      );
-    } else {
-      status = (
-        <View style={[styles.pill, shadow.card]}>
-          <AppText variant="caption">
-            {properties.length === 0
-              ? t('home.noMapResults')
-              : t('home.mapShowing', {
-                  count: formatNumber(properties.length, 0),
-                })}
-          </AppText>
-        </View>
-      );
-    }
-
-    let locateNote: React.ReactNode = null;
-    if (locateState === 'locating') {
-      locateNote = (
-        <View style={[styles.pill, shadow.card]}>
-          <ActivityIndicator color={colors.primary} />
-          <AppText variant="caption">{t('home.locating')}</AppText>
-        </View>
-      );
-    } else if (locateState === 'denied') {
-      locateNote = (
-        <View style={styles.notice}>
-          <Banner kind="error" message={t('home.locationDenied')}>
-            <Button
-              title={t('account.openSettings')}
-              variant="outline"
-              onPress={() => Linking.openSettings()}
-            />
-          </Banner>
-        </View>
-      );
-    } else if (locateState === 'unavailable') {
-      locateNote = (
-        <View style={styles.notice}>
-          <Banner kind="error" message={t('home.locationUnavailable')} />
-        </View>
-      );
-    } else if (locateState === 'outside') {
-      locateNote = (
-        <View style={styles.notice}>
-          <Banner kind="info" message={t('home.locationOutside')} />
-        </View>
-      );
-    }
-
-    let bottom: React.ReactNode;
-    if (selection?.kind === 'property') {
-      bottom = (
-        <PropertyPreviewCard
-          key={selection.property.id}
-          property={selection.property}
-          onOpen={() => openDetails(selection.property)}
-          onClose={() => setSelection(null)}
-        />
-      );
-    } else if (selection?.kind === 'agency') {
-      bottom = (
-        <AgencyPreviewCard
-          key={selection.agency.id}
-          agency={selection.agency}
-          onClose={() => setSelection(null)}
-        />
-      );
-    } else {
-      bottom = (
-        <View style={styles.bottomHint}>
-          {query.hasNextPage && !query.isFetchingNextPage ? (
-            <Button
-              title={t('home.loadMore')}
-              variant="secondary"
-              onPress={() => query.fetchNextPage()}
-            />
-          ) : null}
-          <View style={[styles.pill, shadow.card]}>
-            <AppText variant="caption" color={colors.textMuted}>
-              {t('home.mapHint')}
-            </AppText>
-          </View>
-        </View>
-      );
-    }
+    const inView = mapQuery.data?.pages[0]?.meta.total ?? 0;
+    const status = mapQuery.isError ? (
+      <View style={styles.notice}>
+        <Banner kind="error" message={errorMessage(mapQuery.error, t)}>
+          <Button
+            title={t('common.retry')}
+            variant="outline"
+            onPress={() => mapQuery.refetch()}
+          />
+        </Banner>
+      </View>
+    ) : (
+      <StatusPill
+        loading={mapQuery.isPending}
+        refreshing={mapQuery.isFetching}
+        message={
+          inView === 0
+            ? t('home.noMapResults')
+            : t('home.mapShowing', { count: formatNumber(inView, 0) })
+        }
+      />
+    );
 
     body = (
       <View style={styles.mapWrap}>
@@ -409,119 +471,86 @@ export default function HomeScreen({ navigation }: Props) {
           userLocation={me}
           onSelectProperty={selectProperty}
           onSelectAgency={selectAgency}
-          onOpenCluster={setClusterItems}
-          onZoomChange={value => {
-            zoom.current = value;
-          }}
+          onOpenCluster={openCluster}
+          onPressMap={clearSelection}
+          onViewChange={onViewChange}
         />
-        <View style={styles.mapOverlay} pointerEvents="box-none">
-          <View style={styles.mapTop} pointerEvents="box-none">
-            {status}
-            {locateNote}
-          </View>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={t('home.locate')}
-            disabled={locateState === 'locating'}
-            onPress={onLocate}
-            style={[styles.locate, shadow.card]}
+        <View style={styles.overlay} pointerEvents="box-none">
+          <View
+            style={[styles.top, { paddingTop: insets.top + spacing.sm }]}
+            pointerEvents="box-none"
           >
-            <AppText variant="label" color={colors.primaryDark}>
-              🎯 {t('home.locate')}
-            </AppText>
-          </Pressable>
-          <View style={styles.bottom} pointerEvents="box-none">
-            {bottom}
+            <View style={styles.topRow} pointerEvents="box-none">
+              {topControls}
+            </View>
+            {status}
+            {outside ? (
+              <View style={styles.notice}>
+                <Banner kind="info" message={t('home.locationOutside')} />
+              </View>
+            ) : null}
           </View>
+
+          {selection ? null : (
+            <>
+              <View
+                style={[styles.stack, { bottom: clearance + spacing.md }]}
+                pointerEvents="box-none"
+              >
+                <RoundButton
+                  testID="locate"
+                  icon="locate"
+                  label={t('home.locate')}
+                  busy={locating}
+                  size={LOCATE_SIZE}
+                  accent
+                  onPress={() => findMe(false)}
+                />
+              </View>
+              <View
+                pointerEvents="box-none"
+                style={[styles.toggleDock, { bottom: clearance + spacing.md }]}
+              >
+                <ModeToggle
+                  mode="map"
+                  mapLabel={t('home.map')}
+                  listLabel={t('home.list')}
+                  onChange={setMode}
+                />
+              </View>
+            </>
+          )}
+
+          {selection?.kind === 'agency' ? (
+            <View style={styles.agencyDock}>
+              <AgencyPreviewCard
+                key={selection.agency.id}
+                agency={selection.agency}
+                onClose={clearSelection}
+              />
+              <View
+                style={{
+                  height: insets.bottom,
+                  backgroundColor: colors.surface,
+                }}
+              />
+            </View>
+          ) : null}
+          <PropertyBottomSheet
+            property={
+              selection?.kind === 'property' ? selection.property : null
+            }
+            onOpenDetails={openDetails}
+            onClose={clearSelection}
+          />
         </View>
       </View>
     );
   }
 
   return (
-    <Screen edges={['top', 'left', 'right']}>
-      <View style={styles.header}>
-        <View>
-          <AppText variant="title" color={colors.primaryDark}>
-            {t('app.name')}
-          </AppText>
-          <AppText variant="caption" color={colors.textMuted}>
-            {t('app.tagline')}
-          </AppText>
-        </View>
-        <View style={styles.toggle}>
-          <SegmentedControl
-            value={mode}
-            onChange={setMode}
-            options={[
-              { value: 'list', label: t('home.list') },
-              { value: 'map', label: t('home.map') },
-            ]}
-          />
-        </View>
-      </View>
-
-      <ChipRow>
-        <Chip
-          label={`⚙︎ ${t('home.filters')}${
-            filterCount ? ` (${formatNumber(filterCount, 0)})` : ''
-          }`}
-          selected={filterCount > 0}
-          onPress={() => setFilterOpen(true)}
-        />
-        {mode === 'map' ? (
-          <Chip
-            label={`🏛️ ${t('home.agencies')}`}
-            selected={showAgencies}
-            onPress={() => setShowAgencies(value => !value)}
-          />
-        ) : null}
-        {QUICK_PROVINCE_IDS.map(id => {
-          const p = PROVINCES.find(item => item.id === id)!;
-          const label =
-            p.capital && id === 'balkh'
-              ? p.capital[language]
-              : p.name[language];
-          return (
-            <Chip
-              key={id}
-              label={label}
-              selected={province?.id === id}
-              onPress={() => toggleQuickProvince(id)}
-            />
-          );
-        })}
-      </ChipRow>
-
-      {!query.isPending && !query.isError ? (
-        <AppText
-          variant="caption"
-          color={colors.textMuted}
-          style={styles.count}
-        >
-          {t('home.resultsCount', { count: formatNumber(total, 0) })}
-          {filters.district ? ` · ${filters.district}` : ''}
-        </AppText>
-      ) : null}
-
-      <View style={styles.body}>{body}</View>
-
-      {mode === 'map' && selection ? null : (
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={t('nav.addProperty')}
-          onPress={openAdd}
-          style={[styles.fab, shadow.card]}
-        >
-          <AppText
-            variant="title"
-            color={colors.textOnPrimary}
-            style={styles.fabPlus}
-          >
-            +
-          </AppText>
-        </Pressable>
-      )}
+    <View style={styles.root}>
+      {body}
 
       <ClusterListSheet
         items={clusterItems}
@@ -535,65 +564,53 @@ export default function HomeScreen({ navigation }: Props) {
         onApply={applyFilters}
         onClose={() => setFilterOpen(false)}
       />
-    </Screen>
+
+      <LocationPermissionModal
+        problem={problem}
+        onOpenSettings={openPhoneSettings}
+        onClose={() => setProblem(null)}
+      />
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  header: {
+  root: { flex: 1, backgroundColor: colors.background },
+  mapWrap: { flex: 1 },
+  overlay: { ...StyleSheet.absoluteFill },
+  top: {
+    gap: spacing.sm,
+    paddingHorizontal: spacing.lg,
+  },
+  topRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.sm,
-    paddingBottom: spacing.md,
+    gap: spacing.sm,
   },
-  toggle: { width: 150 },
-  count: { paddingHorizontal: spacing.lg, paddingTop: spacing.sm },
-  body: { flex: 1, marginTop: spacing.sm },
-  list: { paddingBottom: 96 },
+  notice: { alignSelf: 'stretch' },
+  // The map's own controls, in one column on the end edge, just above the tab bar.
+  stack: {
+    position: 'absolute',
+    end: spacing.lg,
+    alignItems: 'center',
+    gap: spacing.md,
+  },
+  toggleDock: {
+    position: 'absolute',
+    start: 0,
+    end: 0,
+    alignItems: 'center',
+  },
+  agencyDock: { position: 'absolute', start: 0, end: 0, bottom: 0 },
+  listRoot: { flex: 1 },
+  listHeader: {
+    gap: spacing.xs,
+    paddingHorizontal: spacing.lg,
+    paddingBottom: spacing.sm,
+    backgroundColor: colors.background,
+  },
+  listBody: { flex: 1 },
+  count: { paddingHorizontal: spacing.xs },
   footer: { padding: spacing.lg },
-  mapWrap: { flex: 1 },
-  mapOverlay: { ...StyleSheet.absoluteFill, justifyContent: 'space-between' },
-  mapTop: { alignItems: 'center', gap: spacing.sm, paddingTop: spacing.sm },
-  notice: { alignSelf: 'stretch', paddingHorizontal: spacing.lg },
-  pill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-    alignSelf: 'center',
-    backgroundColor: colors.surface,
-    borderRadius: radius.pill,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.xs,
-  },
-  locate: {
-    position: 'absolute',
-    end: spacing.lg,
-    top: '38%',
-    backgroundColor: colors.surface,
-    borderRadius: radius.pill,
-    borderWidth: 1,
-    borderColor: colors.border,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs,
-  },
-  bottom: { justifyContent: 'flex-end' },
-  bottomHint: {
-    alignItems: 'center',
-    gap: spacing.sm,
-    paddingBottom: spacing.lg,
-  },
-  fab: {
-    position: 'absolute',
-    end: spacing.lg,
-    bottom: spacing.lg,
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: colors.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  fabPlus: { lineHeight: 34 },
 });

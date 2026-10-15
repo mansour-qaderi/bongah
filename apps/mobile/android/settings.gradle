@@ -1,6 +1,31 @@
-pluginManagement { includeBuild("../node_modules/@react-native/gradle-plugin") }
+pluginManagement {
+    def getPlugin = {
+        def candidate = [
+            "../node_modules/@react-native/gradle-plugin",
+            "../../node_modules/@react-native/gradle-plugin",
+            "../../../node_modules/@react-native/gradle-plugin",
+            "../../../node_modules/.pnpm/node_modules/@react-native/gradle-plugin",
+        ].find { file(it).exists() }
+        if (candidate != null) return candidate
+
+        def pnpmDir = file("../../../node_modules/.pnpm")
+        if (pnpmDir.exists()) {
+            def found = pnpmDir.listFiles()?.find { it.name.startsWith("@react-native+gradle-plugin") }
+            if (found != null) {
+                def pluginDir = file("${found.absolutePath}/node_modules/@react-native/gradle-plugin")
+                if (pluginDir.exists()) {
+                    return pluginDir.absolutePath
+                }
+            }
+        }
+        return "../node_modules/@react-native/gradle-plugin"
+    }
+    includeBuild(getPlugin())
+}
+
 plugins { id("com.facebook.react.settings") }
-extensions.configure(com.facebook.react.ReactSettingsExtension){ ex -> ex.autolinkLibrariesFromCommand() }
+
 rootProject.name = 'BongahMobile'
 include ':app'
-includeBuild('../node_modules/@react-native/gradle-plugin')
+
+extensions.configure(com.facebook.react.ReactSettingsExtension){ ex -> ex.autolinkLibrariesFromCommand() }

@@ -475,13 +475,12 @@ describe.skipIf(!hasDb)('HesabPay (e2e)', () => {
       }
     });
 
-    it('lets a user pay, then publish a listing with an exact pin', async () => {
+    it('is not needed to publish a pinned listing, and a balance bought earlier is not used up by one', async () => {
       const user = await ctx.user();
-      await ctx.post('/properties', propertyBody({ ...PIN }), user.token).expect(403);
       await confirm((await buy(user)).sessionId).expect(200);
       const res = await ctx.post('/properties', propertyBody({ ...PIN }), user.token).expect(201);
       expect(res.body).toMatchObject(PIN);
-      expect((await ctx.get('/map-location/status', user.token).expect(200)).body.tokens_available).toBe(0);
+      expect((await ctx.get('/map-location/status', user.token).expect(200)).body.tokens_available).toBe(1);
     });
   });
   describe('CONTACT_CREDITS pack', () => {

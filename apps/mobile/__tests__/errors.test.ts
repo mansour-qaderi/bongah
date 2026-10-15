@@ -39,15 +39,6 @@ describe('errorMessage', () => {
       errorMessage(http(403, { code: 'AGENCY_PROFILE_REQUIRED' }), i18n.t),
     ).toBe(prs.add.agencyProfileRequired);
     expect(
-      errorMessage(http(403, { code: 'MAP_LOCATION_REQUIRED' }), i18n.t),
-    ).toBe(prs.map.required);
-    expect(
-      errorMessage(
-        http(409, { code: 'MAP_LOCATION_ALREADY_UNLIMITED' }),
-        i18n.t,
-      ),
-    ).toBe(prs.map.alreadyUnlimited);
-    expect(
       errorMessage(http(400, { code: 'INVALID_REFERRAL_CODE' }), i18n.t),
     ).toBe(prs.auth.referralInvalid);
     expect(errorMessage(http(409, { code: 'NO_LADDER_TOKEN' }), i18n.t)).toBe(

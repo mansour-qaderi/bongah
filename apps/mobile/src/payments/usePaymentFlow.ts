@@ -56,8 +56,6 @@ export function usePaymentFlow() {
       // A new subscription / laddered / featured listing changes what the lists and the agency
       // dashboard show (the dashboard's key sits under `properties`)...
       queryClient.invalidateQueries({ queryKey: queryKeys.properties });
-      // ...and a map location payment adds a prepaid pin.
-      queryClient.invalidateQueries({ queryKey: queryKeys.mapLocation });
       // ...a contact credits payment adds credits to the allowance...
       queryClient.invalidateQueries({ queryKey: queryKeys.contact });
       // ...and a subscription turns on the chat perks.

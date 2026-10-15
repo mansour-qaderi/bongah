@@ -6,7 +6,7 @@ import {
   type StyleProp,
   type ViewStyle,
 } from 'react-native';
-import { colors, radius, spacing } from '../theme';
+import { colors, radius, shadow, spacing } from '../theme';
 import AppText from './AppText';
 
 type Variant = 'primary' | 'secondary' | 'outline' | 'danger';
@@ -57,6 +57,7 @@ export default function Button({
       onPress={onPress}
       style={({ pressed }) => [
         styles.base,
+        variant === 'primary' && !inactive ? shadow.card : null,
         {
           backgroundColor: bg,
           borderColor: border,

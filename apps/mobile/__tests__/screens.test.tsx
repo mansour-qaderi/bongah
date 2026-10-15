@@ -139,6 +139,20 @@ describe('AddPropertyScreen', () => {
     expect(Object.keys(prs.propertyType)).toContain('GARDEN_VILLA');
   });
 
+  it('groups the form into four titled cards, in the order a listing is described', async () => {
+    mockAuth = { status: 'signedIn', user };
+    const tree = await render(withQuery(<AddPropertyScreen {...addProps()} />));
+    const text = allText(tree.root);
+    const order = [
+      prs.add.sectionBasics,
+      prs.add.sectionPrice,
+      prs.add.sectionPlace,
+      prs.add.sectionDetails,
+    ].map(title => text.indexOf(title));
+    expect(order.every(i => i >= 0)).toBe(true);
+    expect([...order].sort((a, b) => a - b)).toEqual(order);
+  });
+
   it('validates with the shared schema before calling the API', async () => {
     mockAuth = { status: 'signedIn', user };
     const tree = await render(withQuery(<AddPropertyScreen {...addProps()} />));

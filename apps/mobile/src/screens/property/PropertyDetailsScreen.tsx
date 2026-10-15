@@ -28,7 +28,7 @@ import { ErrorView, LoadingView } from '../../components/States';
 import { formatNumber, formatPhone, sqmToJerib } from '../../i18n/format';
 import { useFormat } from '../../i18n/useFormat';
 import type { RootStackParamList } from '../../navigation/types';
-import { colors, radius, spacing } from '../../theme';
+import { colors, spacing, surfaces } from '../../theme';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'PropertyDetails'>;
 
@@ -260,14 +260,11 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   card: {
-    backgroundColor: colors.surface,
+    ...surfaces.card,
     marginHorizontal: spacing.lg,
     marginTop: spacing.lg,
     paddingHorizontal: spacing.lg,
     paddingBottom: spacing.lg,
-    borderRadius: radius.lg,
-    borderWidth: 1,
-    borderColor: colors.border,
   },
   specGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.lg },
   spec: { minWidth: '40%' },

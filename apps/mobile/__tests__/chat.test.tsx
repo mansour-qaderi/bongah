@@ -562,6 +562,51 @@ describe('ChatListScreen', () => {
     await press(tree.root, 'دفتر آریانا');
     expect(nav.navigate).toHaveBeenCalledWith('Chat', { conversation: conv });
   });
+
+  it('puts the first letter of the name in the avatar', async () => {
+    const { tree } = await list([
+      conversation({
+        last_message: message(),
+        last_message_at: '2026-10-13T08:00:00.000Z',
+      }),
+    ]);
+    expect(allText(tree.root)).toContain('د'); // دفتر آریانا
+  });
+
+  it('caps a long unread count at ۹۹ and still labels it in full', async () => {
+    const { tree } = await list([
+      conversation({
+        last_message: message(),
+        last_message_at: '2026-10-13T08:00:00.000Z',
+        unread_count: 250,
+      }),
+    ]);
+    expect(allText(tree.root)).toContain(formatNumber(99, 0));
+    expect(allText(tree.root)).not.toContain(formatNumber(250, 0));
+    const badge = tree.root.findAll(
+      node =>
+        typeof node.type === 'string' &&
+        node.props.accessibilityLabel ===
+          prs.chat.unread.replace('{{count}}', '250'),
+    );
+    expect(badge.length).toBeGreaterThan(0);
+  });
+
+  it('shows no unread badge for a read conversation', async () => {
+    const { tree } = await list([
+      conversation({
+        last_message: message(),
+        last_message_at: '2026-10-13T08:00:00.000Z',
+        unread_count: 0,
+      }),
+    ]);
+    const badge = tree.root.findAll(
+      node =>
+        typeof node.props.accessibilityLabel === 'string' &&
+        node.props.accessibilityLabel.includes('خوانده‌نشده'),
+    );
+    expect(badge).toHaveLength(0);
+  });
 });
 
 // ───────────────────────────── one conversation ─────────────────────────────

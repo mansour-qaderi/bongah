@@ -11,7 +11,7 @@ import type { CompositeScreenProps } from '@react-navigation/native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useMutation } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import type { Property } from '@bongah/shared-types';
+import type { Property, PropertyStatus } from '@bongah/shared-types';
 import { archiveProperty } from '../../api/endpoints';
 import { errorMessage } from '../../api/errors';
 import {
@@ -25,10 +25,12 @@ import AppText from '../../components/AppText';
 import Banner from '../../components/Banner';
 import Button from '../../components/Button';
 import PromotionSheet from '../../components/PromotionSheet';
-import PropertyCard from '../../components/PropertyCard';
+import { Chip, ChipRow } from '../../components/Chip';
+import Fab from '../../components/Fab';
+import ListingCard, { type ListingAction } from '../../components/ListingCard';
 import { Screen } from '../../components/Screen';
 import { EmptyView, ErrorView, LoadingView } from '../../components/States';
-import { formatDate } from '../../i18n/format';
+import { formatNumber } from '../../i18n/format';
 import type { RootStackParamList, TabParamList } from '../../navigation/types';
 import { colors, spacing } from '../../theme';
 
@@ -37,12 +39,16 @@ type Props = CompositeScreenProps<
   NativeStackScreenProps<RootStackParamList>
 >;
 
+type StatusFilter = 'ALL' | PropertyStatus;
+const STATUS_FILTERS: StatusFilter[] = ['ALL', 'ACTIVE', 'SOLD', 'ARCHIVED'];
+
 export default function MyListingsScreen({ navigation }: Props) {
   const { t } = useTranslation();
   const { status } = useAuth();
   const query = useMyProperties(status === 'signedIn');
   const properties = flattenPages(query.data);
   const [promoting, setPromoting] = useState<Property | null>(null);
+  const [filter, setFilter] = useState<StatusFilter>('ALL');
 
   const archive = useMutation({
     mutationFn: archiveProperty,
@@ -71,49 +77,36 @@ export default function MyListingsScreen({ navigation }: Props) {
       },
     ]);
 
-  const footer = (property: Property) => (
-    <View style={styles.footer}>
-      <View style={styles.statusRow}>
-        <AppText variant="caption" color={colors.textMuted}>
-          {t(`status.${property.status}`)}
-          {property.is_featured && property.featured_until
-            ? ` · ${t('my.featuredUntil', {
-                date: formatDate(property.featured_until),
-              })}`
-            : ''}
-        </AppText>
-      </View>
-      {property.status === 'ACTIVE' ? (
-        <View style={styles.actions}>
-          <Button
-            title={property.lat === null ? t('my.addPin') : t('my.movePin')}
-            variant="outline"
-            style={styles.action}
-            onPress={() =>
-              navigation.navigate('SetLocation', { propertyId: property.id })
-            }
-          />
-        </View>
-      ) : null}
-      {property.status === 'ACTIVE' ? (
-        <View style={styles.actions}>
-          <Button
-            title={t('my.promote')}
-            variant="secondary"
-            style={styles.action}
-            onPress={() => setPromoting(property)}
-          />
-          <Button
-            title={t('my.archive')}
-            variant="danger"
-            style={styles.action}
-            loading={archive.isPending && archive.variables === property.id}
-            onPress={() => confirmArchive(property)}
-          />
-        </View>
-      ) : null}
-    </View>
-  );
+  const actionsFor = (property: Property): ListingAction[] =>
+    property.status === 'ACTIVE'
+      ? [
+          {
+            label: t('my.promote'),
+            tone: 'brand',
+            onPress: () => setPromoting(property),
+          },
+          {
+            label: t('my.edit'),
+            onPress: () =>
+              navigation.navigate('AddProperty', { propertyId: property.id }),
+          },
+          {
+            label: t('my.archive'),
+            tone: 'danger',
+            loading: archive.isPending && archive.variables === property.id,
+            onPress: () => confirmArchive(property),
+          },
+        ]
+      : [];
+
+  const counts: Record<StatusFilter, number> = {
+    ALL: properties.length,
+    ACTIVE: properties.filter(p => p.status === 'ACTIVE').length,
+    SOLD: properties.filter(p => p.status === 'SOLD').length,
+    ARCHIVED: properties.filter(p => p.status === 'ARCHIVED').length,
+  };
+  const shown =
+    filter === 'ALL' ? properties : properties.filter(p => p.status === filter);
 
   let body: React.ReactNode;
   if (query.isPending) body = <LoadingView />;
@@ -127,8 +120,11 @@ export default function MyListingsScreen({ navigation }: Props) {
   else if (properties.length === 0)
     body = (
       <EmptyView message={t('my.empty')}>
+        <AppText variant="caption" color={colors.textMuted} style={styles.hint}>
+          {t('my.emptyHint')}
+        </AppText>
         <Button
-          title={t('my.add')}
+          title={t('my.newListing')}
           onPress={() => navigation.navigate('AddProperty')}
         />
       </EmptyView>
@@ -136,13 +132,37 @@ export default function MyListingsScreen({ navigation }: Props) {
   else
     body = (
       <FlatList
-        data={properties}
+        data={shown}
         keyExtractor={p => p.id}
         contentContainerStyle={styles.list}
+        ListHeaderComponent={
+          <View style={styles.header}>
+            <AppText
+              variant="label"
+              color={colors.textMuted}
+              style={styles.count}
+            >
+              {t('my.count', { count: formatNumber(properties.length, 0) })}
+            </AppText>
+            <ChipRow style={styles.filters}>
+              {STATUS_FILTERS.map(value => (
+                <Chip
+                  key={value}
+                  label={
+                    value === 'ALL' ? t('my.filterAll') : t(`status.${value}`)
+                  }
+                  count={counts[value]}
+                  selected={filter === value}
+                  onPress={() => setFilter(value)}
+                />
+              ))}
+            </ChipRow>
+          </View>
+        }
         renderItem={({ item }) => (
-          <PropertyCard
+          <ListingCard
             property={item}
-            footer={footer(item)}
+            actions={actionsFor(item)}
             onPress={() =>
               navigation.navigate('PropertyDetails', { id: item.id })
             }
@@ -170,26 +190,25 @@ export default function MyListingsScreen({ navigation }: Props) {
           <Banner kind="error" message={errorMessage(archive.error, t)} />
         </View>
       ) : null}
-      {properties.length > 0 ? (
-        <View style={styles.top}>
-          <Button
-            title={t('my.add')}
-            onPress={() => navigation.navigate('AddProperty')}
-          />
-        </View>
-      ) : null}
       {body}
+      {properties.length > 0 ? (
+        <Fab
+          label={t('my.newListing')}
+          onPress={() => navigation.navigate('AddProperty')}
+        />
+      ) : null}
       <PromotionSheet property={promoting} onClose={() => setPromoting(null)} />
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  top: { padding: spacing.lg },
   banner: { padding: spacing.lg, paddingBottom: 0 },
-  list: { paddingBottom: spacing.xl },
-  footer: { padding: spacing.md, paddingTop: 0, gap: spacing.sm },
-  statusRow: { flexDirection: 'row' },
-  actions: { flexDirection: 'row', gap: spacing.md },
-  action: { flex: 1 },
+  // Room under the last card for the floating button.
+  list: { paddingBottom: 104 },
+  header: { paddingTop: spacing.md, gap: spacing.xs },
+  count: { paddingHorizontal: spacing.lg },
+  // The chips sit in a row of their own, with room around them to breathe.
+  filters: { paddingHorizontal: spacing.lg, paddingVertical: spacing.md },
+  hint: { textAlign: 'center' },
 });

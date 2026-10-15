@@ -13,6 +13,7 @@ import { PROVINCES, type Province } from '../constants/provinces';
 import { useFormat } from '../i18n/useFormat';
 import { colors, fonts, radius, spacing } from '../theme';
 import AppText from './AppText';
+import { KeyboardAvoider } from './KeyboardAware';
 
 interface Props {
   visible: boolean;
@@ -52,43 +53,49 @@ export default function ProvincePicker({
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
       <SafeAreaView style={styles.screen}>
-        <View style={styles.header}>
-          <AppText variant="heading">{t('home.selectProvince')}</AppText>
-          <Pressable accessibilityRole="button" onPress={onClose} hitSlop={12}>
-            <AppText variant="label" color={colors.primary}>
-              {t('common.close')}
-            </AppText>
-          </Pressable>
-        </View>
-        <TextInput
-          value={query}
-          onChangeText={setQuery}
-          placeholder={t('home.searchProvince')}
-          placeholderTextColor={colors.textMuted}
-          style={styles.search}
-        />
-        <FlatList
-          data={items}
-          keyExtractor={p => p.id}
-          keyboardShouldPersistTaps="handled"
-          ListHeaderComponent={
-            allowAll && !query ? (
+        <KeyboardAvoider>
+          <View style={styles.header}>
+            <AppText variant="heading">{t('home.selectProvince')}</AppText>
+            <Pressable
+              accessibilityRole="button"
+              onPress={onClose}
+              hitSlop={12}
+            >
+              <AppText variant="label" color={colors.primary}>
+                {t('common.close')}
+              </AppText>
+            </Pressable>
+          </View>
+          <TextInput
+            value={query}
+            onChangeText={setQuery}
+            placeholder={t('home.searchProvince')}
+            placeholderTextColor={colors.textMuted}
+            style={styles.search}
+          />
+          <FlatList
+            data={items}
+            keyExtractor={p => p.id}
+            keyboardShouldPersistTaps="handled"
+            ListHeaderComponent={
+              allowAll && !query ? (
+                <Row
+                  label={t('home.allProvinces')}
+                  selected={selectedId === null}
+                  onPress={() => choose(null)}
+                />
+              ) : undefined
+            }
+            renderItem={({ item }) => (
               <Row
-                label={t('home.allProvinces')}
-                selected={selectedId === null}
-                onPress={() => choose(null)}
+                label={item.name[language]}
+                hint={item.capital?.[language]}
+                selected={item.id === selectedId}
+                onPress={() => choose(item)}
               />
-            ) : undefined
-          }
-          renderItem={({ item }) => (
-            <Row
-              label={item.name[language]}
-              hint={item.capital?.[language]}
-              selected={item.id === selectedId}
-              onPress={() => choose(item)}
-            />
-          )}
-        />
+            )}
+          />
+        </KeyboardAvoider>
       </SafeAreaView>
     </Modal>
   );

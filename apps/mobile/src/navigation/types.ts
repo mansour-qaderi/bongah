@@ -14,26 +14,26 @@ export type AuthStackParamList = {
   ProfileSetup: { referralApplied?: boolean } | undefined;
 };
 
+/** The four tabs, in the order they appear (the first is at the right in Dari and Pashto). */
 export type TabParamList = {
   Home: undefined;
-  /** Agency accounts only. */
-  Dashboard: undefined;
+  MyListings: undefined;
   /** My conversations (as buyer and as seller). */
   Messages: undefined;
-  MyListings: undefined;
   Account: undefined;
 };
 
 export type RootStackParamList = {
   Tabs: NavigatorScreenParams<TabParamList> | undefined;
   PropertyDetails: { id: string };
-  AddProperty: undefined;
-  /** Put (or move) the exact map pin of one of my listings. */
-  SetLocation: { propertyId: string };
+  /** The agency's CRM home; reached from the Account tab (agency accounts only). */
+  Dashboard: undefined;
+  /** Without a `propertyId` it posts a new listing; with one it edits that listing. */
+  AddProperty: { propertyId?: string } | undefined;
   /** `propertyId` + `purpose` preselect a promotion (from a listing's "promote" button). */
   Checkout:
     | {
-        tab?: 'subscription' | 'promotion' | 'map';
+        tab?: 'subscription' | 'promotion';
         propertyId?: string;
         purpose?: 'LADDER' | 'FEATURED_AD';
       }

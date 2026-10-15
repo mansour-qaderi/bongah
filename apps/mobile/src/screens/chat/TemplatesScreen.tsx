@@ -20,7 +20,7 @@ import { EmptyView, ErrorView, LoadingView } from '../../components/States';
 import TextField from '../../components/TextField';
 import { formatNumber } from '../../i18n/format';
 import type { RootStackParamList } from '../../navigation/types';
-import { colors, radius, spacing } from '../../theme';
+import { colors, spacing, surfaces } from '../../theme';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Templates'>;
 
@@ -264,10 +264,7 @@ function Manager({
 const styles = StyleSheet.create({
   count: { marginBottom: spacing.md },
   card: {
-    backgroundColor: colors.surface,
-    borderRadius: radius.lg,
-    borderWidth: 1,
-    borderColor: colors.border,
+    ...surfaces.card,
     padding: spacing.lg,
     marginBottom: spacing.lg,
     gap: spacing.md,

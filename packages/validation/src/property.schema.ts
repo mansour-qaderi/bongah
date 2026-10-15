@@ -6,7 +6,7 @@ import {
   PROPERTY_STATUSES,
   PROPERTY_TYPES,
 } from '@bongah/shared-types';
-import { cleanText, httpUrl, moneyAmount, placeName } from './common';
+import { cleanText, httpUrl, moneyAmount, normalizePlaceName, placeName } from './common';
 
 // Field names are snake_case: they are the public wire format of the property endpoints.
 
@@ -23,9 +23,27 @@ export const longitude = z
  * No `.default()` anywhere in this shape: the update schema derives from it with `.partial()`,
  * and a default would silently overwrite stored values on every PATCH.
  */
+/**
+ * A place name that may be left blank: '' means "not given". Used for the parts of an address a pin can stand in
+ * for. Anything typed must still look like a name (2+ characters). Whether blank is allowed at all is decided by
+ * the listing as a whole (see createPropertySchema), because it depends on whether a pin was chosen.
+ */
+const optionalPlace = (max: number) =>
+  z
+    .string()
+    .transform(normalizePlaceName)
+    .pipe(
+      z
+        .string()
+        .max(max, `At most ${max} characters`)
+        .refine((value) => value === '' || value.length >= 2, 'Too short'),
+    )
+    .optional();
+
 const propertyShape = {
   title: cleanText(3, 150),
-  description: cleanText(1, 5000),
+  /** Optional: a listing can be published without a description. Stored as '' when left out. */
+  description: cleanText(0, 5000).optional(),
   type: z.enum(PROPERTY_TYPES),
   deal_type: z.enum(DEAL_TYPES),
   price: moneyAmount,
@@ -34,10 +52,20 @@ const propertyShape = {
   bedrooms: z.int().min(0).max(50).nullish(),
   bathrooms: z.int().min(0).max(50).nullish(),
   province: placeName(60),
-  district: placeName(80),
-  neighborhood: placeName(80),
-  address: cleanText(3, 300),
-  /** Optional pin, and only allowed for accounts entitled to one (checked by the API, not here). */
+  /** Required unless the listing has a pin (see createPropertySchema). */
+  district: optionalPlace(80),
+  neighborhood: optionalPlace(80),
+  address: z
+    .string()
+    .transform((value) => value.replace(/\s+/g, ' ').trim())
+    .pipe(
+      z
+        .string()
+        .max(300, 'At most 300 characters')
+        .refine((value) => value === '' || value.length >= 3, 'At least 3 characters'),
+    )
+    .optional(),
+  /** Optional pin. Free for everyone. With one, district / neighbourhood / address may be left blank. */
   lat: latitude.optional(),
   lng: longitude.optional(),
   images: z.array(httpUrl).max(20).optional(),
@@ -52,6 +80,19 @@ export const createPropertySchema = z
   .refine((value) => (value.lat === undefined) === (value.lng === undefined), {
     message: 'lat and lng must be sent together',
     path: ['lat'],
+  })
+  // Where the listing is: a pin on the map, OR the place written out. A pin makes the written parts optional.
+  .superRefine((value, ctx) => {
+    if (value.lat !== undefined) return;
+    for (const field of ['district', 'neighborhood', 'address'] as const) {
+      if (!value[field]) {
+        ctx.addIssue({
+          code: 'custom',
+          message: 'Required unless a map location is chosen',
+          path: [field],
+        });
+      }
+    }
   });
 export type CreatePropertyInput = z.output<typeof createPropertySchema>;
 
@@ -96,6 +137,16 @@ export const paginationShape = {
 export const paginationQuerySchema = z.strictObject(paginationShape);
 export type PaginationQuery = z.output<typeof paginationQuerySchema>;
 
+/** A decimal degree as the app writes it in a URL: "34.5281", "-70.1". At most 8 decimals (about a millimetre). */
+const queryDegrees = (limit: number) =>
+  z
+    .string()
+    .regex(/^-?\d{1,3}(\.\d{1,8})?$/, 'Must be a decimal degree')
+    .transform(Number)
+    .pipe(z.number().min(-limit).max(limit));
+
+const AREA_KEYS = ['min_lat', 'max_lat', 'min_lng', 'max_lng'] as const;
+
 /** GET /properties. Unknown parameters are rejected so a misspelled filter can't silently return everything. */
 export const listPropertiesQuerySchema = z
   .strictObject({
@@ -113,6 +164,27 @@ export const listPropertiesQuerySchema = z
     max_price: queryMoney.optional(),
     /** Required with min_price/max_price: 500 AFGHANI and 500 USD are not comparable. */
     currency: z.enum(CURRENCIES).optional(),
+    /**
+     * The part of the map on screen: only listings whose exact pin is inside this box. All four or none.
+     * (Listings without a pin are never inside a box, so an area implies has_location=true.)
+     */
+    min_lat: queryDegrees(90).optional(),
+    max_lat: queryDegrees(90).optional(),
+    min_lng: queryDegrees(180).optional(),
+    max_lng: queryDegrees(180).optional(),
+  })
+  .refine((q) => AREA_KEYS.every((key) => q[key] !== undefined) || AREA_KEYS.every((key) => q[key] === undefined), {
+    message: 'min_lat, max_lat, min_lng and max_lng must be given together',
+    path: ['min_lat'],
+  })
+  // (A partly given area is already reported above; this only compares a complete one.)
+  .refine((q) => !AREA_KEYS.every((key) => q[key] !== undefined) || (q.min_lat! <= q.max_lat! && q.min_lng! <= q.max_lng!), {
+    message: 'min_lat/min_lng must not be greater than max_lat/max_lng',
+    path: ['min_lat'],
+  })
+  .refine((q) => q.min_lat === undefined || q.has_location !== false, {
+    message: 'An area only contains listings that have a pin, so it cannot be combined with has_location=false',
+    path: ['has_location'],
   })
   .refine((q) => (q.min_price === undefined && q.max_price === undefined) || q.currency, {
     message: 'currency is required when filtering by price',

@@ -23,7 +23,7 @@ import { Screen } from '../../components/Screen';
 import { EmptyView, ErrorView, LoadingView } from '../../components/States';
 import { formatDate, formatNumber } from '../../i18n/format';
 import type { RootStackParamList } from '../../navigation/types';
-import { colors, radius, spacing } from '../../theme';
+import { colors, radius, spacing, surfaces } from '../../theme';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Referral'>;
 
@@ -142,6 +142,7 @@ function CodeCard({ data }: { data: ReferralSummary }) {
       </AppText>
       <AppText
         selectable
+        latinDigits
         accessibilityLabel={t('referral.yourCode')}
         style={styles.code}
       >
@@ -248,11 +249,8 @@ function RewardRow({ reward }: { reward: RewardItem }) {
 const styles = StyleSheet.create({
   content: { padding: spacing.lg, paddingBottom: spacing.xxl, gap: spacing.md },
   codeCard: {
+    ...surfaces.card,
     padding: spacing.lg,
-    borderRadius: radius.lg,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.surface,
     alignItems: 'center',
     gap: spacing.md,
   },
@@ -269,24 +267,18 @@ const styles = StyleSheet.create({
   },
   grid: { flexDirection: 'row', gap: spacing.md },
   tile: {
+    ...surfaces.tile,
     flex: 1,
     padding: spacing.md,
-    borderRadius: radius.lg,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.surface,
     alignItems: 'center',
   },
   sectionTitle: { marginTop: spacing.md },
   row: {
+    ...surfaces.tile,
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.md,
     padding: spacing.md,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.surface,
   },
   rowText: { flex: 1, gap: spacing.xs },
   ltr: { writingDirection: 'ltr', textAlign: 'left' },

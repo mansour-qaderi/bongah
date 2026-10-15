@@ -68,13 +68,13 @@ const summary = (overrides: Record<string, unknown> = {}) => ({
   invited: [
     {
       name: 'زرغونه احمدی',
-      phone_masked: '+9370••••567',
+      phone_masked: '+۹۳۷۰••••۵۶۷',
       joined_at: '2026-10-12T08:00:00Z',
       reward_granted: true,
     },
     {
       name: null,
-      phone_masked: '+9377••••901',
+      phone_masked: '+۹۳۷۷••••۹۰۱',
       joined_at: '2026-10-10T08:00:00Z',
       reward_granted: false,
     },
@@ -187,9 +187,9 @@ describe('ReferralScreen', () => {
     }
     // Friends: a name or a fallback, the masked number, the date and whether I got a reward.
     expect(text).toContain('زرغونه احمدی');
-    expect(text).toContain('+9370••••567');
+    expect(text).toContain('+۹۳۷۰••••۵۶۷');
     expect(text).toContain(prs.referral.unnamedFriend);
-    expect(text).toContain('+9377••••901');
+    expect(text).toContain('+۹۳۷۷••••۹۰۱');
     expect(text).toContain(
       prs.referral.joinedOn.replace(
         '{{date}}',

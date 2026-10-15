@@ -87,6 +87,7 @@ const styles = StyleSheet.create({
     marginBottom: spacing.md,
     borderWidth: 1,
     borderColor: colors.border,
+    ...shadow.card,
   },
   featured: { borderColor: colors.accent, borderWidth: 2 },
   imageBox: { height: 170, backgroundColor: colors.primarySoft },

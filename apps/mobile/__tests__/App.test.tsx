@@ -65,13 +65,22 @@ test('the app opens on the map in Dari, and the list shows Persian digits and th
   await flush();
   await flush();
 
-  // Map first: a marker with the short price (Afghani sign) and who is selling.
+  // Map first: a marker that says what it is, what for, the short price (Afghani sign) and who is selling.
   let text = allText(tree.root);
-  expect(text).toContain(prs.app.tagline);
-  expect(text).toContain('۱٫۲ میلیون ؋');
-  expect(text).toContain(prs.property.owner);
+  const spoken = tree.root
+    .findAll(
+      n =>
+        typeof n.props.accessibilityLabel === 'string' &&
+        n.props.accessibilityLabel.includes('۱٫۲ میلیون ؋'),
+    )
+    .map(n => n.props.accessibilityLabel as string);
+  expect(spoken.length).toBeGreaterThan(0);
+  expect(spoken[0]).toContain(prs.propertyType.APARTMENT);
+  expect(spoken[0]).toContain(prs.dealType.SALE);
+  expect(spoken[0]).toContain(prs.property.owner);
+  // Only what is on screen is asked for: an area of the map, 50 to a page.
   expect(fetchMock.mock.calls[0][0]).toMatch(
-    /\/properties\?has_location=true&page=1&limit=20$/,
+    /\/properties\?min_lat=[\d.]+&max_lat=[\d.]+&min_lng=[\d.]+&max_lng=[\d.]+&page=1&limit=50$/,
   );
 
   // The list one tap away shows the full price.
@@ -86,8 +95,47 @@ test('the app opens on the map in Dari, and the list shows Persian digits and th
   }
   text = allText(tree.root);
   expect(text).toContain(property.title);
-  expect(text).toContain('۱٬۲۰۰٬۰۰۰ افغانی');
+  expect(text).toContain('۱٬۲۰۰٬۰۰۰ ؋');
   expect(text).toContain('۱۲۰ متر مربع');
+
+  ReactTestRenderer.act(() => tree.unmount());
+});
+
+test('the bottom bar has exactly four tabs, in this order: home, my listings, messages, my account', async () => {
+  (globalThis as unknown as { fetch: unknown }).fetch = jest.fn(
+    async (url: string) =>
+      url.includes('/properties?')
+        ? jsonResponse(200, {
+            data: [],
+            meta: { page: 1, limit: 50, total: 0, total_pages: 0 },
+          })
+        : jsonResponse(200, []),
+  );
+  const tree = await render(<App />);
+  await flush();
+
+  const tabs = tree.root
+    .findAll(
+      n => n.props.accessibilityRole === 'tab' && typeof n.type === 'string',
+    )
+    .map(n => ({
+      id: n.props.testID as string,
+      label: n.props.accessibilityLabel as string,
+    }));
+  expect(tabs).toEqual([
+    { id: 'tab-Home', label: prs.nav.home },
+    { id: 'tab-MyListings', label: prs.nav.myListings },
+    { id: 'tab-Messages', label: prs.nav.messages },
+    { id: 'tab-Account', label: prs.nav.account },
+  ]);
+  // One profile entry only: no account button left over on the map.
+  expect(
+    tree.root.findAll(
+      n =>
+        n.props.accessibilityLabel === prs.nav.account &&
+        typeof n.type === 'string',
+    ),
+  ).toHaveLength(1);
 
   ReactTestRenderer.act(() => tree.unmount());
 });
