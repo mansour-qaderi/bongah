@@ -78,15 +78,17 @@ describe('createPropertySchema', () => {
     expect(createPropertySchema.safeParse({ ...noPin, lng: 69.1 }).success).toBe(false);
   });
 
-  it('needs the written place while there is no pin, and makes it optional once there is one', () => {
+  it('needs the written address while there is no pin, and makes it optional once there is one', () => {
     const { lat: _lat, lng: _lng, district: _d, neighborhood: _n, address: _a, ...bare } = valid;
-    // A pin stands in for the district, neighbourhood and street.
+    // A pin stands in for the address (and fills in the district and neighbourhood).
     expect(createPropertySchema.safeParse({ ...bare, lat: 34.5, lng: 69.1 }).success).toBe(true);
-    // Without one, each of the three is missing for a reason the app can show on that field.
+    // Without one, the address is what is missing, for a reason the app can show on that field.
     const noPin = createPropertySchema.safeParse(bare);
     expect(noPin.success).toBe(false);
-    expect(fields(noPin)).toEqual(expect.arrayContaining(['district', 'neighborhood', 'address']));
-    // Giving all three is enough on its own.
+    expect(fields(noPin)).toEqual(['address']);
+    // The address on its own is enough: district and neighbourhood are never required.
+    expect(createPropertySchema.safeParse({ ...bare, address: 'Zaranj, district 5, next to ABC hospital' }).success).toBe(true);
+    // Giving the structured parts as well is fine.
     const written = { district: 'Shar-e-Naw', neighborhood: 'Qala-e-Fathullah', address: 'Street 4' };
     expect(createPropertySchema.safeParse({ ...bare, ...written }).success).toBe(true);
     // Empty text is the same as missing.

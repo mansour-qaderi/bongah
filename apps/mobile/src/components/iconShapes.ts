@@ -102,7 +102,18 @@ export type IconName =
   | 'plus'
   | 'close'
   | 'list'
-  | 'info';
+  | 'info'
+  | 'share'
+  | 'camera'
+  | 'search'
+  | 'bookmark'
+  | 'bookmarkFilled'
+  // Details of a listing
+  | 'bed'
+  | 'bath'
+  | 'shower'
+  | 'area'
+  | 'coin';
 
 export const ICON_GRID = 24;
 
@@ -233,4 +244,84 @@ export const ICON_SHAPES: Record<IconName, Shape[]> = {
   ],
   // The letter "i" in a circle.
   info: [ring(12, 12, 19), dot(12, 7.6, 1.9), bar(11.2, 10.8, 1.6, 6.4)],
+  // The share sheet's glyph: an arrow leaving an open tray.
+  share: [
+    frame(4.5, 10, 15, 11, 2.5, [0, 1, 1, 1]),
+    bar(11.1, 3.4, 1.8, 10.9),
+    { x: 7.8, y: 4.9, w: 5.2, h: 1.8, r: 0.9, fill: 'color', rotate: -45 },
+    { x: 11, y: 4.9, w: 5.2, h: 1.8, r: 0.9, fill: 'color', rotate: 45 },
+  ],
+  // A camera: a body with a lens and a small bump on top.
+  camera: [
+    frame(8.5, 4, 7, 4, 1.5, [1, 1, 0, 1]),
+    frame(3, 7, 18, 13.5, 3),
+    ring(12, 13.7, 6.4),
+  ],
+  // A magnifying glass: a lens and a short handle.
+  search: [
+    ring(10.5, 10.5, 13),
+    { x: 14, y: 19.1, w: 8, h: 1.8, r: 0.9, fill: 'color', rotate: 45 },
+  ],
+  // A ribbon (a saved listing): an open frame with a notch cut into its foot. The notch is a turned square's corner.
+  bookmark: [
+    frame(6, 3, 12, 12, 2, [1, 1, 0, 1]),
+    {
+      x: 7.755,
+      y: 10.755,
+      w: 8.49,
+      h: 8.49,
+      r: 0.8,
+      stroke: [0, 1, 1, 0],
+      rotate: 45,
+    },
+  ],
+  // The same ribbon filled in: saved.
+  bookmarkFilled: [
+    { x: 6, y: 3, w: 12, h: 12, r: [2, 2, 0, 0], fill: 'color' },
+    {
+      x: 7.755,
+      y: 10.755,
+      w: 8.49,
+      h: 8.49,
+      r: 0.8,
+      fill: 'color',
+      rotate: 45,
+    },
+  ],
+  // A bed seen from the side: headboard, mattress, a pillow and a foot post.
+  bed: [
+    bar(3, 5.5, 1.7, 14),
+    frame(4.7, 11.5, 16.3, 5, 1.5),
+    bar(6.8, 8.4, 5, 2.4),
+    bar(19.3, 16.5, 1.7, 3),
+  ],
+  // A bath: a tap over a tub on two feet.
+  bath: [
+    bar(5, 3.5, 1.7, 6),
+    bar(5, 3.5, 5, 1.7),
+    bar(2.5, 10, 19, 1.7),
+    { x: 4, y: 11.7, w: 16, h: 6, r: [0, 0, 5, 5], stroke: [0, 1, 1, 1] },
+    bar(6.5, 17.7, 1.7, 2.6),
+    bar(15.8, 17.7, 1.7, 2.6),
+  ],
+  // A shower: a rose over a pipe with five drops falling from it.
+  shower: [
+    bar(11.2, 1.8, 1.6, 3),
+    { x: 4.5, y: 4.5, w: 15, h: 8, r: [7.5, 7.5, 1, 1], stroke: true },
+    bar(7.2, 15, 1.5, 3),
+    bar(11.25, 15, 1.5, 3),
+    bar(15.3, 15, 1.5, 3),
+    bar(9.2, 19.2, 1.5, 2.6),
+    bar(13.3, 19.2, 1.5, 2.6),
+  ],
+  // A ruler: the size of a property.
+  area: [
+    frame(2.5, 7.5, 19, 9, 2),
+    bar(6.4, 9.2, 1.2, 3.6),
+    bar(10.4, 9.2, 1.2, 2.2),
+    bar(14.4, 9.2, 1.2, 3.6),
+    bar(18, 9.2, 1.2, 2.2),
+  ],
+  // A coin: a ring within a ring.
+  coin: [ring(12, 12, 19), ring(12, 12, 10)],
 };

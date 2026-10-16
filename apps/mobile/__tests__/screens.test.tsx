@@ -61,6 +61,7 @@ const navigation = () => ({
   replace: jest.fn(),
   goBack: jest.fn(),
   getParent: jest.fn(),
+  addListener: jest.fn(() => () => undefined),
 });
 
 describe('PhoneScreen', () => {

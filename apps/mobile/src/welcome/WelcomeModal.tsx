@@ -3,7 +3,7 @@ import { Modal, Pressable, StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import AppText from '../components/AppText';
 import Button from '../components/Button';
-import { colors, radius, shadow, spacing } from '../theme';
+import { colors, radius, spacing } from '../theme';
 
 interface Props {
   visible: boolean;
@@ -31,7 +31,7 @@ export default function WelcomeModal({ visible, quote, onStart, onClose }: Props
     >
       <View style={styles.backdrop}>
         <View
-          style={[styles.card, shadow.card]}
+          style={styles.card}
           accessibilityViewIsModal
           testID="welcome-card"
         >
@@ -87,7 +87,9 @@ const styles = StyleSheet.create({
   sun: { fontSize: 44, lineHeight: 56, textAlign: 'center' },
   center: { textAlign: 'center' },
   quoteBox: {
-    backgroundColor: colors.accentSoft,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
     borderRadius: radius.md,
     padding: spacing.lg,
     marginVertical: spacing.sm,

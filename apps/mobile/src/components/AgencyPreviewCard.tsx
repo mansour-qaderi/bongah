@@ -3,7 +3,7 @@ import { Pressable, StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import type { AgencyMapPin } from '@bongah/shared-types';
 import { formatNumber } from '../i18n/format';
-import { colors, radius, shadow, spacing } from '../theme';
+import { colors, radius, spacing } from '../theme';
 import AppText from './AppText';
 
 interface Props {
@@ -18,7 +18,7 @@ interface Props {
 export default function AgencyPreviewCard({ agency, onClose }: Props) {
   const { t } = useTranslation();
   return (
-    <View style={[styles.sheet, shadow.card]} testID="agency-preview">
+    <View style={styles.sheet} testID="agency-preview">
       <View style={styles.icon}>
         <AppText variant="title">🏛️</AppText>
       </View>
@@ -62,13 +62,15 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
     borderTopLeftRadius: radius.lg,
     borderTopRightRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
     padding: spacing.lg,
   },
   icon: {
     width: 64,
     height: 64,
     borderRadius: 32,
-    backgroundColor: colors.primarySoft,
+    backgroundColor: colors.neutralSoft,
     alignItems: 'center',
     justifyContent: 'center',
   },

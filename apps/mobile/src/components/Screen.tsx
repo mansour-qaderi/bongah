@@ -1,7 +1,7 @@
 import React from 'react';
 import { StyleSheet, type StyleProp, type ViewStyle } from 'react-native';
 import { SafeAreaView, type Edge } from 'react-native-safe-area-context';
-import { colors, gradients, spacing } from '../theme';
+import { colors, spacing } from '../theme';
 import { KeyboardAwareScrollView } from './KeyboardAware';
 
 interface Props {
@@ -41,7 +41,6 @@ const styles = StyleSheet.create({
   screen: {
     flex: 1,
     backgroundColor: colors.background,
-    backgroundImage: gradients.screen,
   },
   content: { padding: spacing.lg, paddingBottom: spacing.xxl },
 });

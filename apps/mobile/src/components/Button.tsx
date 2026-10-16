@@ -6,7 +6,7 @@ import {
   type StyleProp,
   type ViewStyle,
 } from 'react-native';
-import { colors, radius, shadow, spacing } from '../theme';
+import { colors, radius, spacing } from '../theme';
 import AppText from './AppText';
 
 type Variant = 'primary' | 'secondary' | 'outline' | 'danger';
@@ -26,17 +26,14 @@ const palette: Record<Variant, { bg: string; fg: string; border: string }> = {
     fg: colors.textOnPrimary,
     border: colors.primary,
   },
+  // A quiet button: white with a 1 px grey edge and emerald words (resend, change number...).
   secondary: {
-    bg: colors.primarySoft,
-    fg: colors.primaryDark,
-    border: colors.primarySoft,
+    bg: colors.surface,
+    fg: colors.primary,
+    border: colors.border,
   },
   outline: { bg: 'transparent', fg: colors.primary, border: colors.primary },
-  danger: {
-    bg: colors.dangerSoft,
-    fg: colors.danger,
-    border: colors.dangerSoft,
-  },
+  danger: { bg: colors.surface, fg: colors.danger, border: colors.danger },
 };
 
 export default function Button({
@@ -57,7 +54,6 @@ export default function Button({
       onPress={onPress}
       style={({ pressed }) => [
         styles.base,
-        variant === 'primary' && !inactive ? shadow.card : null,
         {
           backgroundColor: bg,
           borderColor: border,

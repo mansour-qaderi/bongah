@@ -62,9 +62,6 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     backgroundColor: colors.surface,
   },
-  selected: {
-    borderColor: colors.primary,
-    backgroundColor: colors.primarySoft,
-  },
+  selected: { borderColor: colors.primary },
   text: { flex: 1 },
 });

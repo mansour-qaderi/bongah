@@ -2,7 +2,7 @@ import type { Currency } from '@bongah/shared-types';
 import { toAsciiDigits } from '@bongah/validation';
 
 const PERSIAN_DIGITS = '۰۱۲۳۴۵۶۷۸۹';
-const THOUSANDS_SEPARATOR = '٬';
+const THOUSANDS_SEPARATOR = ',';
 const DECIMAL_SEPARATOR = '٫';
 
 /** One jerib is 2,000 square metres (the Afghan land measure). */
@@ -27,7 +27,7 @@ export function toPersianDigits(input: string | number): string {
 /** Persian or Arabic-Indic digits → 0-9. The form the API and the validators expect. */
 export { toAsciiDigits as toLatinDigits };
 
-/** 1234567.5 → ۱٬۲۳۴٬۵۶۷٫۵ (at most `maxFraction` decimals, no trailing zeros). */
+/** 1234567.5 → ۱,۲۳۴,۵۶۷٫۵ (at most `maxFraction` decimals, no trailing zeros). */
 export function formatNumber(value: number, maxFraction = 2): string {
   if (!Number.isFinite(value)) return '';
   const factor = 10 ** maxFraction;
@@ -52,15 +52,24 @@ export const CURRENCY_SYMBOLS: Record<Currency, string> = {
 };
 
 /**
- * An amount of money the way the app shows it everywhere: Persian digits, ٬ between thousands, then the sign.
- * `formatCurrency(1200000)` is "۱٬۲۰۰٬۰۰۰ ؋". Afghani unless told otherwise.
+ * The number part of a price: Persian digits grouped in thousands with plain commas (1200000 is "۱,۲۰۰,۰۰۰").
+ * It is the same grouping `formatNumber` uses, so a figure reads the same everywhere in the app.
+ */
+export function formatAmount(amount: number, maxFraction = 2): string {
+  return formatNumber(amount, maxFraction);
+}
+
+/**
+ * An amount of money as plain text, the way the app writes it in sentences and helper lines:
+ * `formatCurrency(1200000)` is "۱,۲۰۰,۰۰۰ ؋". Afghani unless told otherwise. (Where the sign can be styled, the
+ * `Price` component draws the same two parts with a smaller sign.)
  */
 export function formatCurrency(
   amount: number,
   currency: Currency = 'AFGHANI',
 ): string {
   if (!Number.isFinite(amount)) return '';
-  return `${formatNumber(amount)} ${CURRENCY_SYMBOLS[currency]}`;
+  return `${formatAmount(amount)} ${CURRENCY_SYMBOLS[currency]}`;
 }
 
 export type AmountUnit = 'billion' | 'million' | 'thousand';

@@ -203,7 +203,9 @@ function InviteeRow({ friend }: { friend: ReferralInvitee }) {
       >
         <AppText
           variant="caption"
-          color={friend.reward_granted ? colors.success : colors.textMuted}
+          color={
+            friend.reward_granted ? colors.textOnPrimary : colors.textMuted
+          }
         >
           {friend.reward_granted
             ? t('referral.rewardGranted')
@@ -235,7 +237,7 @@ function RewardRow({ reward }: { reward: RewardItem }) {
       >
         <AppText
           variant="caption"
-          color={reward.used_at ? colors.textMuted : colors.success}
+          color={reward.used_at ? colors.textMuted : colors.textOnPrimary}
         >
           {reward.used_at
             ? t('referral.usedOn', { date: formatDate(reward.used_at) })
@@ -287,6 +289,6 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.xs,
     borderRadius: radius.pill,
   },
-  pillGood: { backgroundColor: colors.successSoft },
-  pillMuted: { backgroundColor: colors.border },
+  pillGood: { backgroundColor: colors.primary },
+  pillMuted: { backgroundColor: colors.neutralSoft },
 });

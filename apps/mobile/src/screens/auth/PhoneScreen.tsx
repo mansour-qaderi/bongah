@@ -107,6 +107,7 @@ export default function PhoneScreen({ navigation }: Props) {
           setReferral(value);
           setReferralError(null);
         }}
+        placeholder={t('auth.referralPlaceholder')}
         autoCapitalize="characters"
         autoCorrect={false}
         maxLength={24}

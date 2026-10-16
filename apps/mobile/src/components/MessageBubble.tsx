@@ -171,11 +171,16 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.sm,
     gap: spacing.xs,
   },
-  mine: { backgroundColor: colors.primarySoft },
-  theirs: {
+  // Flat chat bubbles: mine is white with an emerald edge, theirs is plain grey. Dark ink reads on both.
+  mine: {
     backgroundColor: colors.surface,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: colors.primary,
+  },
+  theirs: {
+    backgroundColor: colors.neutralSoft,
+    borderWidth: 1,
+    borderColor: colors.neutralSoft,
   },
   image: {
     width: 220,

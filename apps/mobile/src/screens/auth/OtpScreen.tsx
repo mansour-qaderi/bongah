@@ -10,7 +10,7 @@ import AppText from '../../components/AppText';
 import Banner from '../../components/Banner';
 import Button from '../../components/Button';
 import { ScrollScreen } from '../../components/Screen';
-import TextField from '../../components/TextField';
+import OtpInput from '../../components/OtpInput';
 import { formatPhone, toPersianDigits } from '../../i18n/format';
 import { closeAuth } from '../../navigation/closeAuth';
 import type { AuthStackParamList } from '../../navigation/types';
@@ -119,22 +119,36 @@ export default function OtpScreen({ navigation, route }: Props) {
         />
       ) : null}
 
-      <TextField
+      <AppText variant="label" style={styles.codeLabel}>
+        {t('auth.otpLabel')}
+      </AppText>
+      <OtpInput
         label={t('auth.otpLabel')}
+        length={OTP_LENGTH}
         value={code}
-        onChangeText={value => {
+        invalid={fieldError !== null}
+        onChange={value => {
           setCode(value);
           setFieldError(null);
         }}
-        keyboardType="number-pad"
-        textContentType="oneTimeCode"
-        autoComplete="sms-otp"
-        maxLength={OTP_LENGTH}
-        ltr
-        style={styles.codeInput}
-        error={fieldError}
-        onSubmitEditing={() => submit()}
       />
+      {fieldError ? (
+        <AppText
+          variant="caption"
+          color={colors.danger}
+          style={styles.codeNote}
+        >
+          {fieldError}
+        </AppText>
+      ) : (
+        <AppText
+          variant="caption"
+          color={colors.textMuted}
+          style={styles.codeNote}
+        >
+          {t('auth.otpPasteHint')}
+        </AppText>
+      )}
       <Button
         title={t('auth.verify')}
         onPress={() => submit()}
@@ -166,6 +180,7 @@ export default function OtpScreen({ navigation, route }: Props) {
 const styles = StyleSheet.create({
   content: { paddingTop: spacing.xl },
   hint: { marginBottom: spacing.xl },
-  codeInput: { fontSize: 24, letterSpacing: 8, textAlign: 'center' },
+  codeLabel: { marginBottom: spacing.sm },
+  codeNote: { marginTop: spacing.sm, marginBottom: spacing.xl },
   secondary: { marginTop: spacing.md },
 });

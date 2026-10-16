@@ -1,7 +1,9 @@
 import React from 'react';
+import { StyleSheet, TextInput } from 'react-native';
 import ReactTestRenderer from 'react-test-renderer';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { initI18n } from '../src/i18n';
+import { toLatinDigits } from '../src/i18n/format';
 import prs from '../src/i18n/locales/prs.json';
 import {
   allText,
@@ -82,6 +84,7 @@ const navigation = () => ({
   replace: jest.fn(),
   goBack: jest.fn(),
   setOptions: jest.fn(),
+  addListener: jest.fn(() => () => undefined),
 });
 /** Renders a screen with a fake navigator (and route) inside a fresh query cache. */
 const screenElement = <P extends object>(
@@ -191,22 +194,39 @@ const KABUL_SPOT: Reverse = {
   },
 };
 
-/** Fills in everything the form requires when there is no pin: the written address included. */
+const WRITTEN_ADDRESS = 'کابل، ناحیه ۵، پهلوی شفاخانه ABC، داخل کوچه موتررو';
+/** One tap on the + of a stepper (it is found by its accessibility label, "تعداد اتاق: افزایش"). */
+const plus = (root: ReactTestRenderer.ReactTestInstance, label: string) =>
+  act(async () => {
+    root
+      .find(
+        n =>
+          typeof n.props.onPress === 'function' &&
+          n.props.accessibilityLabel === `${label}: ${prs.common.increase}`,
+      )
+      .props.onPress();
+  });
+/** One tap on + for the bedrooms and the bathrooms: the form will not go without them. */
+async function addRooms(root: ReactTestRenderer.ReactTestInstance) {
+  await plus(root, prs.add.bedrooms);
+  await plus(root, prs.add.bathrooms);
+}
+/** Fills in everything the form requires when there is no pin: the one written address included. */
 async function fillForm(root: ReactTestRenderer.ReactTestInstance) {
   await type(root, prs.add.titleField, 'آپارتمان سه‌خوابه');
   await type(root, prs.add.price, '1200000');
   await type(root, prs.add.area, '120');
-  await type(root, prs.add.district, 'شهر نو');
-  await type(root, prs.add.neighborhood, 'قلعه فتح‌الله');
-  await type(root, prs.add.address, 'سرک چهارم، نزدیک پارک');
+  await addRooms(root);
+  await type(root, prs.add.address, WRITTEN_ADDRESS);
   await press(root, prs.home.selectProvince); // opens the province list
   await press(root, 'کابل');
 }
-/** The same, up to and including the basics, but no address at all: the pin is meant to supply it. */
+/** The same, up to and including the basics and the rooms, but no address at all: the pin is meant to supply it. */
 async function fillBasics(root: ReactTestRenderer.ReactTestInstance) {
   await type(root, prs.add.titleField, 'آپارتمان سه‌خوابه');
   await type(root, prs.add.price, '1200000');
   await type(root, prs.add.area, '120');
+  await addRooms(root);
 }
 const optional = (label: string) => `${label} (${prs.common.optional})`;
 const posted = () =>
@@ -255,6 +275,65 @@ describe('AddPropertyScreen: location is free and has two ways in', () => {
     expect(allText(tree.root)).toContain(prs.add.required);
   });
 
+  it('asks for one address, with an example in it, instead of separate district and neighbourhood boxes', async () => {
+    answerGeocoder(KABUL_SPOT, routes);
+    const tree = await render(screenElement(AddPropertyScreen, navigation()));
+    await settle();
+    const field = inputLabelled(tree.root, prs.add.address);
+    expect(field.props.placeholder).toBe(prs.add.addressPlaceholder);
+    expect(field.props.multiline).toBe(true);
+    // The old boxes ("ناحیه یا ولسوالی", "محله") are gone.
+    expect(() => inputLabelled(tree.root, 'ناحیه یا ولسوالی')).toThrow();
+    expect(() => inputLabelled(tree.root, 'محله')).toThrow();
+  });
+
+  it('will not send a house without its bedrooms and bathrooms, and marks both as required', async () => {
+    answerGeocoder(KABUL_SPOT, routes);
+    const tree = await render(screenElement(AddPropertyScreen, navigation()));
+    await settle();
+    await type(tree.root, prs.add.titleField, 'آپارتمان سه‌خوابه');
+    await type(tree.root, prs.add.price, '1200000');
+    await type(tree.root, prs.add.area, '120');
+    await type(tree.root, prs.add.address, WRITTEN_ADDRESS);
+    await press(tree.root, prs.home.selectProvince);
+    await press(tree.root, 'کابل');
+    expect(allText(tree.root)).toMatch(
+      new RegExp(`${prs.add.bedrooms}\\s+\\*`),
+    );
+    expect(allText(tree.root)).toMatch(
+      new RegExp(`${prs.add.bathrooms}\\s+\\*`),
+    );
+
+    await press(tree.root, prs.add.submit);
+    await settle();
+    expect(posted()).toBeUndefined();
+    // Both counts say so, each under its own tile.
+    const text = allText(tree.root);
+    expect(text.split(prs.add.required).length - 1).toBeGreaterThanOrEqual(2);
+
+    await addRooms(tree.root);
+    await press(tree.root, prs.add.submit);
+    await settle();
+    expect(posted()).toBeDefined();
+  });
+
+  it('does not ask for rooms on a plot of land', async () => {
+    answerGeocoder(KABUL_SPOT, routes);
+    const tree = await render(screenElement(AddPropertyScreen, navigation()));
+    await settle();
+    await press(tree.root, prs.propertyType.LAND);
+    expect(allText(tree.root)).not.toContain(prs.add.bedrooms);
+    await type(tree.root, prs.add.titleField, 'زمین رهایشی');
+    await type(tree.root, prs.add.price, '900000');
+    await type(tree.root, prs.add.area, '300');
+    await type(tree.root, prs.add.address, WRITTEN_ADDRESS);
+    await press(tree.root, prs.home.selectProvince);
+    await press(tree.root, 'کابل');
+    await press(tree.root, prs.add.submit);
+    await settle();
+    expect(posted()).toBeDefined();
+  });
+
   it('lets them write the address and publish without any pin', async () => {
     answerGeocoder(KABUL_SPOT, routes);
     const tree = await render(screenElement(AddPropertyScreen, navigation()));
@@ -265,9 +344,14 @@ describe('AddPropertyScreen: location is free and has two ways in', () => {
 
     expect(posted()?.body).toMatchObject({
       province: 'کابل',
-      district: 'شهر نو',
-      neighborhood: 'قلعه فتح‌الله',
+      // What a field hands the screen always has plain 0-9; it is shown with Persian digits again.
+      address: toLatinDigits(WRITTEN_ADDRESS),
+      bedrooms: 1,
+      bathrooms: 1,
     });
+    // The district and neighbourhood are not asked for; a written address carries them in its own words.
+    expect(posted()?.body.district ?? '').toBe('');
+    expect(posted()?.body.neighborhood ?? '').toBe('');
     expect(posted()?.body).not.toHaveProperty('lat');
     expect(posted()?.body).not.toHaveProperty('lng');
     expect(geocoderCalls()).toHaveLength(0); // no pin, nothing to ask
@@ -289,15 +373,10 @@ describe('AddPropertyScreen: location is free and has two ways in', () => {
     expect(String(geocoderCalls()[0][0])).toContain('lat=34.5');
     expect(String(geocoderCalls()[0][0])).toContain('lon=69.1');
     expect(allText(tree.root)).toContain(prs.add.filled);
-    expect(
-      inputLabelled(tree.root, optional(prs.add.district)).props.value,
-    ).toBe('ناحیه سوم');
-    expect(
-      inputLabelled(tree.root, optional(prs.add.neighborhood)).props.value,
-    ).toBe('شهر نو');
+    // One address field, written wide to narrow; the district and neighbourhood ride along unseen.
     expect(
       inputLabelled(tree.root, optional(prs.add.address)).props.value,
-    ).toBe('سرک چهارم');
+    ).toBe('ناحیه سوم، شهر نو، سرک چهارم');
 
     await press(tree.root, prs.add.submit);
     await settle();
@@ -306,6 +385,8 @@ describe('AddPropertyScreen: location is free and has two ways in', () => {
       lng: 69.1, // latitude is the second map coordinate
       province: 'کابل',
       district: 'ناحیه سوم',
+      neighborhood: 'شهر نو',
+      address: 'ناحیه سوم، شهر نو، سرک چهارم',
     });
   });
 
@@ -404,22 +485,13 @@ describe('AddPropertyScreen: the form itself', () => {
     expect(text).toContain(prs.add.bathrooms);
 
     await fillForm(tree.root);
-    const plus = (label: string) =>
-      act(async () => {
-        tree.root
-          .find(
-            n =>
-              typeof n.props.onPress === 'function' &&
-              n.props.accessibilityLabel === `${label}: ${prs.common.increase}`,
-          )
-          .props.onPress();
-      });
-    await plus(prs.add.bedrooms);
-    await plus(prs.add.bedrooms);
-    await plus(prs.add.bathrooms);
+    // fillForm gave one of each; two more bedrooms and one more bathroom.
+    await plus(tree.root, prs.add.bedrooms);
+    await plus(tree.root, prs.add.bedrooms);
+    await plus(tree.root, prs.add.bathrooms);
     await press(tree.root, prs.add.submit);
     await settle();
-    expect(posted()?.body).toMatchObject({ bedrooms: 2, bathrooms: 1 });
+    expect(posted()?.body).toMatchObject({ bedrooms: 3, bathrooms: 2 });
   });
 
   it('hides the room counts for land', async () => {
@@ -439,6 +511,158 @@ describe('AddPropertyScreen: the form itself', () => {
     await press(tree.root, prs.add.submit);
     await settle();
     expect(posted()).toBeDefined();
+  });
+});
+
+describe('AddPropertyScreen: a sliding sheet with friendly hints', () => {
+  const routes = { 'POST /properties': { status: 201, body: listing() } };
+  const open = async (nav = navigation()) => {
+    answerGeocoder(KABUL_SPOT, routes);
+    const tree = await render(screenElement(AddPropertyScreen, nav));
+    await settle();
+    return { tree, nav };
+  };
+  const wait = (ms: number) =>
+    act(async () => {
+      await new Promise<void>(resolve => setTimeout(() => resolve(), ms));
+    });
+  const sheetOf = (root: ReactTestRenderer.ReactTestInstance) =>
+    root.findAll(n => n.props.testID === 'bottom-sheet');
+  const placeholderOf = (
+    root: ReactTestRenderer.ReactTestInstance,
+    label: string,
+  ) => inputLabelled(root, label).props.placeholder as string;
+
+  it('is a bottom sheet with a title and the main button pinned at its foot', async () => {
+    const { tree } = await open();
+    expect(sheetOf(tree.root).length).toBeGreaterThan(0);
+    expect(allText(tree.root)).toContain(prs.nav.addProperty);
+    expect(allText(tree.root)).toContain(prs.common.close);
+    // The submit button is in the sheet's footer, not at the end of the scrolling form.
+    const footer = tree.root.findAll(
+      n =>
+        typeof n.type === 'string' &&
+        StyleSheet.flatten(n.props.style)?.borderTopWidth === 1 &&
+        allText(n).includes(prs.add.submit),
+    );
+    expect(footer.length).toBeGreaterThan(0);
+  });
+
+  it('closes by sliding away first and only then leaves the route', async () => {
+    const { tree, nav } = await open();
+    await press(tree.root, prs.common.close);
+    expect(nav.goBack).not.toHaveBeenCalled();
+    await wait(600);
+    expect(nav.goBack).toHaveBeenCalledTimes(1);
+  });
+
+  it('slides away before sending a signed-out visitor to sign in', async () => {
+    mockAuth = { status: 'signedOut', user: null };
+    const { tree, nav } = await open();
+    await press(tree.root, prs.auth.signIn);
+    expect(nav.navigate).not.toHaveBeenCalled();
+    await wait(600);
+    expect(nav.navigate).toHaveBeenCalledWith('Auth');
+    expect(nav.goBack).not.toHaveBeenCalled();
+  });
+
+  it('slides back up, with the form as it was, when the screen it stepped aside for is closed', async () => {
+    mockAuth = { status: 'signedOut', user: null };
+    let focus: (() => void) | undefined;
+    const nav = navigation();
+    nav.addListener.mockImplementation(((event: string, cb: () => void) => {
+      if (event === 'focus') focus = cb;
+      return () => undefined;
+    }) as never);
+    const { tree } = await open(nav);
+    await press(tree.root, prs.auth.signIn);
+    await wait(600);
+    expect(sheetOf(tree.root)).toHaveLength(0);
+    await act(async () => focus?.());
+    await settle();
+    expect(sheetOf(tree.root).length).toBeGreaterThan(0);
+  });
+
+  it('calls the chip "دکان و دفتر" in full', async () => {
+    const { tree } = await open();
+    expect(prs.propertyType.OFFICE_SHOP).toBe('دکان و دفتر');
+    const chip = tree.root.findAll(
+      n =>
+        n.props.accessibilityRole === 'button' &&
+        typeof n.props.onPress === 'function' &&
+        allText(n).trim() === 'دکان و دفتر',
+    );
+    expect(chip.length).toBeGreaterThan(0);
+    expect(allText(tree.root)).not.toMatch(/دکان(?! و دفتر)/);
+  });
+
+  it('changes the title hint with the kind of property chosen', async () => {
+    const { tree } = await open();
+    // A house is the first choice.
+    expect(placeholderOf(tree.root, prs.add.titleField)).toBe(
+      'مثلاً خانه سه خوابه در شهر نو',
+    );
+    const seen = new Set<string>();
+    for (const kind of [
+      'APARTMENT',
+      'OFFICE_SHOP',
+      'LAND',
+      'GARDEN_VILLA',
+      'GARAGE_OTHER',
+      'HOUSE_HAWILI',
+    ] as const) {
+      await press(tree.root, prs.propertyType[kind]);
+      const hint = placeholderOf(tree.root, prs.add.titleField);
+      expect(hint).toBe(prs.add.titleExamples[kind]);
+      seen.add(hint);
+    }
+    expect(seen.size).toBe(6); // each kind has its own
+  });
+
+  it('gives every box a friendly hint, with an example figure rather than a bare zero', async () => {
+    const { tree } = await open();
+    const { root } = tree;
+    for (const label of [
+      prs.add.titleField,
+      prs.add.price,
+      prs.add.area,
+      prs.add.descriptionField,
+    ]) {
+      expect(placeholderOf(root, label)).toBeTruthy();
+    }
+    expect(placeholderOf(root, prs.add.price)).toBe('مثلاً ۲,۵۰۰,۰۰۰');
+    expect(placeholderOf(root, prs.add.area)).toBe('مثلاً ۲۰۰');
+    expect(placeholderOf(root, prs.add.descriptionField)).toBe(
+      prs.add.descriptionPlaceholder,
+    );
+    expect(placeholderOf(root, prs.add.address)).toBe(
+      prs.add.addressPlaceholder,
+    );
+    for (const input of root.findAllByType(TextInput)) {
+      expect(String(input.props.placeholder ?? '')).not.toBe('۰');
+      expect(String(input.props.placeholder ?? '')).not.toBe('0');
+    }
+  });
+
+  it('shows a dollar example once dollars are chosen, and a jerib example for jerib', async () => {
+    const { tree } = await open();
+    await press(tree.root, prs.currency.USD);
+    expect(placeholderOf(tree.root, prs.add.price)).toBe('مثلاً ۲۵,۰۰۰');
+    await press(tree.root, prs.unit.jerib);
+    expect(placeholderOf(tree.root, prs.add.area)).toBe('مثلاً ۲');
+  });
+
+  it('has the jerib info next to the area, with this area worked out', async () => {
+    const { tree } = await open();
+    await type(tree.root, prs.add.area, '1000');
+    await act(async () => {
+      tree.root
+        .findAll(n => n.props.testID === 'jerib-info')
+        .find(n => typeof n.props.onPress === 'function')!
+        .props.onPress();
+    });
+    expect(allText(tree.root)).toContain(prs.property.jeribInfoTitle);
+    expect(allText(tree.root)).toContain('۱,۰۰۰ متر مربع، یعنی حدود ۰٫۵ جریب');
   });
 });
 
@@ -463,7 +687,7 @@ describe('AddPropertyScreen: editing my listing', () => {
     );
     expect(mapParts(tree.root, 'Marker')).toHaveLength(1); // the existing pin
     expect(allText(tree.root)).toContain(prs.add.save);
-    expect(nav.setOptions).toHaveBeenCalledWith({ title: prs.add.editTitle });
+    expect(allText(tree.root)).toContain(prs.add.editTitle); // the sheet's own title
     expect(geocoderCalls()).toHaveLength(0); // loading a pin is not placing one
 
     await type(tree.root, prs.add.titleField, 'آپارتمان تازه');
@@ -477,6 +701,11 @@ describe('AddPropertyScreen: editing my listing', () => {
       lng: 69.1,
     });
     expect(callsTo(fetchMock).some(c => c.method === 'POST')).toBe(false);
+    // The sheet slides away first, and only then does the route close.
+    expect(nav.goBack).not.toHaveBeenCalled();
+    await act(async () => {
+      await new Promise<void>(resolve => setTimeout(() => resolve(), 600));
+    });
     expect(nav.goBack).toHaveBeenCalled();
   });
 });

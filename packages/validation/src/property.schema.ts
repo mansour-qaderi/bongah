@@ -24,9 +24,9 @@ export const longitude = z
  * and a default would silently overwrite stored values on every PATCH.
  */
 /**
- * A place name that may be left blank: '' means "not given". Used for the parts of an address a pin can stand in
- * for. Anything typed must still look like a name (2+ characters). Whether blank is allowed at all is decided by
- * the listing as a whole (see createPropertySchema), because it depends on whether a pin was chosen.
+ * A place name that may be left blank: '' means "not given". Used for the structured parts of an address (district,
+ * neighbourhood), which a pin fills in and a written address may leave out. Anything typed must still look like a
+ * name (2+ characters).
  */
 const optionalPlace = (max: number) =>
   z
@@ -52,7 +52,7 @@ const propertyShape = {
   bedrooms: z.int().min(0).max(50).nullish(),
   bathrooms: z.int().min(0).max(50).nullish(),
   province: placeName(60),
-  /** Required unless the listing has a pin (see createPropertySchema). */
+  /** Optional: filled in from the pin when there is one. */
   district: optionalPlace(80),
   neighborhood: optionalPlace(80),
   address: z
@@ -65,7 +65,7 @@ const propertyShape = {
         .refine((value) => value === '' || value.length >= 3, 'At least 3 characters'),
     )
     .optional(),
-  /** Optional pin. Free for everyone. With one, district / neighbourhood / address may be left blank. */
+  /** Optional pin. Free for everyone. With one, the address may be left blank; without one it is required. */
   lat: latitude.optional(),
   lng: longitude.optional(),
   images: z.array(httpUrl).max(20).optional(),
@@ -81,17 +81,16 @@ export const createPropertySchema = z
     message: 'lat and lng must be sent together',
     path: ['lat'],
   })
-  // Where the listing is: a pin on the map, OR the place written out. A pin makes the written parts optional.
+  // Where the listing is: a pin on the map, OR the address written out as one line. A pin makes even the address
+  // optional; district and neighbourhood are never required (a pin fills them in, a written address carries them).
   .superRefine((value, ctx) => {
     if (value.lat !== undefined) return;
-    for (const field of ['district', 'neighborhood', 'address'] as const) {
-      if (!value[field]) {
-        ctx.addIssue({
-          code: 'custom',
-          message: 'Required unless a map location is chosen',
-          path: [field],
-        });
-      }
+    if (!value.address) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'Required unless a map location is chosen',
+        path: ['address'],
+      });
     }
   });
 export type CreatePropertyInput = z.output<typeof createPropertySchema>;

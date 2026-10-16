@@ -135,7 +135,9 @@ function AgencyHeader({ data }: { data: AgencyDashboard }) {
       >
         <AppText
           variant="caption"
-          color={data.agency.is_verified ? colors.success : colors.textMuted}
+          color={
+            data.agency.is_verified ? colors.textOnPrimary : colors.textMuted
+          }
         >
           {data.agency.is_verified
             ? t('dashboard.verified')
@@ -174,7 +176,7 @@ function SubscriptionCard({
     <View style={[styles.card, styles.cardGood]}>
       <View style={styles.subscriptionRow}>
         <View style={[styles.pill, styles.pillGood]}>
-          <AppText variant="label" color={colors.success}>
+          <AppText variant="label" color={colors.textOnPrimary}>
             {t('dashboard.subscriptionActive')}
             {subscription.package_type
               ? ` · ${t(`package.${subscription.package_type}`)}`
@@ -282,18 +284,15 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.xs,
     borderRadius: radius.pill,
   },
-  pillGood: { backgroundColor: colors.successSoft },
-  pillMuted: { backgroundColor: colors.border },
+  pillGood: { backgroundColor: colors.primary },
+  pillMuted: { backgroundColor: colors.neutralSoft },
   card: {
     ...surfaces.card,
     padding: spacing.lg,
     gap: spacing.sm,
   },
   cardGood: { backgroundColor: colors.surface, borderColor: colors.border },
-  cardWarning: {
-    backgroundColor: colors.dangerSoft,
-    borderColor: colors.dangerSoft,
-  },
+  cardWarning: { backgroundColor: colors.surface, borderColor: colors.danger },
   subscriptionRow: {
     flexDirection: 'row',
     alignItems: 'center',

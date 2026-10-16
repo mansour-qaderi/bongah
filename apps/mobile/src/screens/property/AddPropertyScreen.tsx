@@ -1,5 +1,11 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
+import {
+  ActivityIndicator,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  View,
+} from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
@@ -22,12 +28,14 @@ import { queryKeys, usePropertyDetail } from '../../api/hooks';
 import { useAuth } from '../../auth/AuthContext';
 import AppText from '../../components/AppText';
 import Banner from '../../components/Banner';
+import BottomSheet from '../../components/BottomSheet';
 import Button from '../../components/Button';
 import Card from '../../components/Card';
 import { Chip } from '../../components/Chip';
+import JeribInfoButton from '../../components/JeribInfo';
+import { KeyboardAwareScrollView } from '../../components/KeyboardAware';
 import PinSection from '../../components/PinSection';
 import ProvincePicker from '../../components/ProvincePicker';
-import { ScrollScreen } from '../../components/Screen';
 import SegmentedControl from '../../components/SegmentedControl';
 import Stepper from '../../components/Stepper';
 import { EmptyView, ErrorView, LoadingView } from '../../components/States';
@@ -69,13 +77,28 @@ const roundTo2 = (n: number) => Math.round(n * 100) / 100;
 const hasRoomsFor = (type: PropertyType) =>
   type !== 'LAND' && type !== 'GARAGE_OTHER';
 
+/** The place a pin found, written the way a person would say it: wide to narrow, one line. */
+const addressFrom = (place: {
+  district: string;
+  neighborhood: string;
+  street: string;
+}) =>
+  [place.district, place.neighborhood, place.street].filter(Boolean).join('، ');
+
 /**
  * Post a listing, or (with a `propertyId`) change one of mine.
  *
- * Where it is can be said two ways: put a pin on the map, which is free for everyone and fills in the province,
- * district, neighbourhood and street by itself, or write the address out. With a pin the written parts are
- * optional; without one they are required. Typed text is never overwritten by a later pin move: the address
- * only follows the pin for the parts the person has not touched.
+ * Where it is can be said two ways: put a pin on the map, which is free for everyone and fills in the province and
+ * the address by itself, or write the address out as one line ("زرنج، ناحیه ۵، پهلوی شفاخانه ABC، داخل کوچه
+ * موتررو"). With a pin the address is optional; without one it is required. The district and neighbourhood are no
+ * longer asked for: the pin supplies them (they feed the district filter) and a written address carries them in its
+ * own words. Typed text is never overwritten by a later pin move: the address only follows the pin while the
+ * person has not written their own.
+ *
+ * It is a sheet, not a page: a transparent route (see RootNavigator) holds a bottom sheet that slides up over the
+ * screen it was opened from, exactly like the filter sheet, with the main button pinned at its foot. Anything that
+ * leaves for another screen (the subscription page, the sign-in) first slides the sheet away, and it slides back
+ * with the form as it was when that screen is closed.
  */
 export default function AddPropertyScreen({ navigation, route }: Props) {
   const { t } = useTranslation();
@@ -104,6 +127,7 @@ export default function AddPropertyScreen({ navigation, route }: Props) {
   const [imageLinks, setImageLinks] = useState<string[]>(['']);
   const [errors, setErrors] = useState<FieldErrors>({});
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [open, setOpen] = useState(true);
   const [lookup, setLookup] = useState<Lookup>('idle');
   const [provinceGuessed, setProvinceGuessed] = useState(false);
   // Where the map looks. It moves when a province is picked by hand or an existing listing is loaded, never
@@ -111,15 +135,11 @@ export default function AddPropertyScreen({ navigation, route }: Props) {
   const [camera, setCamera] = useState<MapCamera>(AFGHANISTAN_CAMERA);
 
   // What the pin filled in last, so a later move only replaces what the person has not changed by hand.
-  const filledWith = useRef({
-    district: '',
-    neighborhood: '',
-    address: '',
-  });
+  const filledWith = useRef({ address: '' });
   const provinceIsAuto = useRef(false);
   // The latest typed values, for the address lookup, which finishes after the person may have kept typing.
-  const typed = useRef({ district, neighborhood, address, province });
-  typed.current = { district, neighborhood, address, province };
+  const typed = useRef({ address, province });
+  typed.current = { address, province };
   const lookupTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lookupAbort = useRef<AbortController | null>(null);
   useEffect(
@@ -130,10 +150,25 @@ export default function AddPropertyScreen({ navigation, route }: Props) {
     [],
   );
 
-  // A new listing keeps the title the navigator gives the route; editing one says so.
-  useEffect(() => {
-    if (editing) navigation.setOptions({ title: t('add.editTitle') });
-  }, [navigation, editing, t]);
+  // What to do once the sheet has slid away: go to another screen. Nothing means the person closed the sheet, so
+  // this route is left too.
+  const pending = useRef<(() => void) | null>(null);
+  const stepAside = (go: () => void) => {
+    pending.current = go;
+    setOpen(false);
+  };
+  const dismissed = () => {
+    const go = pending.current;
+    pending.current = null;
+    if (go) go();
+    else navigation.goBack();
+  };
+  // Back from the screen the sheet stepped aside for: slide up again, form intact.
+  useEffect(
+    () => navigation.addListener('focus', () => setOpen(true)),
+    [navigation],
+  );
+  const scroller = useRef<React.ComponentRef<typeof ScrollView>>(null);
 
   function fillFrom(property: Property) {
     setTitle(property.title);
@@ -175,28 +210,46 @@ export default function AddPropertyScreen({ navigation, route }: Props) {
       editing ? updateProperty(propertyId, data) : createProperty(data),
     onSuccess: async property => {
       await queryClient.invalidateQueries({ queryKey: queryKeys.properties });
-      if (editing) navigation.goBack();
-      else navigation.replace('PropertyDetails', { id: property.id });
+      if (editing) stepAside(() => navigation.goBack());
+      else
+        stepAside(() =>
+          navigation.replace('PropertyDetails', { id: property.id }),
+        );
     },
   });
 
+  const sheetTitle = editing ? t('add.editTitle') : t('nav.addProperty');
+  /** The sheet around whatever the screen has to show right now. */
+  const sheet = (content: React.ReactNode, footer?: React.ReactNode) => (
+    <BottomSheet
+      visible={open}
+      onClose={() => setOpen(false)}
+      onDismissed={dismissed}
+      title={sheetTitle}
+      heightRatio={0.92}
+      footer={footer}
+    >
+      {content}
+    </BottomSheet>
+  );
+
   if (status !== 'signedIn') {
-    return (
+    return sheet(
       <EmptyView message={t('auth.signInRequired')}>
         <Button
           title={t('auth.signIn')}
-          onPress={() => navigation.navigate('Auth')}
+          onPress={() => stepAside(() => navigation.navigate('Auth'))}
         />
-      </EmptyView>
+      </EmptyView>,
     );
   }
-  if (editing && existing.isPending) return <LoadingView />;
+  if (editing && existing.isPending) return sheet(<LoadingView />);
   if (editing && existing.isError) {
-    return (
+    return sheet(
       <ErrorView
         message={errorMessage(existing.error, t)}
         onRetry={() => existing.refetch()}
-      />
+      />,
     );
   }
 
@@ -213,6 +266,10 @@ export default function AddPropertyScreen({ navigation, route }: Props) {
       ? undefined
       : `${formatNumber(typedArea)} ${t(`unit.${areaUnit}`)}`;
 
+  /** "مثلاً ۲,۵۰۰,۰۰۰": a sample figure for an empty box. */
+  const example = (amount: number) =>
+    `${t('common.example')} ${formatNumber(amount)}`;
+
   const clearError = (field: string) =>
     setErrors(current =>
       current[field] ? { ...current, [field]: undefined } : current,
@@ -227,23 +284,20 @@ export default function AddPropertyScreen({ navigation, route }: Props) {
     const place = await lookUpPlace(point, abort.signal);
     if (abort.signal.aborted) return;
 
-    const fill = (
-      field: 'district' | 'neighborhood' | 'address',
-      current: string,
-      found: string,
-      set: (value: string) => void,
-    ) => {
-      // Untouched (empty) or still what the last pin put there: follow the pin. Anything else is the person's.
-      if (found && (current === '' || current === filledWith.current[field])) {
-        set(found);
-        filledWith.current[field] = found;
-        clearError(field);
-      }
-    };
     const now = typed.current;
-    fill('district', now.district, place.district, setDistrict);
-    fill('neighborhood', now.neighborhood, place.neighborhood, setNeighborhood);
-    fill('address', now.address, place.street, setAddress);
+    // The structured parts are the pin's own (the district filter reads them): they always follow it.
+    if (place.district) setDistrict(place.district);
+    if (place.neighborhood) setNeighborhood(place.neighborhood);
+    // The written address follows the pin only while it is empty or still what the last pin put there.
+    const found = addressFrom(place);
+    if (
+      found &&
+      (now.address === '' || now.address === filledWith.current.address)
+    ) {
+      setAddress(found);
+      filledWith.current.address = found;
+      clearError('address');
+    }
     if (place.province && (now.province === null || provinceIsAuto.current)) {
       provinceIsAuto.current = true;
       setProvince(place.province);
@@ -288,13 +342,19 @@ export default function AddPropertyScreen({ navigation, route }: Props) {
       images: imageLinks.map(link => link.trim()).filter(Boolean),
     };
 
+    const next: FieldErrors = {};
+    // The schema lets a count be left out; this form does not (a listing without them is not comparable).
+    if (hasRooms && bedrooms === null) next.bedrooms = t('add.required');
+    if (hasRooms && bathrooms === null) next.bathrooms = t('add.required');
+
     // The same schema the server enforces, so mistakes are caught before a round trip.
     const parsed = createPropertySchema.safeParse(raw);
     if (!parsed.success) {
-      const next: FieldErrors = {};
       for (const issue of parsed.error.issues) {
         let field = String(issue.path[0] ?? 'form');
         if (field === 'lat' || field === 'lng') field = 'location';
+        // The district and neighbourhood have no box of their own: what is wrong with them is wrong with the address.
+        if (field === 'district' || field === 'neighborhood') field = 'address';
         if (next[field]) continue;
         const value = (raw as Record<string, unknown>)[issue.path[0] as string];
         const empty =
@@ -308,7 +368,11 @@ export default function AddPropertyScreen({ navigation, route }: Props) {
             ? t('add.required')
             : t('add.fieldInvalid');
       }
+    }
+    if (!parsed.success || Object.keys(next).length > 0) {
       setErrors(next);
+      // The banner that says what is wrong is at the top of the form.
+      scroller.current?.scrollTo({ y: 0, animated: true });
       return;
     }
     setErrors({});
@@ -320,16 +384,16 @@ export default function AddPropertyScreen({ navigation, route }: Props) {
       links.map((link, i) => (i === index ? value : link)),
     );
 
-  /** A part of the address: required until the map says where it is, optional after. */
-  const placeLabel = (
-    key: 'add.district' | 'add.neighborhood' | 'add.address',
-  ) => (pinned ? `${t(key)} (${t('common.optional')})` : t(key));
+  /** The address: required until the map says where it is, optional after. */
+  const addressLabel = pinned
+    ? `${t('add.address')} (${t('common.optional')})`
+    : t('add.address');
 
-  const addressErrors =
-    errors.district || errors.neighborhood || errors.address;
-
-  return (
-    <ScrollScreen>
+  return sheet(
+    <KeyboardAwareScrollView
+      ref={scroller}
+      contentContainerStyle={styles.content}
+    >
       {mutation.isError ? (
         <Banner kind="error" message={errorMessage(mutation.error, t)}>
           {isSubscriptionRequired(mutation.error) ? (
@@ -337,7 +401,9 @@ export default function AddPropertyScreen({ navigation, route }: Props) {
               title={t('add.buySubscription')}
               variant="outline"
               onPress={() =>
-                navigation.navigate('Checkout', { tab: 'subscription' })
+                stepAside(() =>
+                  navigation.navigate('Checkout', { tab: 'subscription' }),
+                )
               }
             />
           ) : null}
@@ -355,12 +421,14 @@ export default function AddPropertyScreen({ navigation, route }: Props) {
             setTitle(v);
             clearError('title');
           }}
-          placeholder={t('add.titlePlaceholder')}
+          placeholder={t(`add.titleExamples.${type}`)}
           maxLength={150}
           error={errors.title}
         />
 
-        <AppText variant="label">{t('add.type')}</AppText>
+        <AppText variant="label" color={colors.textSecondary}>
+          {t('add.type')}
+        </AppText>
         <View style={styles.wrap}>
           {PROPERTY_TYPES.map(p => (
             <Chip
@@ -373,7 +441,9 @@ export default function AddPropertyScreen({ navigation, route }: Props) {
           ))}
         </View>
 
-        <AppText variant="label">{t('add.deal')}</AppText>
+        <AppText variant="label" color={colors.textSecondary}>
+          {t('add.deal')}
+        </AppText>
         <View style={styles.wrap}>
           {DEAL_TYPES.map(d => (
             <Chip
@@ -396,6 +466,7 @@ export default function AddPropertyScreen({ navigation, route }: Props) {
             clearError('price');
           }}
           keyboardType="decimal-pad"
+          placeholder={example(currency === 'USD' ? 25_000 : 2_500_000)}
           helper={moneyHelper}
           error={errors.price}
         />
@@ -418,6 +489,7 @@ export default function AddPropertyScreen({ navigation, route }: Props) {
             clearError('area_sqm');
           }}
           keyboardType="decimal-pad"
+          placeholder={example(areaUnit === 'jerib' ? 2 : 200)}
           helper={areaHelper}
           error={errors.area_sqm}
         />
@@ -431,11 +503,23 @@ export default function AddPropertyScreen({ navigation, route }: Props) {
             }))}
           />
         </View>
+        <View style={styles.infoRow}>
+          <JeribInfoButton
+            areaSqm={
+              typedArea === null
+                ? undefined
+                : areaUnit === 'jerib'
+                ? jeribToSqm(typedArea)
+                : typedArea
+            }
+          />
+        </View>
 
         {hasRooms ? (
           <View style={styles.counts}>
             <Stepper
               label={t('add.bedrooms')}
+              required
               value={bedrooms}
               onChange={v => {
                 setBedrooms(v);
@@ -445,6 +529,7 @@ export default function AddPropertyScreen({ navigation, route }: Props) {
             />
             <Stepper
               label={t('add.bathrooms')}
+              required
               value={bathrooms}
               onChange={v => {
                 setBathrooms(v);
@@ -477,13 +562,15 @@ export default function AddPropertyScreen({ navigation, route }: Props) {
           ) : null}
         </PinSection>
 
-        <AppText variant="label">{t('add.province')}</AppText>
+        <AppText variant="label" color={colors.textSecondary}>
+          {t('add.province')}
+        </AppText>
         <Pressable
           accessibilityRole="button"
           onPress={() => setPickerOpen(true)}
           style={[styles.select, errors.province ? styles.selectError : null]}
         >
-          <AppText color={province ? colors.text : colors.textMuted}>
+          <AppText color={province ? colors.text : colors.placeholder}>
             {province ? province.name[language] : t('home.selectProvince')}
           </AppText>
         </Pressable>
@@ -505,44 +592,19 @@ export default function AddPropertyScreen({ navigation, route }: Props) {
           </AppText>
         ) : null}
 
-        <AppText
-          variant="caption"
-          color={addressErrors ? colors.danger : colors.textMuted}
-          style={styles.addressNote}
-        >
-          {pinned ? t('add.addressOptional') : t('add.addressRequired')}
-        </AppText>
         <TextField
-          label={placeLabel('add.district')}
-          value={district}
-          onChangeText={v => {
-            setDistrict(v);
-            clearError('district');
-          }}
-          placeholder={t('home.districtPlaceholder')}
-          maxLength={80}
-          error={errors.district}
-        />
-        <TextField
-          label={placeLabel('add.neighborhood')}
-          value={neighborhood}
-          onChangeText={v => {
-            setNeighborhood(v);
-            clearError('neighborhood');
-          }}
-          placeholder={t('add.neighborhoodPlaceholder')}
-          maxLength={80}
-          error={errors.neighborhood}
-        />
-        <TextField
-          label={placeLabel('add.address')}
+          label={addressLabel}
           value={address}
           onChangeText={v => {
             setAddress(v);
             clearError('address');
           }}
+          placeholder={t('add.addressPlaceholder')}
+          helper={pinned ? t('add.addressOptional') : t('add.addressRequired')}
+          multiline
           maxLength={300}
           error={errors.address}
+          style={styles.addressInput}
         />
       </Card>
 
@@ -554,13 +616,16 @@ export default function AddPropertyScreen({ navigation, route }: Props) {
             setDescription(v);
             clearError('description');
           }}
+          placeholder={t('add.descriptionPlaceholder')}
           multiline
           maxLength={5000}
           error={errors.description}
           style={styles.descriptionInput}
         />
 
-        <AppText variant="label">{t('add.images')}</AppText>
+        <AppText variant="label" color={colors.textSecondary}>
+          {t('add.images')}
+        </AppText>
         <AppText variant="caption" color={colors.textMuted} style={styles.help}>
           {t('add.imagesHelp')}
         </AppText>
@@ -590,12 +655,6 @@ export default function AddPropertyScreen({ navigation, route }: Props) {
         ) : null}
       </Card>
 
-      <Button
-        title={editing ? t('add.save') : t('add.submit')}
-        onPress={submit}
-        loading={mutation.isPending}
-      />
-
       <ProvincePicker
         visible={pickerOpen}
         selectedId={province?.id ?? null}
@@ -611,11 +670,20 @@ export default function AddPropertyScreen({ navigation, route }: Props) {
           setPickerOpen(false);
         }}
       />
-    </ScrollScreen>
+    </KeyboardAwareScrollView>,
+    <Button
+      title={editing ? t('add.save') : t('add.submit')}
+      onPress={submit}
+      loading={mutation.isPending}
+      style={styles.submit}
+    />,
   );
 }
 
 const styles = StyleSheet.create({
+  content: { padding: spacing.lg, paddingBottom: spacing.xl },
+  submit: { flex: 1 },
+  infoRow: { alignItems: 'flex-start', marginBottom: spacing.lg },
   wrap: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -639,7 +707,7 @@ const styles = StyleSheet.create({
   },
   selectError: { borderColor: colors.danger },
   fieldError: { marginTop: -spacing.sm, marginBottom: spacing.md },
-  addressNote: { marginBottom: spacing.md },
+  addressInput: { minHeight: 88 },
   help: { marginBottom: spacing.sm },
   descriptionInput: { marginTop: 0 },
 });

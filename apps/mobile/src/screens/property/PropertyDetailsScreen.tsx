@@ -18,17 +18,23 @@ import { useAuth } from '../../auth/AuthContext';
 import { useContactActions } from '../../contact/useContactActions';
 import AppText from '../../components/AppText';
 import Button from '../../components/Button';
-import { Chip } from '../../components/Chip';
+import Badge, { badgeTones, dealTone } from '../../components/Badge';
+import BookmarkButton from '../../components/BookmarkButton';
 import ContactActionBar from '../../components/ContactActionBar';
 import ContactLockSheet from '../../components/ContactLockSheet';
+import Icon, { type IconName } from '../../components/Icon';
+import JeribInfoButton from '../../components/JeribInfo';
+import Price from '../../components/Price';
 import PromotionSheet from '../../components/PromotionSheet';
+import { propertyPlace } from '../../components/PropertyFacts';
 import PropertyLocationMap from '../../components/PropertyLocationMap';
 import { Screen } from '../../components/Screen';
 import { ErrorView, LoadingView } from '../../components/States';
-import { formatNumber, formatPhone, sqmToJerib } from '../../i18n/format';
+import { formatNumber, formatPhone } from '../../i18n/format';
 import { useFormat } from '../../i18n/useFormat';
+import { PROPERTY_LINE_ICONS } from '../../map/markers';
 import type { RootStackParamList } from '../../navigation/types';
-import { colors, spacing, surfaces } from '../../theme';
+import { colors, radius, spacing, surfaces } from '../../theme';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'PropertyDetails'>;
 
@@ -83,14 +89,33 @@ function PropertyBody({ property }: { property: Property }) {
   const isOwner = actions.isOwner;
   const revealed = actions.contact;
 
-  const spec = (label: string, value: string) => (
-    <View style={styles.spec} key={label}>
-      <AppText variant="caption" color={colors.textMuted}>
-        {label}
-      </AppText>
-      <AppText variant="label">{value}</AppText>
+  /** One figure of the listing: its icon in a soft tile, the name above and the value below. */
+  const spec = (
+    key: string,
+    icon: IconName,
+    label: string,
+    value: string,
+    extra?: React.ReactNode,
+  ) => (
+    <View style={styles.spec} key={key}>
+      <View style={styles.specIcon}>
+        <Icon name={icon} size={20} color={colors.textSecondary} weight={1.8} />
+      </View>
+      <View style={styles.specText}>
+        <View style={styles.specLabel}>
+          <AppText variant="caption" color={colors.textMuted}>
+            {label}
+          </AppText>
+          {extra}
+        </View>
+        <AppText variant="label" numberOfLines={1}>
+          {value}
+        </AppText>
+      </View>
     </View>
   );
+
+  const place = propertyPlace(property, format.province);
 
   return (
     <Screen edges={isOwner ? ['left', 'right', 'bottom'] : ['left', 'right']}>
@@ -116,44 +141,89 @@ function PropertyBody({ property }: { property: Property }) {
           />
         ) : null}
 
-        <View style={styles.section}>
+        <View style={[styles.section, styles.header]}>
           <View style={styles.row}>
-            <AppText variant="title" color={colors.primaryDark}>
-              {format.price(property.price, property.currency)}
-            </AppText>
-            {property.is_featured ? (
-              <Chip
-                label={t('property.featured')}
-                selected
-                onPress={() => undefined}
+            <View style={styles.badges}>
+              <Badge
+                label={t(`propertyType.${property.type}`)}
+                tone="neutral"
               />
-            ) : null}
+              <Badge
+                label={t(`dealType.${property.deal_type}`)}
+                tone={dealTone(property.deal_type)}
+              />
+              {property.is_featured ? (
+                <Badge
+                  label={t('property.featured')}
+                  tone={badgeTones.warning}
+                />
+              ) : null}
+            </View>
+            <BookmarkButton propertyId={property.id} title={property.title} />
           </View>
-          <AppText variant="heading">{property.title}</AppText>
-          <AppText color={colors.textMuted}>
-            {t(`propertyType.${property.type}`)} ·{' '}
-            {t(`dealType.${property.deal_type}`)}
-          </AppText>
+          <AppText variant="title">{property.title}</AppText>
+          {place ? (
+            <View style={styles.place}>
+              <Icon
+                name="pin"
+                size={16}
+                color={colors.textSecondary}
+                weight={1.9}
+              />
+              <AppText
+                color={colors.textSecondary}
+                numberOfLines={2}
+                style={styles.placeText}
+              >
+                {place}
+              </AppText>
+            </View>
+          ) : null}
+          <View style={styles.priceBox}>
+            <AppText variant="caption" color={colors.textMuted}>
+              {t('add.price')}
+            </AppText>
+            <Price
+              amount={property.price}
+              currency={property.currency}
+              variant="title"
+              color={colors.primary}
+            />
+          </View>
         </View>
 
         <View style={[styles.section, styles.card]}>
           <AppText variant="heading">{t('property.specs')}</AppText>
           <View style={styles.specGrid}>
             {spec(
+              'area',
+              'area',
               t('property.area'),
-              `${format.area(property.area_sqm)}\n${t('property.areaInJerib', {
-                value: formatNumber(sqmToJerib(property.area_sqm)),
-              })}`,
+              format.area(property.area_sqm),
+              <JeribInfoButton areaSqm={property.area_sqm} />,
             )}
             {property.bedrooms !== null
-              ? spec(t('property.bedrooms'), formatNumber(property.bedrooms, 0))
+              ? spec(
+                  'bedrooms',
+                  'bed',
+                  t('property.bedrooms'),
+                  formatNumber(property.bedrooms, 0),
+                )
               : null}
             {property.bathrooms !== null
               ? spec(
+                  'bathrooms',
+                  'shower',
                   t('property.bathrooms'),
                   formatNumber(property.bathrooms, 0),
                 )
               : null}
+            {spec(
+              'type',
+              PROPERTY_LINE_ICONS[property.type],
+              t('add.type'),
+              t(`propertyType.${property.type}`),
+            )}
           </View>
           {property.type === 'GARDEN_VILLA' ? (
             <AppText variant="caption" color={colors.primaryDark}>
@@ -246,27 +316,55 @@ function PropertyBody({ property }: { property: Property }) {
 }
 
 const styles = StyleSheet.create({
-  content: { padding: 0, paddingBottom: spacing.xl },
-  gallery: { backgroundColor: colors.primarySoft },
-  galleryImage: { height: 240 },
+  content: { padding: 0, paddingBottom: spacing.xxl },
+  gallery: { backgroundColor: colors.neutralSoft },
+  galleryImage: { height: 260 },
   section: {
     paddingHorizontal: spacing.lg,
-    paddingTop: spacing.lg,
-    gap: spacing.sm,
+    paddingTop: spacing.xl,
+    gap: spacing.md,
   },
+  header: { gap: spacing.md },
   row: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    gap: spacing.md,
+  },
+  badges: { flex: 1, flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
+  place: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
+  placeText: { flexShrink: 1 },
+  priceBox: {
+    ...surfaces.tile,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
   },
   card: {
     ...surfaces.card,
     marginHorizontal: spacing.lg,
-    marginTop: spacing.lg,
+    marginTop: spacing.xl,
     paddingHorizontal: spacing.lg,
-    paddingBottom: spacing.lg,
+    paddingBottom: spacing.xl,
+    gap: spacing.lg,
   },
-  specGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.lg },
-  spec: { minWidth: '40%' },
+  specGrid: { flexDirection: 'row', flexWrap: 'wrap', rowGap: spacing.lg },
+  // Two to a row.
+  spec: {
+    flexBasis: '50%',
+    flexGrow: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+  },
+  specIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: radius.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.neutralSoft,
+  },
+  specText: { flexShrink: 1, gap: 2 },
+  specLabel: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   phone: { fontSize: 18 },
 });

@@ -164,13 +164,26 @@ export const overlapWith = (
 export function KeyboardAvoider({
   children,
   style,
+  onRoomChange,
 }: {
   children: React.ReactNode;
   style?: StyleProp<ViewStyle>;
+  /**
+   * Told how tall the box is once the keyboard's share is taken off (its own height when the window already
+   * shrank, its height less the covered part when it did not). A sheet that sits in the box uses it as the most
+   * it may grow to, so its top never rides up under the status bar when the keyboard opens.
+   */
+  onRoomChange?: (room: number) => void;
 }) {
   const { top: keyboardTop, covers } = useKeyboard();
   const ref = useRef<React.ComponentRef<typeof View>>(null);
   const [overlap, setOverlap] = useState(0);
+  const [boxHeight, setBoxHeight] = useState<number | null>(null);
+  const roomRef = useRef(onRoomChange);
+  roomRef.current = onRoomChange;
+  useEffect(() => {
+    if (boxHeight !== null) roomRef.current?.(Math.max(0, boxHeight - overlap));
+  }, [boxHeight, overlap]);
 
   const update = useCallback(async () => {
     setOverlap(overlapWith(await measure(ref.current), keyboardTop, covers));
@@ -190,7 +203,10 @@ export function KeyboardAvoider({
     <View
       ref={ref}
       collapsable={false}
-      onLayout={Number.isFinite(keyboardTop) ? update : undefined}
+      onLayout={event => {
+        setBoxHeight(event.nativeEvent.layout.height);
+        if (Number.isFinite(keyboardTop)) update();
+      }}
       style={[
         styles.fill,
         style,

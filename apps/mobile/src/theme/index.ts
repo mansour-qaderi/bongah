@@ -8,39 +8,37 @@ import type { DealType } from '@bongah/shared-types';
  *  - `accent` / `accentBright` are for fills, borders and icons, with `textOnAccent` on top of them;
  *  - `accentText` is the darker gold (5.0:1 on white) for gold-coloured words.
  * __tests__/theme.test.ts checks these ratios, so a future colour change cannot silently break them.
+ *
+ * The look is flat: pure white surfaces, a 1 px neutral border (`border`) instead of a shadow, solid emerald for what
+ * is active or chosen. There are deliberately NO pale-green tints and NO shadow tokens here; a screen that needs
+ * "a quiet fill" uses `neutralSoft` (grey), and one that needs "selected" uses a solid or outlined emerald.
  */
 export const colors = {
   primary: '#047857',
   primaryDark: '#065F46',
-  primarySoft: '#D1FAE5',
   /** A faint emerald wash: the capsule behind the current tab, selected rows, quiet highlights. */
   primaryTint: '#E6F4EA',
   accent: '#D97706',
   accentBright: '#F59E0B',
-  accentSoft: '#FEF3C7',
   accentText: '#B45309',
-  background: '#F9FAFB',
+  background: '#FFFFFF',
   surface: '#FFFFFF',
   text: '#111827',
   textMuted: '#6B7280',
+  /**
+   * The hint inside an empty input ("مثلاً شهر نو"). Deliberately much lighter than `textMuted` (captions, helper
+   * lines) and than the typed text, so an example is never mistaken for something the person already filled in.
+   */
+  placeholder: '#9CA3AF',
   /** Neutral ink for things that are quiet but must still read clearly: the tabs that are not current. */
   textSecondary: '#374151',
   textOnPrimary: '#FFFFFF',
   textOnAccent: '#111827',
   border: '#E5E7EB',
-  /** The faintest edge: a card's outline, which the shadow does the real work of defining. */
-  hairline: 'rgba(15,23,42,0.06)',
-  /** Blue for rentals and for "you are here"; the soft and text shades are for badges. */
+  /** Blue for rentals and for "you are here". */
   info: '#2563EB',
-  infoSoft: '#DBEAFE',
-  infoText: '#1D4ED8',
   danger: '#C0392B',
-  dangerSoft: '#FBE9E7',
   success: '#1E8E5A',
-  successSoft: '#E3F4EA',
-  successText: '#166534',
-  /** Gold's darkest shade, for words on the soft gold. */
-  warningText: '#92400E',
   /** The quiet grey: neutral badges and resting buttons. */
   neutralSoft: '#F3F4F6',
   neutralText: '#4B5563',
@@ -54,25 +52,16 @@ export const colors = {
 } as const;
 
 /**
- * One colour per kind of deal, used for the map markers, the quick filter and anywhere a listing says what it
- * is offered for. Emerald (the brand) is a sale; blue is a rental; gold is a "growi" (pledge/lease). White
- * icons sit on all three at 3:1 or better (checked in __tests__/theme.test.ts).
+ * One colour per kind of deal, used for the map markers, the quick filter, the listing badges and anywhere a
+ * listing says what it is offered for. Emerald (the brand) is a sale; blue is a rental; gold is a "growi"
+ * (pledge/lease). They are solid fills, and `on` is the ink that sits on each one: white on emerald and blue, the
+ * dark ink on gold (white on gold is only 3.2:1). Checked in __tests__/theme.test.ts.
  */
 export const dealColors = {
-  SALE: { main: colors.primary, soft: colors.primarySoft },
-  RENT: { main: colors.info, soft: colors.infoSoft },
-  MORTGAGE_GROWI: { main: colors.accent, soft: colors.accentSoft },
-} as const satisfies Record<DealType, { main: string; soft: string }>;
-
-/**
- * Page backgrounds: white at the top easing into the page colour, so screens have a little depth without a
- * visible band. `backgroundColor` stays as the fallback wherever a gradient is not drawn.
- */
-export const gradients = {
-  screen: 'linear-gradient(to bottom, #FFFFFF 0%, #F9FAFB 38%)',
-  /** The emerald profile card: the brand colour deepening towards one corner. */
-  hero: 'linear-gradient(135deg, #059669 0%, #047857 45%, #065F46 100%)',
-} as const;
+  SALE: { main: colors.primary, on: colors.textOnPrimary },
+  RENT: { main: colors.info, on: colors.textOnPrimary },
+  MORTGAGE_GROWI: { main: colors.accent, on: colors.textOnAccent },
+} as const satisfies Record<DealType, { main: string; on: string }>;
 
 export const spacing = {
   xs: 4,
@@ -175,23 +164,27 @@ export const shadow = StyleSheet.create({
 export const ltrInput = { writingDirection: 'ltr' } satisfies TextStyle;
 
 /**
- * The surfaces screens are built from, so every card, tile and row has the same corners, edge and lift: crisp
- * white, a hairline edge and a soft shadow that does the real work. A card (16-point corners) holds a group of
- * things; a tile (12) is a smaller box inside one or a row in a list.
+ * The surfaces screens are built from, so every card, tile and row has the same corners and edge: pure white, a
+ * 1 px neutral border and no shadow at all. A card (16-point corners) holds a group of things; a tile (12) is a
+ * smaller box inside one or a row in a list; `floating` is the same flat white for the controls that sit over the
+ * map (they need the border more than anything, because there is no shadow to lift them off the tiles).
  */
 export const surfaces = StyleSheet.create({
   card: {
     backgroundColor: colors.surface,
     borderRadius: radius.lg,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.hairline,
-    ...shadow.card,
+    borderWidth: 1,
+    borderColor: colors.border,
   },
   tile: {
     backgroundColor: colors.surface,
     borderRadius: radius.md,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.hairline,
-    ...shadow.card,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  floating: {
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
   },
 });

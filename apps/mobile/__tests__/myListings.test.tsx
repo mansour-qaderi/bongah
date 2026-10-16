@@ -134,7 +134,7 @@ describe('ListingCard', () => {
     const text = allText(tree.root);
     expect(text).toContain('خانه حویلی در شهر نو');
     expect(text).toContain('؋');
-    expect(text).toContain('۵٬۲۰۰٬۰۰۰');
+    expect(text).toContain('۵,۲۰۰,۰۰۰');
     expect(text).toContain(prs.dealType.SALE);
     expect(text).toContain(prs.status.ACTIVE);
     expect(text).not.toMatch(/[0-9]/);

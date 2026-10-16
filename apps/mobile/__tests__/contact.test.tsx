@@ -518,3 +518,69 @@ describe('PropertyDetailsScreen: daily limit reached', () => {
     expect(allText(tree.root)).toContain(prs.property.noFreeRevealsLeft);
   });
 });
+
+describe('PropertyDetailsScreen: layout and the jerib helper', () => {
+  const open = async () => {
+    mockApi(fetchMock, {
+      [`GET /properties/${L}`]: {
+        body: { ...listing(), price: 1_200_000, area_sqm: 500 },
+      },
+      [`POST /properties/${L}/view`]: { status: 204 },
+      [`GET /properties/${L}/contact`]: { body: locked() },
+    });
+    const tree = await render(screen());
+    await settle();
+    return tree;
+  };
+  const byId = (root: ReactTestRenderer.ReactTestInstance, id: string) =>
+    root.findAll(n => n.props.testID === id);
+
+  it('leads with the title, the place and the price with commas, and lists the figures as tiles', async () => {
+    const tree = await open();
+    const text = allText(tree.root);
+    expect(text).toContain('خانه نو');
+    expect(text).toContain('۱,۲۰۰,۰۰۰');
+    expect(text).toContain('؋');
+    expect(text).toContain('شهر نو'); // the place line
+    expect(text).toContain(prs.property.specs);
+    expect(text).toContain('۵۰۰ متر مربع');
+    expect(text).toContain(prs.property.bedrooms);
+    expect(text).toContain(prs.property.bathrooms);
+    // The title comes before the price, which comes before the specs.
+    expect(text.indexOf('خانه نو')).toBeLessThan(text.indexOf('۱,۲۰۰,۰۰۰'));
+    expect(text.indexOf('۱,۲۰۰,۰۰۰')).toBeLessThan(
+      text.indexOf(prs.property.specs),
+    );
+  });
+
+  it('keeps the jerib conversion out of the figures, behind an info icon next to "جریب"', async () => {
+    const tree = await open();
+    const text = allText(tree.root);
+    // The raw conversion line ("حدود … جریب") is not in the page any more.
+    expect(text).not.toContain('حدود');
+    expect(text).not.toContain('۰٫۲۵');
+    expect(byId(tree.root, 'jerib-info').length).toBeGreaterThan(0);
+    expect(text).toContain(prs.unit.jerib);
+    expect(byId(tree.root, 'jerib-info-card')).toHaveLength(0);
+  });
+
+  it('explains the jerib in a popup, with this listing worked out, and closes it', async () => {
+    const tree = await open();
+    await act(async () => {
+      byId(tree.root, 'jerib-info')
+        .find(n => typeof n.props.onPress === 'function')!
+        .props.onPress();
+    });
+    const text = allText(tree.root);
+    expect(byId(tree.root, 'jerib-info-card').length).toBeGreaterThan(0);
+    expect(text).toContain(prs.property.jeribInfoTitle);
+    expect(text).toContain(prs.property.jeribInfoIntro);
+    expect(text).toContain(prs.property.jeribInfoOne); // 1 jerib = 2,000 m²
+    expect(text).toContain(prs.property.jeribInfoHectare);
+    // 500 m² is a quarter of a jerib.
+    expect(text).toContain('۵۰۰ متر مربع، یعنی حدود ۰٫۲۵ جریب');
+    await press(tree.root, prs.common.ok);
+    await settle();
+    expect(byId(tree.root, 'jerib-info-card')).toHaveLength(0);
+  });
+});

@@ -1,5 +1,6 @@
 import {
   compactAmount,
+  formatAmount,
   formatCurrency,
   formatDate,
   formatNumber,
@@ -34,8 +35,8 @@ describe('number formatting', () => {
   });
 
   it('groups thousands and trims decimals', () => {
-    expect(formatNumber(1234567.5)).toBe('۱٬۲۳۴٬۵۶۷٫۵');
-    expect(formatNumber(1000)).toBe('۱٬۰۰۰');
+    expect(formatNumber(1234567.5)).toBe('۱,۲۳۴,۵۶۷٫۵');
+    expect(formatNumber(1000)).toBe('۱,۰۰۰');
     expect(formatNumber(999)).toBe('۹۹۹');
     expect(formatNumber(0.125)).toBe('۰٫۱۳');
     expect(formatNumber(2, 0)).toBe('۲');
@@ -43,15 +44,26 @@ describe('number formatting', () => {
   });
 
   it('formats a price with its currency word', () => {
-    expect(formatPrice(12500000, 'افغانی')).toBe('۱۲٬۵۰۰٬۰۰۰ افغانی');
+    expect(formatPrice(12500000, 'افغانی')).toBe('۱۲,۵۰۰,۰۰۰ افغانی');
   });
 
   it('formats money with the currency sign: ؋ for Afghani (the default), $ for dollars', () => {
-    expect(formatCurrency(1200000)).toBe('۱٬۲۰۰٬۰۰۰ ؋');
-    expect(formatCurrency(1200000, 'AFGHANI')).toBe('۱٬۲۰۰٬۰۰۰ ؋');
-    expect(formatCurrency(85000.5, 'USD')).toBe('۸۵٬۰۰۰٫۵ $');
+    expect(formatCurrency(1200000)).toBe('۱,۲۰۰,۰۰۰ ؋');
+    expect(formatCurrency(1200000, 'AFGHANI')).toBe('۱,۲۰۰,۰۰۰ ؋');
+    expect(formatCurrency(85000.5, 'USD')).toBe('۸۵,۰۰۰٫۵ $');
     expect(formatCurrency(0)).toBe('۰ ؋');
     expect(formatCurrency(Number.NaN)).toBe('');
+  });
+
+  it('writes the number of a price with plain commas between the thousands', () => {
+    expect(formatAmount(1200000)).toBe('۱,۲۰۰,۰۰۰');
+    expect(formatAmount(50000)).toBe('۵۰,۰۰۰');
+    expect(formatAmount(8500)).toBe('۸,۵۰۰');
+    expect(formatAmount(999)).toBe('۹۹۹');
+    expect(formatAmount(12500.5)).toBe('۱۲,۵۰۰٫۵');
+    expect(formatAmount(1200000)).not.toContain('٬');
+    expect(formatAmount(1200000)).not.toContain('\u202F');
+    expect(formatAmount(Number.NaN)).toBe('');
   });
 });
 

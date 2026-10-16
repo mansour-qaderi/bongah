@@ -46,7 +46,7 @@ function readPrice(text: string): number | undefined | null {
   return n === null || n > MAX_PRICE_INPUT ? null : Math.round(n * 100) / 100;
 }
 
-/** The amount typed so far, written as money ("۱٬۲۰۰٬۰۰۰ ؋"), or nothing while the box is empty or unreadable. */
+/** The amount typed so far, written as money ("۱,۲۰۰,۰۰۰ ؋"), or nothing while the box is empty or unreadable. */
 function priceHelper(text: string, currency: Currency): string | undefined {
   const amount = readPrice(text);
   return typeof amount === 'number'
@@ -129,10 +129,26 @@ export default function FilterSheet({
   const stops = priceStops(deal, currency);
   const describeStop = (amount: number | undefined) =>
     amount === undefined ? t('home.noLimit') : formatCurrency(amount, currency);
-  const summary = t('home.priceFromTo', {
-    from: describeStop(minValue),
-    to: describeStop(maxValue),
-  });
+  // Said in words only for the ends that are set: "from X", "up to Y" or "from X to Y". With neither set the slider
+  // is open at both ends and there is nothing to say (the old "from no limit to no limit" only confused people).
+  const summary =
+    minValue !== undefined && maxValue !== undefined
+      ? t('home.priceFromTo', {
+          from: describeStop(minValue),
+          to: describeStop(maxValue),
+        })
+      : minValue !== undefined
+      ? t('home.priceFrom', { amount: describeStop(minValue) })
+      : maxValue !== undefined
+      ? t('home.priceUpTo', { amount: describeStop(maxValue) })
+      : null;
+  // Examples for the empty boxes: a friendly sample figure, not a bare zero.
+  const examples =
+    currency === 'USD'
+      ? { min: 20_000, max: 100_000 }
+      : { min: 1_000_000, max: 5_000_000 };
+  const example = (amount: number) =>
+    `${t('common.example')} ${formatNumber(amount)}`;
 
   return (
     <>
@@ -164,7 +180,7 @@ export default function FilterSheet({
               onPress={() => setPickerOpen(true)}
               style={styles.select}
             >
-              <AppText color={province ? colors.text : colors.textMuted}>
+              <AppText color={province ? colors.text : colors.placeholder}>
                 {province ? province.name[language] : t('home.allProvinces')}
               </AppText>
             </Pressable>
@@ -229,9 +245,11 @@ export default function FilterSheet({
                 onChange={setCurrency}
               />
             </View>
-            <AppText variant="label" color={colors.primaryDark}>
-              {summary}
-            </AppText>
+            {summary ? (
+              <AppText variant="label" color={colors.primaryDark}>
+                {summary}
+              </AppText>
+            ) : null}
             <RangeSlider
               stops={stops}
               low={minValue}
@@ -256,7 +274,7 @@ export default function FilterSheet({
                   onChangeText={setMinText}
                   keyboardType="decimal-pad"
                   ltr
-                  placeholder={formatNumber(0)}
+                  placeholder={example(examples.min)}
                   helper={priceHelper(minText, currency)}
                   style={styles.field}
                 />
@@ -268,6 +286,7 @@ export default function FilterSheet({
                   onChangeText={setMaxText}
                   keyboardType="decimal-pad"
                   ltr
+                  placeholder={example(examples.max)}
                   helper={priceHelper(maxText, currency)}
                   style={styles.field}
                 />

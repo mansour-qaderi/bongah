@@ -1,6 +1,6 @@
 import React from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
-import { colors, radius, shadow, spacing } from '../theme';
+import { colors, radius, spacing } from '../theme';
 import AppText from './AppText';
 import Icon from './Icon';
 
@@ -22,11 +22,7 @@ export default function Fab({ label, onPress, bottom = spacing.lg }: Props) {
         accessibilityRole="button"
         accessibilityLabel={label}
         onPress={onPress}
-        style={({ pressed }) => [
-          styles.fab,
-          shadow.floating,
-          pressed ? styles.pressed : null,
-        ]}
+        style={({ pressed }) => [styles.fab, pressed ? styles.pressed : null]}
       >
         <Icon name="plus" size={22} color={colors.textOnPrimary} weight={1.5} />
         <AppText variant="label" color={colors.textOnPrimary}>

@@ -1,7 +1,7 @@
 import React from 'react';
 import { Modal, Pressable, StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
-import { colors, shadow, spacing } from '../theme';
+import { colors, spacing } from '../theme';
 import AppText from './AppText';
 import Button from './Button';
 import Icon from './Icon';
@@ -45,7 +45,7 @@ export default function LocationPermissionModal({
         <View
           testID="location-permission"
           accessibilityViewIsModal
-          style={[styles.card, shadow.floating]}
+          style={styles.card}
         >
           <View style={styles.halo}>
             <View style={styles.disc}>
@@ -117,8 +117,7 @@ const styles = StyleSheet.create({
     width: 96,
     height: 96,
     borderRadius: 48,
-    backgroundColor: colors.primarySoft,
-    opacity: 1,
+    backgroundColor: colors.neutralSoft,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: spacing.xs,

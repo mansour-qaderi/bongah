@@ -57,12 +57,16 @@ export default function TextField({
   return (
     <View style={styles.wrapper}>
       {label ? (
-        <AppText variant="label" style={styles.label}>
+        <AppText
+          variant="label"
+          color={colors.textSecondary}
+          style={styles.label}
+        >
           {label}
         </AppText>
       ) : null}
       <TextInput
-        placeholderTextColor={colors.textMuted}
+        placeholderTextColor={colors.placeholder}
         accessibilityLabel={label}
         multiline={multiline}
         {...rest}

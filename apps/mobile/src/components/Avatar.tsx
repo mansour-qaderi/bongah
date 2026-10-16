@@ -3,14 +3,14 @@ import { Image, StyleSheet, View } from 'react-native';
 import { colors } from '../theme';
 import AppText from './AppText';
 
-/** Soft backgrounds with a darker ink of the same hue (each pair reads at 4.5:1 or better). */
+/** Solid, flat colours with white ink on top (each pair reads at 4.5:1 or better). No pastel tints. */
 const PALETTE = [
-  { bg: colors.primaryTint, ink: colors.primaryDark },
-  { bg: '#DBEAFE', ink: '#1D4ED8' },
-  { bg: colors.accentSoft, ink: colors.accentText },
-  { bg: '#EDE9FE', ink: '#5B21B6' },
-  { bg: '#FCE7F3', ink: '#9D174D' },
-  { bg: '#CFFAFE', ink: '#0E7490' },
+  { bg: colors.primary, ink: colors.textOnPrimary },
+  { bg: '#1D4ED8', ink: colors.textOnPrimary },
+  { bg: colors.accentText, ink: colors.textOnPrimary },
+  { bg: '#5B21B6', ink: colors.textOnPrimary },
+  { bg: '#9D174D', ink: colors.textOnPrimary },
+  { bg: '#0E7490', ink: colors.textOnPrimary },
 ] as const;
 
 /** The same name always gets the same colour, so a person is recognisable down a list. */
@@ -68,7 +68,7 @@ export default function Avatar({ name, uri, size = 48, seed }: Props) {
 }
 
 const styles = StyleSheet.create({
-  image: { backgroundColor: colors.primaryTint },
+  image: { backgroundColor: colors.neutralSoft },
   initial: { alignItems: 'center', justifyContent: 'center' },
   letter: { fontWeight: '700' },
 });

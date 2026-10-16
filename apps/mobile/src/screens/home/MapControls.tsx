@@ -4,9 +4,9 @@ import { useTranslation } from 'react-i18next';
 import { DEAL_TYPES, type DealType } from '@bongah/shared-types';
 import AppText from '../../components/AppText';
 import Icon, { type IconName } from '../../components/Icon';
-import { colors, dealColors, radius, shadow, spacing } from '../../theme';
+import { colors, dealColors, radius, spacing, surfaces } from '../../theme';
 
-/** The round controls and the capsule that float over the map. One size, one shadow, so they read as a set. */
+/** The round controls and the capsule that float over the map. One size, one flat white + 1 px border, so they read as a set. */
 export const CONTROL_SIZE = 46;
 /** The "my location" button is the one control that stands alone on the map, so it is a little larger. */
 export const LOCATE_SIZE = 54;
@@ -56,16 +56,15 @@ export function RoundButton({
       onPress={onPress}
       style={({ pressed }) => [
         styles.round,
-        shadow.floating,
         {
           width: size,
           height: size,
           borderRadius: size / 2,
           backgroundColor: filled ? colors.primary : colors.surface,
+          borderColor: filled ? colors.primary : colors.border,
           opacity: pressed ? 0.9 : 1,
           transform: [{ scale: pressed ? 0.94 : 1 }],
         },
-        accent && !filled ? styles.ring : null,
       ]}
     >
       {busy ? (
@@ -103,7 +102,7 @@ interface DealFilterProps {
 export function DealFilter({ value, onChange }: DealFilterProps) {
   const { t } = useTranslation();
   return (
-    <View style={[styles.capsule, shadow.floating]} testID="deal-filter">
+    <View style={styles.capsule} testID="deal-filter">
       {DEAL_TYPES.map(deal => {
         const selected = value === deal;
         const tone = dealColors[deal];
@@ -158,7 +157,7 @@ export function StatusPill({
       <View
         accessibilityRole="progressbar"
         accessibilityLabel={t('common.loading')}
-        style={[styles.loader, shadow.floating]}
+        style={styles.loader}
       >
         <ActivityIndicator size="small" color={colors.primary} />
       </View>
@@ -166,7 +165,7 @@ export function StatusPill({
   }
   if (!message) return null;
   return (
-    <View style={[styles.status, shadow.card]} testID="map-status">
+    <View style={styles.status} testID="map-status">
       {refreshing ? (
         <ActivityIndicator
           size="small"
@@ -223,7 +222,7 @@ export function ModeToggle({
     );
   };
   return (
-    <View testID="mode-toggle" style={[styles.toggle, shadow.floating]}>
+    <View testID="mode-toggle" style={styles.toggle}>
       {segment('map', 'pin', mapLabel)}
       {segment('list', 'list', listLabel)}
     </View>
@@ -231,7 +230,11 @@ export function ModeToggle({
 }
 
 const styles = StyleSheet.create({
-  round: { alignItems: 'center', justifyContent: 'center' },
+  round: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+  },
   badge: {
     position: 'absolute',
     top: -3,
@@ -253,7 +256,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 2,
     padding: 4,
-    backgroundColor: colors.surface,
+    ...surfaces.floating,
     borderRadius: CONTROL_SIZE / 2,
   },
   segment: {
@@ -271,7 +274,7 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: colors.surface,
+    ...surfaces.floating,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -280,12 +283,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
-    backgroundColor: colors.surfaceGlass,
+    ...surfaces.floating,
     borderRadius: radius.pill,
     paddingHorizontal: spacing.md,
     paddingVertical: 2,
   },
-  ring: { borderWidth: 1, borderColor: colors.primarySoft },
   toggle: {
     height: 48,
     flexDirection: 'row',
@@ -293,7 +295,7 @@ const styles = StyleSheet.create({
     padding: 4,
     gap: 2,
     borderRadius: 24,
-    backgroundColor: colors.surface,
+    ...surfaces.floating,
   },
   modeSegment: {
     height: 40,

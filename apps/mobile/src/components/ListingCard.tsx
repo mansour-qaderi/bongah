@@ -7,33 +7,26 @@ import {
   View,
 } from 'react-native';
 import { useTranslation } from 'react-i18next';
-import type { DealType, Property, PropertyStatus } from '@bongah/shared-types';
-import { formatDate, formatNumber } from '../i18n/format';
+import type { Property, PropertyStatus } from '@bongah/shared-types';
+import { formatDate } from '../i18n/format';
 import { useFormat } from '../i18n/useFormat';
 import { PROPERTY_LINE_ICONS } from '../map/markers';
-import { colors, dealColors, radius, spacing, surfaces } from '../theme';
+import { colors, radius, spacing, surfaces } from '../theme';
 import AppText from './AppText';
-import Badge, { type BadgeTone, type BadgeToneName } from './Badge';
+import Badge, { badgeTones, dealTone } from './Badge';
 import Icon from './Icon';
-
-/** What a listing's status looks like: the tone of its badge. */
-const STATUS_TONE: Record<PropertyStatus, BadgeToneName> = {
-  ACTIVE: 'success',
-  SOLD: 'info',
-  ARCHIVED: 'neutral',
-};
+import Price from './Price';
+import PropertyFacts, { propertyPlace } from './PropertyFacts';
 
 /**
- * The deal badge: the deal's own tint behind a darker ink of the same hue. The map's strong deal colours are for
- * fills and icons; as text on their tint two of the three fall short of 4.5:1.
+ * The little dot before a status word: emerald while the listing is live, near-black once the deal is done, grey
+ * when it is switched off. The badge itself is always the same quiet white pill, so the only solid-coloured badge
+ * on the card is the one that says what kind of deal it is.
  */
-const DEAL_TONE: Record<DealType, BadgeTone> = {
-  SALE: { soft: dealColors.SALE.soft, strong: colors.primaryDark },
-  RENT: { soft: dealColors.RENT.soft, strong: colors.infoText },
-  MORTGAGE_GROWI: {
-    soft: dealColors.MORTGAGE_GROWI.soft,
-    strong: colors.accentText,
-  },
+const STATUS_DOT: Record<PropertyStatus, string> = {
+  ACTIVE: colors.primary,
+  SOLD: colors.ink,
+  ARCHIVED: colors.textMuted,
 };
 
 export interface ListingAction {
@@ -53,24 +46,17 @@ interface Props {
 const THUMB = 104;
 
 /**
- * One of the person's own listings, as a horizontal card: the picture beside what it is and what it costs, a row
- * of badges (kind, deal, whether it is live) and, under a hairline, the few things they can do with it. The top
- * part opens the listing; the buttons act on it. A listing with no picture gets a quiet grey tile with the kind's
- * line icon, not a loud block of colour.
+ * One of the person's own listings, as a flat horizontal card (white, 1 px border, no shadow): the picture beside
+ * the title, a row of badges right under it (the kind of property, the deal as a solid pill, and whether it is live as
+ * a quiet white pill) and then the price and the rest; under a divider, the few things they can do with it: promote
+ * (solid emerald), edit (white with an edge) and deactivate (white with a red edge). Nothing is drawn over the picture. The top part opens the listing; the buttons act on it. A listing with no picture gets a grey tile with the
+ * kind's line icon.
  */
 export default function ListingCard({ property, onPress, actions }: Props) {
   const { t } = useTranslation();
   const format = useFormat();
   const image = property.images[0];
-  const facts = [
-    format.area(property.area_sqm),
-    property.bedrooms !== null
-      ? `${formatNumber(property.bedrooms, 0)} ${t('property.bedrooms')}`
-      : null,
-  ].filter(Boolean);
-  const place = [format.province(property.province), property.district]
-    .filter(Boolean)
-    .join('، ');
+  const place = propertyPlace(property, format.province);
 
   return (
     <View style={[styles.card, property.is_featured ? styles.featured : null]}>
@@ -96,45 +82,50 @@ export default function ListingCard({ property, onPress, actions }: Props) {
           <AppText variant="label" numberOfLines={2}>
             {property.title}
           </AppText>
-          <AppText variant="heading" color={colors.primaryDark}>
-            {format.price(property.price, property.currency)}
-          </AppText>
-          {facts.length > 0 ? (
-            <AppText
-              variant="caption"
-              color={colors.textMuted}
-              numberOfLines={1}
-            >
-              {facts.join(' · ')}
-            </AppText>
-          ) : null}
+          <View style={styles.badges} testID="listing-badges">
+            <Badge label={t(`propertyType.${property.type}`)} tone="neutral" />
+            <Badge
+              label={t(`dealType.${property.deal_type}`)}
+              tone={dealTone(property.deal_type)}
+            />
+            <Badge
+              dot
+              dotColor={STATUS_DOT[property.status]}
+              label={t(`status.${property.status}`)}
+              tone="neutral"
+            />
+            {property.is_featured ? (
+              <Badge label={t('property.featured')} tone={badgeTones.warning} />
+            ) : null}
+          </View>
+          <Price
+            amount={property.price}
+            currency={property.currency}
+            variant="heading"
+            color={colors.primaryDark}
+          />
+          <PropertyFacts property={property} />
           {place ? (
-            <AppText
-              variant="caption"
-              color={colors.textMuted}
-              numberOfLines={1}
-            >
-              {place}
-            </AppText>
+            <View style={styles.place}>
+              <Icon
+                name="pin"
+                size={14}
+                color={colors.textMuted}
+                weight={1.9}
+              />
+              <AppText
+                variant="caption"
+                color={colors.textMuted}
+                numberOfLines={1}
+                style={styles.placeText}
+              >
+                {place}
+              </AppText>
+            </View>
           ) : null}
         </View>
       </Pressable>
 
-      <View style={styles.badges}>
-        <Badge label={t(`propertyType.${property.type}`)} tone="neutral" />
-        <Badge
-          label={t(`dealType.${property.deal_type}`)}
-          tone={DEAL_TONE[property.deal_type]}
-        />
-        <Badge
-          dot
-          label={t(`status.${property.status}`)}
-          tone={STATUS_TONE[property.status]}
-        />
-        {property.is_featured ? (
-          <Badge label={t('property.featured')} tone="warning" />
-        ) : null}
-      </View>
       {property.is_featured && property.featured_until ? (
         <AppText variant="caption" color={colors.accentText}>
           {t('my.featuredUntil', { date: formatDate(property.featured_until) })}
@@ -160,11 +151,7 @@ const TONES = {
     fg: colors.textOnPrimary,
   },
   neutral: { bg: colors.surface, border: colors.border, fg: colors.text },
-  danger: {
-    bg: colors.dangerSoft,
-    border: colors.dangerSoft,
-    fg: colors.danger,
-  },
+  danger: { bg: colors.surface, border: colors.danger, fg: colors.danger },
 } as const;
 
 function ActionButton({
@@ -208,7 +195,7 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     gap: spacing.md,
   },
-  featured: { borderColor: colors.accentBright, borderWidth: 1.5 },
+  featured: { borderColor: colors.accentBright },
   top: { flexDirection: 'row', gap: spacing.md },
   pressed: { opacity: 0.85 },
   thumb: { width: THUMB, height: THUMB, borderRadius: radius.md },
@@ -217,13 +204,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  main: { flex: 1, gap: 2, justifyContent: 'center' },
+  main: { flex: 1, gap: spacing.xs, justifyContent: 'center' },
+  place: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
+  placeText: { flexShrink: 1 },
   badges: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
   actions: {
     flexDirection: 'row',
     gap: spacing.sm,
     paddingTop: spacing.md,
-    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopWidth: 1,
     borderTopColor: colors.border,
   },
   action: {

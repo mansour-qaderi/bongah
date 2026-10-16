@@ -78,6 +78,8 @@ export default function MorningMessagesCard({
           disabled={saving}
           accessibilityLabel={t('account.morningMessages')}
           trackColor={{ false: colors.border, true: colors.primary }}
+          thumbColor={colors.surface}
+          ios_backgroundColor={colors.border}
         />
       </View>
       {failure ? <Banner kind="error" message={failure} /> : null}

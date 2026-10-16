@@ -174,6 +174,7 @@ function Manager({
           label={t('templates.bodyLabel')}
           value={body}
           onChangeText={setBody}
+          placeholder={t('templates.bodyPlaceholder')}
           multiline
           maxLength={maxLength}
           editable={!full}
@@ -190,7 +191,9 @@ function Manager({
             value={auto}
             onValueChange={setAuto}
             disabled={full}
-            trackColor={{ true: colors.primary }}
+            trackColor={{ false: colors.border, true: colors.primary }}
+            thumbColor={colors.surface}
+            ios_backgroundColor={colors.border}
           />
         </View>
         {full ? <Banner kind="info" message={t('chat.templateLimit')} /> : null}

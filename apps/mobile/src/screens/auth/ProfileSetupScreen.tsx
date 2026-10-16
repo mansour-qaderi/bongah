@@ -61,6 +61,7 @@ export default function ProfileSetupScreen({ navigation, route }: Props) {
           setName(value);
           setFieldError(null);
         }}
+        placeholder={t('auth.fullNamePlaceholder')}
         autoComplete="name"
         textContentType="name"
         maxLength={100}
