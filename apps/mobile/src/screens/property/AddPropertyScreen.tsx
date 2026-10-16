@@ -13,10 +13,12 @@ import {
   CURRENCIES,
   DEAL_TYPES,
   PROPERTY_TYPES,
+  PROPERTY_UNITS,
   type Currency,
   type DealType,
   type Property,
   type PropertyType,
+  type PropertyUnitType,
 } from '@bongah/shared-types';
 import {
   createPropertySchema,
@@ -56,21 +58,27 @@ import {
   AFGHANISTAN_CAMERA,
   cameraAt,
   provinceCamera,
+  toLngLat,
   type Coordinate,
   type MapCamera,
 } from '../../map/geo';
-import { lookUpPlace } from '../../map/geocode';
+import { findAddress as findOnMap, lookUpPlace } from '../../map/geocode';
 import type { RootStackParamList } from '../../navigation/types';
 import { colors, radius, spacing } from '../../theme';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'AddProperty'>;
 type AreaUnit = 'sqm' | 'jerib';
 type FieldErrors = Partial<Record<string, string>>;
-type Lookup = 'idle' | 'finding' | 'filled';
+/** What the pin's address lookup did: still asking, filled the form in, or the service could not say. */
+type Lookup = 'idle' | 'finding' | 'filled' | 'failed';
+/** What the map did about a written address: still looking, moved there, or did not know the place. */
+type MapSync = 'idle' | 'finding' | 'found' | 'none';
 
 const MAX_IMAGE_LINKS = 10;
 /** After the last tap on the map, wait this long before asking for the address: one question per settled pin. */
 export const LOOKUP_DELAY_MS = 700;
+/** After the last key in the address, wait this long before asking the map where it is. */
+export const ADDRESS_SYNC_DELAY_MS = 1000;
 const roundTo2 = (n: number) => Math.round(n * 100) / 100;
 
 /** Land and garages have no rooms to count. */
@@ -87,6 +95,10 @@ const addressFrom = (place: {
 
 /**
  * Post a listing, or (with a `propertyId`) change one of mine.
+ *
+ * The form and the map follow each other. Choose a province or write an address and the map flies there (it never
+ * moves the pin, which only the person places); tap the map or drag the pin and the province and the address are
+ * filled in from where it landed. Neither direction overwrites what the person typed.
  *
  * Where it is can be said two ways: put a pin on the map, which is free for everyone and fills in the province and
  * the address by itself, or write the address out as one line ("زرنج، ناحیه ۵، پهلوی شفاخانه ABC، داخل کوچه
@@ -112,6 +124,7 @@ export default function AddPropertyScreen({ navigation, route }: Props) {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [type, setType] = useState<PropertyType>(PROPERTY_TYPES[0]);
+  const [unit, setUnit] = useState<PropertyUnitType | null>(null);
   const [deal, setDeal] = useState<DealType>('SALE');
   const [priceText, setPriceText] = useState('');
   const [currency, setCurrency] = useState<Currency>('AFGHANI');
@@ -129,6 +142,7 @@ export default function AddPropertyScreen({ navigation, route }: Props) {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [open, setOpen] = useState(true);
   const [lookup, setLookup] = useState<Lookup>('idle');
+  const [mapSync, setMapSync] = useState<MapSync>('idle');
   const [provinceGuessed, setProvinceGuessed] = useState(false);
   // Where the map looks. It moves when a province is picked by hand or an existing listing is loaded, never
   // because a pin was just placed (it is already there) or the province was filled in from the pin.
@@ -142,13 +156,49 @@ export default function AddPropertyScreen({ navigation, route }: Props) {
   typed.current = { address, province };
   const lookupTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lookupAbort = useRef<AbortController | null>(null);
+  const syncAbort = useRef<AbortController | null>(null);
+  const syncNonce = useRef(0);
+  // An address the map must not chase: the one a pin wrote, or the one a listing being edited came with.
+  const ignoredAddress = useRef('');
   useEffect(
     () => () => {
       if (lookupTimer.current) clearTimeout(lookupTimer.current);
       lookupAbort.current?.abort();
+      syncAbort.current?.abort();
     },
     [],
   );
+
+  // The written address (and the province it is in) say where the map should look. Waits for the typing to stop.
+  useEffect(() => {
+    const text = address.trim();
+    if (text.length < 3 || text === ignoredAddress.current.trim()) {
+      syncAbort.current?.abort();
+      setMapSync('idle');
+      return;
+    }
+    const timer = setTimeout(async () => {
+      syncAbort.current?.abort();
+      const abort = new AbortController();
+      syncAbort.current = abort;
+      setMapSync('finding');
+      const where = province ? `${text}، ${province.name.prs}` : text;
+      const result = await findOnMap(where, abort.signal);
+      if (abort.signal.aborted) return;
+      if (result.status === 'found') {
+        syncNonce.current += 1;
+        setCamera({
+          center: toLngLat(result.coordinate),
+          zoom: result.zoom,
+          nonce: syncNonce.current,
+        });
+        setMapSync('found');
+      } else {
+        setMapSync(result.status === 'none' ? 'none' : 'idle');
+      }
+    }, ADDRESS_SYNC_DELAY_MS);
+    return () => clearTimeout(timer);
+  }, [address, province]);
 
   // What to do once the sheet has slid away: go to another screen. Nothing means the person closed the sheet, so
   // this route is left too.
@@ -174,6 +224,7 @@ export default function AddPropertyScreen({ navigation, route }: Props) {
     setTitle(property.title);
     setDescription(property.description);
     setType(property.type);
+    setUnit(property.unit_type ?? null);
     setDeal(property.deal_type);
     setPriceText(String(property.price));
     setCurrency(property.currency);
@@ -186,6 +237,8 @@ export default function AddPropertyScreen({ navigation, route }: Props) {
     setDistrict(property.district);
     setNeighborhood(property.neighborhood ?? '');
     setAddress(property.address);
+    // The address a listing already has is not a request to move the map: its own pin (or province) decides.
+    ignoredAddress.current = property.address;
     const pin =
       property.lat !== null && property.lng !== null
         ? { latitude: property.lat, longitude: property.lng }
@@ -265,10 +318,21 @@ export default function AddPropertyScreen({ navigation, route }: Props) {
     typedArea === null
       ? undefined
       : `${formatNumber(typedArea)} ${t(`unit.${areaUnit}`)}`;
+  /** The ℹ beside the "مساحت" label: what a jerib is, and what the typed area comes to in jerib. */
+  const areaInfo = (
+    <JeribInfoButton
+      areaSqm={
+        typedArea === null
+          ? undefined
+          : areaUnit === 'jerib'
+          ? jeribToSqm(typedArea)
+          : typedArea
+      }
+    />
+  );
 
-  /** "مثلاً ۲,۵۰۰,۰۰۰": a sample figure for an empty box. */
-  const example = (amount: number) =>
-    `${t('common.example')} ${formatNumber(amount)}`;
+  /** "۲,۵۰۰,۰۰۰": a sample figure for an empty box (the lighter placeholder colour is what says it is only a hint). */
+  const example = (amount: number) => formatNumber(amount);
 
   const clearError = (field: string) =>
     setErrors(current =>
@@ -283,6 +347,20 @@ export default function AddPropertyScreen({ navigation, route }: Props) {
     setLookup('finding');
     const place = await lookUpPlace(point, abort.signal);
     if (abort.signal.aborted) return;
+    // The service could not describe the spot: say so, so the person knows to write the address themselves.
+    if (!place.answered) {
+      if (
+        place.province &&
+        (typed.current.province === null || provinceIsAuto.current)
+      ) {
+        provinceIsAuto.current = true;
+        setProvince(place.province);
+        setProvinceGuessed(true);
+        clearError('province');
+      }
+      setLookup('failed');
+      return;
+    }
 
     const now = typed.current;
     // The structured parts are the pin's own (the district filter reads them): they always follow it.
@@ -296,6 +374,7 @@ export default function AddPropertyScreen({ navigation, route }: Props) {
     ) {
       setAddress(found);
       filledWith.current.address = found;
+      ignoredAddress.current = found;
       clearError('address');
     }
     if (place.province && (now.province === null || provinceIsAuto.current)) {
@@ -324,6 +403,7 @@ export default function AddPropertyScreen({ navigation, route }: Props) {
       title,
       description,
       type,
+      unit_type: unit,
       deal_type: deal,
       price: price === null ? undefined : roundTo2(price),
       currency,
@@ -436,7 +516,29 @@ export default function AddPropertyScreen({ navigation, route }: Props) {
               key={p}
               label={t(`propertyType.${p}`)}
               selected={type === p}
-              onPress={() => setType(p)}
+              onPress={() => {
+                setType(p);
+                // A unit belongs to one type: changing the type drops one that no longer fits.
+                if (unit && !PROPERTY_UNITS[p].includes(unit)) setUnit(null);
+              }}
+            />
+          ))}
+        </View>
+
+        <AppText variant="label" color={colors.textSecondary}>
+          {`${t('add.unit')} (${t('common.optional')})`}
+        </AppText>
+        <AppText variant="caption" color={colors.textMuted} style={styles.help}>
+          {t('add.unitHelp')}
+        </AppText>
+        <View style={styles.wrap} testID="unit-chips">
+          {PROPERTY_UNITS[type].map(u => (
+            <Chip
+              compact
+              key={u}
+              label={t(`unitType.${u}`)}
+              selected={unit === u}
+              onPress={() => setUnit(unit === u ? null : u)}
             />
           ))}
         </View>
@@ -483,6 +585,7 @@ export default function AddPropertyScreen({ navigation, route }: Props) {
 
         <TextField
           label={t('add.area')}
+          labelAccessory={areaInfo}
           value={areaText}
           onChangeText={v => {
             setAreaText(v);
@@ -497,21 +600,10 @@ export default function AddPropertyScreen({ navigation, route }: Props) {
           <SegmentedControl
             value={areaUnit}
             onChange={setAreaUnit}
-            options={(['sqm', 'jerib'] as const).map(unit => ({
-              value: unit,
-              label: t(`unit.${unit}`),
+            options={(['sqm', 'jerib'] as const).map(measure => ({
+              value: measure,
+              label: t(`unit.${measure}`),
             }))}
-          />
-        </View>
-        <View style={styles.infoRow}>
-          <JeribInfoButton
-            areaSqm={
-              typedArea === null
-                ? undefined
-                : areaUnit === 'jerib'
-                ? jeribToSqm(typedArea)
-                : typedArea
-            }
           />
         </View>
 
@@ -558,6 +650,26 @@ export default function AddPropertyScreen({ navigation, route }: Props) {
           ) : lookup === 'filled' ? (
             <AppText variant="caption" color={colors.primaryDark}>
               {t('add.filled')}
+            </AppText>
+          ) : lookup === 'failed' ? (
+            <AppText variant="caption" color={colors.textMuted}>
+              {t('add.lookupFailed')}
+            </AppText>
+          ) : null}
+          {mapSync === 'finding' ? (
+            <View style={styles.finding}>
+              <ActivityIndicator size="small" color={colors.primary} />
+              <AppText variant="caption" color={colors.textMuted}>
+                {t('add.mapFinding')}
+              </AppText>
+            </View>
+          ) : mapSync === 'found' ? (
+            <AppText variant="caption" color={colors.primaryDark}>
+              {t('add.mapFound')}
+            </AppText>
+          ) : mapSync === 'none' ? (
+            <AppText variant="caption" color={colors.textMuted}>
+              {t('add.mapNotFound')}
             </AppText>
           ) : null}
         </PinSection>
@@ -683,7 +795,6 @@ export default function AddPropertyScreen({ navigation, route }: Props) {
 const styles = StyleSheet.create({
   content: { padding: spacing.lg, paddingBottom: spacing.xl },
   submit: { flex: 1 },
-  infoRow: { alignItems: 'flex-start', marginBottom: spacing.lg },
   wrap: {
     flexDirection: 'row',
     flexWrap: 'wrap',

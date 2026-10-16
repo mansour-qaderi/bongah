@@ -11,3 +11,4 @@ export * from './moderation.schema';
 export * from './admin.schema';
 export * from './bulk.schema';
 export * from './notification.schema';
+export * from './feedback.schema';

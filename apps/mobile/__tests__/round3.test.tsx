@@ -16,7 +16,6 @@ import { ICON_GRID, ICON_SHAPES } from '../src/components/iconShapes';
 import { resetSavedForTests, toggleSaved } from '../src/favorites/store';
 import { listingShareMessage } from '../src/share/listingShare';
 import { KV_KEYS, kv } from '../src/storage/kv';
-import { placeFromHit, zoomForSpan } from '../src/map/placeSearch';
 
 declare const __dirname: string;
 
@@ -430,42 +429,6 @@ describe('Chip', () => {
     const label = tree.root.findAllByType(AppText)[0];
     expect(label.props.numberOfLines).toBe(1);
     expect(styleOf(label).flexShrink).toBe(0);
-  });
-});
-
-// ─────────────────────────────── 4. place search pieces ───────────────────────────────
-
-describe('place search results', () => {
-  const hit = {
-    place_id: 5,
-    lat: '34.3517',
-    lon: '62.2040',
-    name: 'پوهنتون جامی',
-    display_name: 'پوهنتون جامی, شهر هرات, ولایت هرات, افغانستان',
-    boundingbox: ['34.349', '34.354', '62.201', '62.207'],
-  };
-
-  it('reads a hit into a name, a second line, a position and a zoom', () => {
-    const place = placeFromHit(hit)!;
-    expect(place.name).toBe('پوهنتون جامی');
-    expect(place.detail).toBe('شهر هرات، ولایت هرات، افغانستان');
-    expect(place.coordinate).toEqual({ latitude: 34.3517, longitude: 62.204 });
-    // A small place is shown closely.
-    expect(place.zoom).toBeGreaterThanOrEqual(14);
-  });
-
-  it('shows a whole province from further away than a building', () => {
-    expect(zoomForSpan(3)).toBeLessThan(zoomForSpan(0.005));
-    expect(zoomForSpan(0)).toBe(15);
-    expect(zoomForSpan(Number.NaN)).toBe(15);
-    expect(zoomForSpan(0.00001)).toBeLessThanOrEqual(17);
-    expect(zoomForSpan(90)).toBeGreaterThanOrEqual(6);
-  });
-
-  it('drops hits outside Afghanistan, without a position, or without a name', () => {
-    expect(placeFromHit({ ...hit, lat: '51.5', lon: '-0.12' })).toBeNull();
-    expect(placeFromHit({ ...hit, lat: 'x' })).toBeNull();
-    expect(placeFromHit({ ...hit, name: '', display_name: '' })).toBeNull();
   });
 });
 

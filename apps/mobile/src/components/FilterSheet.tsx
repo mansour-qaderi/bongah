@@ -5,9 +5,11 @@ import {
   CURRENCIES,
   DEAL_TYPES,
   PROPERTY_TYPES,
+  PROPERTY_UNITS,
   type Currency,
   type DealType,
   type PropertyType,
+  type PropertyUnitType,
 } from '@bongah/shared-types';
 import type { PropertyFilters } from '../api/endpoints';
 import {
@@ -66,6 +68,7 @@ export default function FilterSheet({
   const [province, setProvince] = useState<Province | null>(null);
   const [district, setDistrict] = useState('');
   const [type, setType] = useState<PropertyType | undefined>();
+  const [unit, setUnit] = useState<PropertyUnitType | undefined>();
   const [deal, setDeal] = useState<DealType | undefined>();
   const [currency, setCurrency] = useState<Currency>('AFGHANI');
   const [minText, setMinText] = useState('');
@@ -79,6 +82,7 @@ export default function FilterSheet({
     setProvince(findProvince(value.province) ?? null);
     setDistrict(value.district ?? '');
     setType(value.type);
+    setUnit(value.unit_type);
     setDeal(value.deal_type);
     setCurrency(value.currency ?? 'AFGHANI');
     setMinText(
@@ -106,6 +110,8 @@ export default function FilterSheet({
       province: province ? provinceValue(province) : undefined,
       district: district.trim() || undefined,
       type,
+      // A unit only means something within its type.
+      unit_type: type ? unit : undefined,
       deal_type: deal,
       min_price: min,
       max_price: max,
@@ -117,6 +123,7 @@ export default function FilterSheet({
     setProvince(null);
     setDistrict('');
     setType(undefined);
+    setUnit(undefined);
     setDeal(undefined);
     setMinText('');
     setMaxText('');
@@ -142,13 +149,13 @@ export default function FilterSheet({
       : maxValue !== undefined
       ? t('home.priceUpTo', { amount: describeStop(maxValue) })
       : null;
-  // Examples for the empty boxes: a friendly sample figure, not a bare zero.
+  // What the empty boxes hint at: clean round figures, plain digits, never a bare zero. The lighter placeholder colour
+  // (not a "for example" word) is what tells them from a typed amount.
   const examples =
     currency === 'USD'
-      ? { min: 20_000, max: 100_000 }
-      : { min: 1_000_000, max: 5_000_000 };
-  const example = (amount: number) =>
-    `${t('common.example')} ${formatNumber(amount)}`;
+      ? { min: 1_000, max: 100_000 }
+      : { min: 1_000, max: 1_000_000 };
+  const example = (amount: number) => String(amount);
 
   return (
     <>
@@ -200,7 +207,10 @@ export default function FilterSheet({
                 compact
                 label={t('home.allTypes')}
                 selected={!type}
-                onPress={() => setType(undefined)}
+                onPress={() => {
+                  setType(undefined);
+                  setUnit(undefined);
+                }}
               />
               {PROPERTY_TYPES.map(p => (
                 <Chip
@@ -208,10 +218,38 @@ export default function FilterSheet({
                   key={p}
                   label={t(`propertyType.${p}`)}
                   selected={type === p}
-                  onPress={() => setType(p)}
+                  onPress={() => {
+                    setType(p);
+                    // A unit belongs to one type: changing the type drops one that no longer fits.
+                    if (unit && !PROPERTY_UNITS[p].includes(unit))
+                      setUnit(undefined);
+                  }}
                 />
               ))}
             </View>
+
+            {type ? (
+              <>
+                <AppText variant="label">{t('home.unit')}</AppText>
+                <View style={styles.wrap} testID="unit-chips">
+                  <Chip
+                    compact
+                    label={t('common.all')}
+                    selected={!unit}
+                    onPress={() => setUnit(undefined)}
+                  />
+                  {PROPERTY_UNITS[type].map(u => (
+                    <Chip
+                      compact
+                      key={u}
+                      label={t(`unitType.${u}`)}
+                      selected={unit === u}
+                      onPress={() => setUnit(u)}
+                    />
+                  ))}
+                </View>
+              </>
+            ) : null}
 
             <AppText variant="label">{t('home.dealType')}</AppText>
             <View style={styles.wrap}>

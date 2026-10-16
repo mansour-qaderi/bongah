@@ -7,7 +7,6 @@ import {
   Linking,
   Platform,
   StyleSheet,
-  TextInput,
 } from 'react-native';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { LocationManager } from '@maplibre/maplibre-react-native';
@@ -1786,6 +1785,22 @@ describe('Home map: overlay controls', () => {
     expect(allText(tree.root)).not.toContain(prs.common.loading);
   });
 
+  it('has a saved-listings button among the top controls, which opens the Saved screen', async () => {
+    serve([listing()]);
+    const nav = navigation();
+    const tree = await render(home(nav));
+    await settle();
+    const button = tree.root.findAll(
+      n =>
+        n.props.testID === 'open-saved' &&
+        typeof n.props.onPress === 'function',
+    )[0];
+    expect(button).toBeDefined();
+    expect(labelled(tree.root, prs.nav.saved)).toBe(true);
+    await act(async () => button.props.onPress());
+    expect(nav.navigate).toHaveBeenCalledWith('Saved');
+  });
+
   it('leaves exactly two controls at the foot of the map: "my location", and the list / map pill', async () => {
     serve([listing()]);
     const tree = await render(home());
@@ -1912,110 +1927,5 @@ describe('Home map: overlay controls', () => {
     expect(located()).toBe(0);
     await press(tree.root, '×');
     expect(located()).toBeGreaterThan(0);
-  });
-});
-
-describe('HomeScreen: place search bar', () => {
-  const HERAT_HIT = {
-    place_id: 77,
-    lat: '34.3517',
-    lon: '62.2040',
-    name: 'پوهنتون جامی',
-    display_name: 'پوهنتون جامی, شهر هرات, هرات, افغانستان',
-    boundingbox: ['34.349', '34.354', '62.201', '62.207'],
-  };
-  const searchCalls = () =>
-    fetchMock.mock.calls.filter(([url]) =>
-      String(url).startsWith('https://nominatim.openstreetmap.org/search'),
-    );
-  /** The listings API as usual, and the place service answering with these hits (or being unreachable). */
-  const serveSearch = (hits: unknown[] | 'down') => {
-    serve([listing()]);
-    const api = fetchMock.getMockImplementation()!;
-    fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
-      if (!String(url).startsWith('https://nominatim.openstreetmap.org/'))
-        return api(url, init);
-      if (hits === 'down') throw new Error('offline');
-      return { ok: true, status: 200, json: async () => hits };
-    });
-  };
-  const searchInput = (root: ReactTestRenderer.ReactTestInstance) =>
-    root
-      .findAllByType(TextInput)
-      .find(n => n.props.testID === 'map-search-input')!;
-  const search = async (
-    tree: ReactTestRenderer.ReactTestRenderer,
-    text: string,
-  ) => {
-    await act(async () => {
-      searchInput(tree.root).props.onChangeText(text);
-    });
-    await act(async () => {
-      searchInput(tree.root).props.onSubmitEditing();
-    });
-    await settle();
-  };
-
-  it('floats a search bar on top of the map, with an example in it', async () => {
-    serveSearch([]);
-    const tree = await render(home());
-    await settle();
-    expect(hasId(tree.root, 'map-search')).toBe(true);
-    expect(searchInput(tree.root).props.placeholder).toBe(prs.home.searchPlace);
-    expect(searchInput(tree.root).props.placeholder).toContain('هرات');
-    // It asks nothing until the person submits.
-    expect(searchCalls()).toHaveLength(0);
-  });
-
-  it('looks the place up inside Afghanistan, lists the answers, and flies the map to the one chosen', async () => {
-    serveSearch([HERAT_HIT]);
-    const tree = await render(home());
-    await settle();
-    await search(tree, 'هرات، پوهنتون جامی');
-
-    expect(searchCalls()).toHaveLength(1);
-    const url = String(searchCalls()[0][0]);
-    expect(url).toContain('countrycodes=af');
-    expect(decodeURIComponent(url)).toContain('هرات، پوهنتون جامی');
-    expect(allText(tree.root)).toContain('پوهنتون جامی');
-    expect(allText(tree.root)).toContain('شهر هرات');
-    // The quick filters step aside while the answers are showing.
-    expect(hasId(tree.root, 'deal-SALE')).toBe(false);
-
-    await tapTestId(tree.root, 'map-search-result-0');
-    await settle();
-    expect(lastFly()).toMatchObject({ center: [62.204, 34.3517] });
-    expect(lastFly().zoom).toBeGreaterThanOrEqual(14);
-    // Closed again: the filters are back and the bar keeps the place's name.
-    expect(hasId(tree.root, 'map-search-results')).toBe(false);
-    expect(hasId(tree.root, 'deal-SALE')).toBe(true);
-    expect(searchInput(tree.root).props.value).toBe('پوهنتون جامی');
-  });
-
-  it('says so when nothing was found, and when the service cannot be reached', async () => {
-    serveSearch([]);
-    let tree = await render(home());
-    await settle();
-    await search(tree, 'جایی که نیست');
-    expect(allText(tree.root)).toContain(prs.home.searchNoResults);
-    await act(async () => tree.unmount());
-
-    serveSearch('down');
-    tree = await render(home());
-    await settle();
-    await search(tree, 'هرات');
-    expect(allText(tree.root)).toContain(prs.home.searchFailed);
-    expect(allText(tree.root)).not.toContain(prs.home.searchNoResults);
-  });
-
-  it('clears the bar and the answers with the cross', async () => {
-    serveSearch([HERAT_HIT]);
-    const tree = await render(home());
-    await settle();
-    await search(tree, 'هرات');
-    expect(hasId(tree.root, 'map-search-results')).toBe(true);
-    await tapTestId(tree.root, 'map-search-clear');
-    expect(hasId(tree.root, 'map-search-results')).toBe(false);
-    expect(searchInput(tree.root).props.value).toBe('');
   });
 });

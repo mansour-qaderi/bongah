@@ -927,7 +927,7 @@ describe('ChatScreen', () => {
       await act(async () => {
         tapMap(tree.root, 'location-picker-map', [69.17, 34.53]);
       });
-      expect(mapParts(tree.root, 'Marker')).toHaveLength(1);
+      expect(mapParts(tree.root, 'ViewAnnotation')).toHaveLength(1);
       await press(tree.root, prs.chat.locationSend);
       await settle();
 

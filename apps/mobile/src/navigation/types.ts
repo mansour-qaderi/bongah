@@ -44,6 +44,10 @@ export type RootStackParamList = {
   Chat: { conversation: ChatConversation };
   /** My saved replies and the automatic reply (agencies with a subscription). */
   Templates: undefined;
+  /** The listings I bookmarked (kept on this phone). Reached from the Account tab and from Home. */
+  Saved: undefined;
+  /** What Bongah is for, its version and how to reach the team. */
+  About: undefined;
   Auth: NavigatorScreenParams<AuthStackParamList> | undefined;
 };
 

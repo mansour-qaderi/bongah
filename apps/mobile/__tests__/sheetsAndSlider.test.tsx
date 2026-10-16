@@ -290,8 +290,8 @@ describe('FilterSheet', () => {
     expect(text).not.toContain(prs.home.priceFromTo.split('{{from}}')[0] + ' ');
     const hint = (label: string) =>
       inputLabelled(tree.root, label).props.placeholder as string;
-    expect(hint(prs.home.minPrice)).toBe('مثلاً ۱,۰۰۰,۰۰۰');
-    expect(hint(prs.home.maxPrice)).toBe('مثلاً ۵,۰۰۰,۰۰۰');
+    expect(hint(prs.home.minPrice)).toBe('۱۰۰۰');
+    expect(hint(prs.home.maxPrice)).toBe('۱۰۰۰۰۰۰');
     for (const input of tree.root.findAllByType(TextInput)) {
       expect(String(input.props.placeholder ?? '')).not.toBe('۰');
     }
@@ -303,7 +303,7 @@ describe('FilterSheet', () => {
     const { tree } = await open();
     await tap(tree, prs.currency.USD);
     expect(inputLabelled(tree.root, prs.home.minPrice).props.placeholder).toBe(
-      'مثلاً ۲۰,۰۰۰',
+      '۱۰۰۰',
     );
   });
 
@@ -456,5 +456,110 @@ describe('map marker', () => {
     expect(tails.length).toBe(1);
     expect(tails[0].direction).toBe('ltr');
     expect(tails[0].transform).toEqual([{ rotate: '45deg' }]);
+  });
+});
+
+describe('FilterSheet: the unit', () => {
+  const open = async (value = {}) => {
+    const onApply = jest.fn();
+    const tree = await show(
+      <FilterSheet
+        visible
+        value={value}
+        onApply={onApply}
+        onClose={jest.fn()}
+      />,
+    );
+    await settle(50);
+    return { tree, onApply };
+  };
+  const tap = (tree: ReactTestRenderer.ReactTestRenderer, label: string) =>
+    act(async () => {
+      tree.root
+        .findAll(
+          n =>
+            typeof n.props.onPress === 'function' &&
+            (n.props.accessibilityLabel === label ||
+              allText(n).trim() === label),
+        )[0]
+        .props.onPress();
+    });
+  const units = (tree: ReactTestRenderer.ReactTestRenderer) =>
+    tree.root.findAll(
+      n => n.props.testID === 'unit-chips' && typeof n.type === 'string',
+    )[0];
+
+  it('shows no units until a type is chosen', async () => {
+    const { tree } = await open();
+    expect(units(tree)).toBeUndefined();
+    await tap(tree, prs.propertyType.HOUSE_HAWILI);
+    expect(units(tree)).toBeDefined();
+  });
+
+  it('lists the units of the chosen type, with “all” first', async () => {
+    const { tree } = await open({ type: 'APARTMENT' });
+    const text = allText(units(tree));
+    expect(text).toContain(prs.common.all);
+    expect(text).toContain(prs.unitType.FLAT);
+    expect(text).toContain(prs.unitType.STUDIO);
+    expect(text).not.toContain(prs.unitType.DUPLEX);
+  });
+
+  it('applies the chosen unit together with its type', async () => {
+    const { tree, onApply } = await open();
+    await tap(tree, prs.propertyType.HOUSE_HAWILI);
+    await tap(tree, prs.unitType.DUPLEX);
+    await tap(tree, prs.home.applyFilters);
+    expect(onApply).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'HOUSE_HAWILI', unit_type: 'DUPLEX' }),
+    );
+  });
+
+  it('opens with the unit already in the filter, and “all” takes it off', async () => {
+    const { tree, onApply } = await open({
+      type: 'HOUSE_HAWILI',
+      unit_type: 'DUPLEX',
+    });
+    await tap(tree, prs.common.all);
+    await tap(tree, prs.home.applyFilters);
+    expect(onApply.mock.calls[0][0].unit_type).toBeUndefined();
+  });
+
+  it('drops the unit when the type is changed to one that does not have it', async () => {
+    const { tree, onApply } = await open({
+      type: 'HOUSE_HAWILI',
+      unit_type: 'DUPLEX',
+    });
+    await tap(tree, prs.propertyType.APARTMENT);
+    await tap(tree, prs.home.applyFilters);
+    expect(onApply.mock.calls[0][0]).toMatchObject({ type: 'APARTMENT' });
+    expect(onApply.mock.calls[0][0].unit_type).toBeUndefined();
+  });
+
+  it('never sends a unit without a type', async () => {
+    const { tree, onApply } = await open({
+      type: 'HOUSE_HAWILI',
+      unit_type: 'DUPLEX',
+    });
+    await tap(tree, prs.home.allTypes);
+    expect(units(tree)).toBeUndefined();
+    await tap(tree, prs.home.applyFilters);
+    expect(onApply.mock.calls[0][0].unit_type).toBeUndefined();
+    expect(onApply.mock.calls[0][0].type).toBeUndefined();
+  });
+
+  it('does not bring an old unit back when the same type is chosen again', async () => {
+    const { tree } = await open({ type: 'HOUSE_HAWILI', unit_type: 'DUPLEX' });
+    await tap(tree, prs.home.allTypes);
+    await tap(tree, prs.propertyType.HOUSE_HAWILI);
+    expect(
+      units(tree)
+        .findAll(
+          n =>
+            typeof n.props.onPress === 'function' &&
+            n.props.accessibilityState?.selected === true,
+        )
+        .map(n => allText(n).trim()),
+    ).toEqual([prs.common.all]);
   });
 });

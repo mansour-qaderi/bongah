@@ -1,6 +1,7 @@
 import React from 'react';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { useTranslation } from 'react-i18next';
+import AboutScreen from '../screens/about/AboutScreen';
 import AgencyDashboardScreen from '../screens/agency/AgencyDashboardScreen';
 import ChatScreen from '../screens/chat/ChatScreen';
 import TemplatesScreen from '../screens/chat/TemplatesScreen';
@@ -8,6 +9,7 @@ import AddPropertyScreen from '../screens/property/AddPropertyScreen';
 import PropertyDetailsScreen from '../screens/property/PropertyDetailsScreen';
 import CheckoutScreen from '../screens/payments/CheckoutScreen';
 import ReferralScreen from '../screens/referral/ReferralScreen';
+import SavedListingsScreen from '../screens/saved/SavedListingsScreen';
 import AuthNavigator from './AuthNavigator';
 import MainTabs from './MainTabs';
 import { stackScreenOptions } from './screenOptions';
@@ -74,6 +76,16 @@ export default function RootNavigator() {
         name="Templates"
         component={TemplatesScreen}
         options={{ title: t('nav.templates') }}
+      />
+      <Stack.Screen
+        name="Saved"
+        component={SavedListingsScreen}
+        options={{ title: t('nav.saved') }}
+      />
+      <Stack.Screen
+        name="About"
+        component={AboutScreen}
+        options={{ title: t('nav.about') }}
       />
       <Stack.Screen
         name="Auth"

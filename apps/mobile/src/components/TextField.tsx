@@ -7,6 +7,8 @@ import { useKeyboardFocus } from './KeyboardAware';
 
 interface Props extends TextInputProps {
   label?: string;
+  /** Something small right beside the label (an info button), on the label's own line. */
+  labelAccessory?: React.ReactNode;
   error?: string | null;
   /** For phone numbers, codes and URLs, which are typed left-to-right. */
   ltr?: boolean;
@@ -24,6 +26,7 @@ interface Props extends TextInputProps {
 
 export default function TextField({
   label,
+  labelAccessory,
   error,
   ltr,
   helper,
@@ -57,13 +60,12 @@ export default function TextField({
   return (
     <View style={styles.wrapper}>
       {label ? (
-        <AppText
-          variant="label"
-          color={colors.textSecondary}
-          style={styles.label}
-        >
-          {label}
-        </AppText>
+        <View style={styles.labelRow} testID="label-row">
+          <AppText variant="label" color={colors.textSecondary}>
+            {label}
+          </AppText>
+          {labelAccessory}
+        </View>
       ) : null}
       <TextInput
         placeholderTextColor={colors.placeholder}
@@ -121,7 +123,12 @@ export default function TextField({
 
 const styles = StyleSheet.create({
   wrapper: { marginBottom: spacing.lg },
-  label: { marginBottom: spacing.xs },
+  labelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    marginBottom: spacing.xs,
+  },
   input: {
     minHeight: 48,
     borderWidth: 1,

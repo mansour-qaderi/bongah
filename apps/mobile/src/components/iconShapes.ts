@@ -108,6 +108,13 @@ export type IconName =
   | 'search'
   | 'bookmark'
   | 'bookmarkFilled'
+  // The account menu
+  | 'gift'
+  | 'globe'
+  | 'bell'
+  | 'logout'
+  | 'chevronRight'
+  | 'chevronLeft'
   // Details of a listing
   | 'bed'
   | 'bath'
@@ -262,29 +269,64 @@ export const ICON_SHAPES: Record<IconName, Shape[]> = {
     ring(10.5, 10.5, 13),
     { x: 14, y: 19.1, w: 8, h: 1.8, r: 0.9, fill: 'color', rotate: 45 },
   ],
-  // A ribbon (a saved listing): an open frame with a notch cut into its foot. The notch is a turned square's corner.
-  bookmark: [
-    frame(6, 3, 12, 12, 2, [1, 1, 0, 1]),
+  // A ribbon (a saved listing): an open frame whose foot is cut by an upward "^" notch, like the ribbon in a book.
+  bookmark: [frame(6, 3, 12, 17.5, 2, [1, 1, 0, 1]), roof(12, 16.5, 8)],
+  // The same ribbon filled in: saved. A solid block with the notch stepped out of its foot, one grid unit at a time.
+  bookmarkFilled: [
+    { x: 6, y: 3, w: 12, h: 13.5, r: [2, 2, 0, 0], fill: 'color' },
+    ...[0, 1, 2, 3].flatMap((step): Shape[] => {
+      const width = 6 - step - 0.5;
+      const y = 16.5 + step;
+      return [
+        { x: 6, y, w: width, h: 1.01, fill: 'color' },
+        { x: 12 + step + 0.5, y, w: width, h: 1.01, fill: 'color' },
+      ];
+    }),
+  ],
+  // A gift: a lid over a box, a ribbon down the middle and a bow.
+  gift: [
+    frame(4, 10.5, 16, 10.5, 2),
+    frame(3, 7.5, 18, 3.5, 1.5),
+    bar(11.1, 7.5, 1.8, 13.5),
+    ring(9, 5, 4.4),
+    ring(15, 5, 4.4),
+  ],
+  // A globe: a circle, a meridian and the equator.
+  globe: [ring(12, 12, 19), frame(8, 2.5, 8, 19, 4), bar(2.5, 11.2, 19, 1.6)],
+  // A bell: a dome over a rim, with a clapper.
+  bell: [
+    bar(11.2, 2.2, 1.6, 2.4),
+    { x: 5, y: 4.5, w: 14, h: 12, r: [7, 7, 1.5, 1.5], stroke: true },
+    bar(3.5, 16.5, 17, 1.7),
+    dot(12, 20.2, 3),
+  ],
+  // Leaving: a door open on one side and an arrow going out through it.
+  logout: [
+    frame(3.5, 3.5, 9, 17, 2, [1, 0, 1, 1]),
+    bar(9, 11.1, 11.5, 1.8),
+    { x: 15.4, y: 8.7, w: 5.2, h: 1.8, r: 0.9, fill: 'color', rotate: 45 },
+    { x: 15.4, y: 13.5, w: 5.2, h: 1.8, r: 0.9, fill: 'color', rotate: -45 },
+  ],
+  // ">" and "<": the two edges of a turned square that meet at its right / left corner.
+  chevronRight: [
     {
-      x: 7.755,
-      y: 10.755,
-      w: 8.49,
-      h: 8.49,
-      r: 0.8,
-      stroke: [0, 1, 1, 0],
+      x: 7.3,
+      y: 8.8,
+      w: 6.4,
+      h: 6.4,
+      r: 0.6,
+      stroke: [1, 1, 0, 0],
       rotate: 45,
     },
   ],
-  // The same ribbon filled in: saved.
-  bookmarkFilled: [
-    { x: 6, y: 3, w: 12, h: 12, r: [2, 2, 0, 0], fill: 'color' },
+  chevronLeft: [
     {
-      x: 7.755,
-      y: 10.755,
-      w: 8.49,
-      h: 8.49,
-      r: 0.8,
-      fill: 'color',
+      x: 10.3,
+      y: 8.8,
+      w: 6.4,
+      h: 6.4,
+      r: 0.6,
+      stroke: [0, 0, 1, 1],
       rotate: 45,
     },
   ],
