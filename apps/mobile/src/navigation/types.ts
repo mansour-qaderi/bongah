@@ -24,6 +24,8 @@ export type TabParamList = {
 };
 
 export type RootStackParamList = {
+  /** The opening screen. It resets the stack to `Tabs` after a moment, so it is never reachable by going back. */
+  Splash: undefined;
   Tabs: NavigatorScreenParams<TabParamList> | undefined;
   PropertyDetails: { id: string };
   /** The agency's CRM home; reached from the Account tab (agency accounts only). */

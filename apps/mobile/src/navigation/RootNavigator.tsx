@@ -10,6 +10,7 @@ import PropertyDetailsScreen from '../screens/property/PropertyDetailsScreen';
 import CheckoutScreen from '../screens/payments/CheckoutScreen';
 import ReferralScreen from '../screens/referral/ReferralScreen';
 import SavedListingsScreen from '../screens/saved/SavedListingsScreen';
+import SplashScreen from '../screens/splash/SplashScreen';
 import AuthNavigator from './AuthNavigator';
 import MainTabs from './MainTabs';
 import { stackScreenOptions } from './screenOptions';
@@ -25,11 +26,24 @@ const Stack = createNativeStackNavigator<RootStackParamList>();
 export default function RootNavigator() {
   const { t } = useTranslation();
   return (
-    <Stack.Navigator screenOptions={stackScreenOptions}>
+    <Stack.Navigator
+      initialRouteName="Splash"
+      screenOptions={stackScreenOptions}
+    >
+      {/* The opening screen; it resets the stack to Tabs, fading from one to the other. */}
+      <Stack.Screen
+        name="Splash"
+        component={SplashScreen}
+        options={{
+          headerShown: false,
+          animation: 'fade',
+          gestureEnabled: false,
+        }}
+      />
       <Stack.Screen
         name="Tabs"
         component={MainTabs}
-        options={{ headerShown: false }}
+        options={{ headerShown: false, animation: 'fade' }}
       />
       <Stack.Screen
         name="PropertyDetails"
