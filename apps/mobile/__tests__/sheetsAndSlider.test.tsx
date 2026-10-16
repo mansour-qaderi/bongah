@@ -1,5 +1,5 @@
 import React from 'react';
-import { I18nManager, StyleSheet } from 'react-native';
+import { I18nManager, StyleSheet, TextInput } from 'react-native';
 import ReactTestRenderer from 'react-test-renderer';
 import type { Property } from '@bongah/shared-types';
 import { initI18n } from '../src/i18n';
@@ -279,7 +279,56 @@ describe('FilterSheet', () => {
     expect(text).toContain(prs.home.priceRange);
     expect(text).toContain(prs.propertyType.HOUSE_HAWILI);
     expect(text).toContain(prs.dealType.RENT);
-    expect(text).toContain(`${prs.home.priceFromTo.split('{{from}}')[0]}`);
+    // With no limit set there is nothing to say about the range (no "from no limit to no limit").
+    expect(text).not.toContain(prs.home.noLimit);
+  });
+
+  it('has no "from no limit to no limit" line, and no bare zero in the price boxes', async () => {
+    const { tree } = await open();
+    const text = allText(tree.root);
+    expect(text).not.toContain(prs.home.noLimit);
+    expect(text).not.toContain(prs.home.priceFromTo.split('{{from}}')[0] + ' ');
+    const hint = (label: string) =>
+      inputLabelled(tree.root, label).props.placeholder as string;
+    expect(hint(prs.home.minPrice)).toBe('مثلاً ۱,۰۰۰,۰۰۰');
+    expect(hint(prs.home.maxPrice)).toBe('مثلاً ۵,۰۰۰,۰۰۰');
+    for (const input of tree.root.findAllByType(TextInput)) {
+      expect(String(input.props.placeholder ?? '')).not.toBe('۰');
+    }
+    // The district box has a hint too.
+    expect(hint(prs.home.district)).toBe(prs.home.districtPlaceholder);
+  });
+
+  it('changes the price examples with the currency', async () => {
+    const { tree } = await open();
+    await tap(tree, prs.currency.USD);
+    expect(inputLabelled(tree.root, prs.home.minPrice).props.placeholder).toBe(
+      'مثلاً ۲۰,۰۰۰',
+    );
+  });
+
+  it('says the range in words only for the ends that are set', async () => {
+    const { tree } = await open({ min_price: 1_000_000 });
+    expect(allText(tree.root)).toContain(
+      prs.home.priceFrom.replace(
+        '{{amount}}',
+        formatCurrency(1_000_000, 'AFGHANI'),
+      ),
+    );
+    expect(allText(tree.root)).not.toContain(prs.home.noLimit);
+    const both = await open({ min_price: 1_000_000, max_price: 5_000_000 });
+    expect(allText(both.tree.root)).toContain(
+      prs.home.priceFromTo
+        .replace('{{from}}', formatCurrency(1_000_000, 'AFGHANI'))
+        .replace('{{to}}', formatCurrency(5_000_000, 'AFGHANI')),
+    );
+    const upTo = await open({ max_price: 5_000_000 });
+    expect(allText(upTo.tree.root)).toContain(
+      prs.home.priceUpTo.replace(
+        '{{amount}}',
+        formatCurrency(5_000_000, 'AFGHANI'),
+      ),
+    );
   });
 
   it('starts from the filters already applied', async () => {

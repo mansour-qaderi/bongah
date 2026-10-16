@@ -70,7 +70,7 @@ export default function ProvincePicker({
             value={query}
             onChangeText={setQuery}
             placeholder={t('home.searchProvince')}
-            placeholderTextColor={colors.textMuted}
+            placeholderTextColor={colors.placeholder}
             style={styles.search}
           />
           <FlatList
@@ -163,5 +163,5 @@ const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: colors.border,
   },
-  rowSelected: { backgroundColor: colors.primarySoft },
+  rowSelected: { backgroundColor: colors.neutralSoft },
 });

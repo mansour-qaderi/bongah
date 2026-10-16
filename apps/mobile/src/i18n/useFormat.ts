@@ -18,7 +18,7 @@ export function useFormat() {
     : DEFAULT_LANGUAGE;
   return {
     language,
-    /** "۱٬۲۰۰٬۰۰۰ ؋": the full price, with the currency's sign. */
+    /** "۱,۲۰۰,۰۰۰ ؋": the full price, with the currency's sign. */
     price: (amount: number, currency: Currency) =>
       formatCurrency(amount, currency),
     /** "۲٫۵ میلیون ؋": the short form for map markers. */

@@ -24,11 +24,15 @@ interface Props {
   footer?: React.ReactNode;
   /** How much of the screen the sheet takes when there is room, 0..1. */
   heightRatio?: number;
+  /** Called once the sheet has slid fully away (after the closing animation), e.g. to leave a screen that holds it. */
+  onDismissed?: () => void;
 }
 
 /** Drag the handle down this far, or flick it this fast, and the sheet closes. */
 const DISMISS_DISTANCE = 110;
 const DISMISS_VELOCITY = 0.9;
+/** A sheet is never squeezed below this, whatever the measurements say: a title and a few lines still fit. */
+const MIN_SHEET_HEIGHT = 220;
 
 /**
  * A sheet that slides up from the bottom over a dimmed page. Tapping the dimmed part, pulling the handle down or
@@ -42,6 +46,7 @@ export default function BottomSheet({
   children,
   footer,
   heightRatio = 0.88,
+  onDismissed,
 }: Props) {
   const { t } = useTranslation();
   const { height: screenHeight } = useWindowDimensions();
@@ -54,6 +59,10 @@ export default function BottomSheet({
   const drag = useRef(new Animated.Value(0)).current;
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
+  const onDismissedRef = useRef(onDismissed);
+  onDismissedRef.current = onDismissed;
+  // The room the sheet really has: the box it sits in, less the status bar and less whatever the keyboard covers.
+  const [room, setRoom] = useState<number | null>(null);
 
   useEffect(() => {
     if (visible) {
@@ -77,6 +86,7 @@ export default function BottomSheet({
       if (finished) {
         setMounted(false);
         drag.setValue(0);
+        onDismissedRef.current?.();
       }
     });
     // `mounted` is only read to skip the very first, already-closed run; it must not retrigger the effect.
@@ -107,7 +117,11 @@ export default function BottomSheet({
     [drag],
   );
 
-  const sheetHeight = Math.round(screenHeight * heightRatio);
+  const wanted = Math.round(screenHeight * heightRatio);
+  // With the keyboard up the sheet gives up height instead of going under the status bar or leaving a gap: it is as
+  // tall as it wants, but never taller than the room above the keys.
+  const limit = room === null ? wanted : Math.max(0, room - insets.top);
+  const sheetHeight = Math.min(wanted, Math.max(limit, MIN_SHEET_HEIGHT));
   const translateY = Animated.add(
     progress.interpolate({
       inputRange: [0, 1],
@@ -125,7 +139,10 @@ export default function BottomSheet({
       onRequestClose={onClose}
     >
       {/* The top padding keeps a tall sheet, or one squeezed by the keyboard, out from under the status bar. */}
-      <KeyboardAvoider style={[styles.overlay, { paddingTop: insets.top }]}>
+      <KeyboardAvoider
+        style={[styles.overlay, { paddingTop: insets.top }]}
+        onRoomChange={setRoom}
+      >
         <Animated.View
           style={[
             styles.backdrop,
@@ -198,8 +215,6 @@ const styles = StyleSheet.create({
     backgroundColor: colors.overlay,
   },
   sheet: {
-    // Never taller than the room above the keyboard.
-    maxHeight: '100%',
     backgroundColor: colors.background,
     borderTopLeftRadius: radius.sheet,
     borderTopRightRadius: radius.sheet,

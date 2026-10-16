@@ -5,10 +5,11 @@ import AppText from './AppText';
 
 type Kind = 'error' | 'success' | 'info';
 
-const palette: Record<Kind, { bg: string; fg: string }> = {
-  error: { bg: colors.dangerSoft, fg: colors.danger },
-  success: { bg: colors.successSoft, fg: colors.success },
-  info: { bg: colors.primarySoft, fg: colors.primaryDark },
+/** Flat: white, a 1 px edge and ink in the kind's colour. No pastel fills. */
+const palette: Record<Kind, { border: string; fg: string }> = {
+  error: { border: colors.danger, fg: colors.danger },
+  success: { border: colors.primary, fg: colors.primary },
+  info: { border: colors.border, fg: colors.textSecondary },
 };
 
 export default function Banner({
@@ -20,11 +21,11 @@ export default function Banner({
   message: string;
   children?: React.ReactNode;
 }) {
-  const { bg, fg } = palette[kind];
+  const { border, fg } = palette[kind];
   return (
     <View
       accessibilityRole={kind === 'error' ? 'alert' : undefined}
-      style={[styles.box, { backgroundColor: bg }]}
+      style={[styles.box, { borderColor: border }]}
     >
       <AppText variant="label" color={fg}>
         {message}
@@ -38,6 +39,8 @@ const styles = StyleSheet.create({
   box: {
     padding: spacing.md,
     borderRadius: radius.md,
+    borderWidth: 1,
+    backgroundColor: colors.surface,
     marginBottom: spacing.lg,
     gap: spacing.sm,
   },

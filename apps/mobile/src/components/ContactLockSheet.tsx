@@ -241,7 +241,9 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     gap: spacing.sm,
     borderRadius: radius.md,
-    backgroundColor: colors.successSoft,
+    borderWidth: 1,
+    borderColor: colors.primary,
+    backgroundColor: colors.surface,
   },
   section: { marginTop: spacing.sm },
   pack: {

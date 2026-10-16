@@ -10,7 +10,7 @@ import AppText from '../components/AppText';
 import Icon, { type IconName } from '../components/Icon';
 import { formatNumber } from '../i18n/format';
 import { useFormat } from '../i18n/useFormat';
-import { colors, dealColors, radius, shadow, spacing } from '../theme';
+import { colors, dealColors, radius, spacing } from '../theme';
 
 /** A glyph per kind of property for places that still draw text (list rows, the picture-less thumbnail). */
 export const PROPERTY_ICONS: Record<PropertyType, string> = {
@@ -84,13 +84,7 @@ function PropertyMarkerView({
       accessibilityState={{ selected }}
     >
       {showPrice || selected ? (
-        <View
-          style={[
-            styles.tag,
-            selected ? styles.tagSelected : null,
-            shadow.card,
-          ]}
-        >
+        <View style={[styles.tag, selected ? styles.tagSelected : null]}>
           <AppText
             variant="caption"
             color={selected ? colors.textOnPrimary : INK}
@@ -111,7 +105,6 @@ function PropertyMarkerView({
             styles.badge,
             { backgroundColor: tone.main },
             selected ? styles.badgeSelected : null,
-            shadow.floating,
           ]}
         >
           <Icon
@@ -152,13 +145,7 @@ function AgencyMarkerView({
       accessibilityState={{ selected }}
     >
       {showName || selected ? (
-        <View
-          style={[
-            styles.tag,
-            selected ? styles.tagSelected : null,
-            shadow.card,
-          ]}
-        >
+        <View style={[styles.tag, selected ? styles.tagSelected : null]}>
           <AppText
             variant="caption"
             color={selected ? colors.textOnPrimary : INK}
@@ -171,11 +158,7 @@ function AgencyMarkerView({
       ) : null}
       <View style={styles.badgeBox}>
         <View
-          style={[
-            styles.agencyBadge,
-            selected ? styles.badgeSelected : null,
-            shadow.floating,
-          ]}
+          style={[styles.agencyBadge, selected ? styles.badgeSelected : null]}
         >
           <Icon
             name="office"
@@ -226,7 +209,6 @@ export function ClusterMarker({
       style={[
         styles.cluster,
         { height, borderRadius: height / 2, minWidth: height },
-        shadow.floating,
       ]}
     >
       <AppText variant="label" color={WHITE} numberOfLines={1}>
@@ -304,11 +286,13 @@ const styles = StyleSheet.create({
     maxWidth: TAG_MAX_WIDTH,
     marginBottom: spacing.xs,
     backgroundColor: WHITE,
+    borderWidth: 1,
+    borderColor: colors.border,
     borderRadius: radius.pill,
     paddingHorizontal: spacing.sm + 2,
     paddingVertical: 1,
   },
-  tagSelected: { backgroundColor: INK },
+  tagSelected: { backgroundColor: INK, borderColor: INK },
   tagText: { fontWeight: '600' },
   agencyBadge: {
     width: BADGE,

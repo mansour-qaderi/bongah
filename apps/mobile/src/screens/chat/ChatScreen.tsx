@@ -467,7 +467,7 @@ export default function ChatScreen({ navigation, route }: Props) {
               <TextInput
                 accessibilityLabel={t('chat.inputLabel')}
                 placeholder={t('chat.inputPlaceholder')}
-                placeholderTextColor={colors.textMuted}
+                placeholderTextColor={colors.placeholder}
                 value={text}
                 onChangeText={onChangeText}
                 multiline
@@ -550,7 +550,7 @@ const styles = StyleSheet.create({
     borderBottomColor: colors.border,
   },
   cover: { width: 48, height: 48, borderRadius: radius.md },
-  noCover: { backgroundColor: colors.primarySoft },
+  noCover: { backgroundColor: colors.neutralSoft },
   propertyText: { flex: 1 },
   messages: { paddingVertical: spacing.md },
   typing: { paddingHorizontal: spacing.lg, paddingBottom: spacing.xs },

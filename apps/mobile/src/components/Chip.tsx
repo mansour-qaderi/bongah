@@ -40,9 +40,12 @@ export function Chip({
         pressed && styles.chipPressed,
       ]}
     >
+      {/* One line, never shrunk: a long label ("دکان و دفتر") must not wrap into a second line the fixed-height pill then cuts off (that is how "دکان و دفتر" showed as "دکان و"). */}
       <AppText
         variant="label"
         color={selected ? colors.textOnPrimary : colors.text}
+        numberOfLines={1}
+        style={styles.label}
       >
         {label}
       </AppText>
@@ -110,6 +113,7 @@ const styles = StyleSheet.create({
     borderColor: colors.primary,
   },
   chipPressed: { opacity: 0.8 },
+  label: { flexShrink: 0 },
   count: {
     minWidth: 22,
     height: 22,

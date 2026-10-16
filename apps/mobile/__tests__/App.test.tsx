@@ -95,7 +95,10 @@ test('the app opens on the map in Dari, and the list shows Persian digits and th
   }
   text = allText(tree.root);
   expect(text).toContain(property.title);
-  expect(text).toContain('۱٬۲۰۰٬۰۰۰ ؋');
+  // Thousands are grouped with plain commas, and the sign is its own, smaller piece of text.
+  expect(text).toContain('۱,۲۰۰,۰۰۰');
+  expect(text).toContain('؋');
+  expect(text).not.toContain('٬');
   expect(text).toContain('۱۲۰ متر مربع');
 
   ReactTestRenderer.act(() => tree.unmount());

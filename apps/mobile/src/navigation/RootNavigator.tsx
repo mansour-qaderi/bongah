@@ -42,7 +42,15 @@ export default function RootNavigator() {
       <Stack.Screen
         name="AddProperty"
         component={AddPropertyScreen}
-        options={{ title: t('nav.addProperty') }}
+        // A sheet that slides up over the screen it was opened from (it draws its own title and sliding), so the
+        // route itself is a see-through page with no header and no animation of its own.
+        options={{
+          title: t('nav.addProperty'),
+          headerShown: false,
+          presentation: 'transparentModal',
+          animation: 'none',
+          contentStyle: { backgroundColor: 'transparent' },
+        }}
       />
       <Stack.Screen
         name="Checkout"

@@ -10,12 +10,12 @@ import {
 import { useTranslation } from 'react-i18next';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { formatNumber } from '../i18n/format';
-import { useFormat } from '../i18n/useFormat';
 import type { MapItem } from '../map/items';
 import { comparePriority } from '../map/priority';
 import { PROPERTY_ICONS, useSellerLabel } from '../map/markers';
 import { colors, radius, spacing } from '../theme';
 import AppText from './AppText';
+import Price from './Price';
 
 interface Props {
   /** The things found in one spot; null keeps the sheet closed. */
@@ -32,7 +32,6 @@ const Separator = () => <View style={styles.separator} />;
  */
 export default function ClusterListSheet({ items, onPick, onClose }: Props) {
   const { t } = useTranslation();
-  const format = useFormat();
   const sellerOf = useSellerLabel();
 
   // Listings first, the paying ones at the top (see comparePriority); then the offices.
@@ -99,9 +98,12 @@ export default function ClusterListSheet({ items, onPick, onClose }: Props) {
                   )}
                 </View>
                 <View style={styles.text}>
-                  <AppText variant="label" color={colors.primaryDark}>
-                    {format.price(item.property.price, item.property.currency)}
-                  </AppText>
+                  <Price
+                    amount={item.property.price}
+                    currency={item.property.currency}
+                    variant="label"
+                    color={colors.primaryDark}
+                  />
                   <AppText variant="caption" numberOfLines={1}>
                     {item.property.title}
                   </AppText>
@@ -163,7 +165,7 @@ const styles = StyleSheet.create({
     width: 56,
     height: 56,
     borderRadius: radius.md,
-    backgroundColor: colors.primarySoft,
+    backgroundColor: colors.neutralSoft,
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'hidden',

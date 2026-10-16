@@ -12,6 +12,8 @@ interface Props {
   onChange: (value: number | null) => void;
   max?: number;
   error?: string;
+  /** Marks the count as one the form cannot be sent without (a red star after the label). */
+  required?: boolean;
 }
 
 const BUTTON = 40;
@@ -27,6 +29,7 @@ export default function Stepper({
   onChange,
   max = 50,
   error,
+  required,
 }: Props) {
   const { t } = useTranslation();
   const canAdd = (value ?? -1) < max;
@@ -39,6 +42,11 @@ export default function Stepper({
       <View style={[styles.tile, error ? styles.tileError : null]}>
         <AppText variant="label" numberOfLines={2} style={styles.label}>
           {label}
+          {required ? (
+            <AppText variant="label" color={colors.danger}>
+              {' *'}
+            </AppText>
+          ) : null}
         </AppText>
         <View style={styles.row}>
           <Pressable

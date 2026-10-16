@@ -135,7 +135,6 @@ export default function HomeScreen({ navigation }: Props) {
   const [camera, setCamera] = useState<MapCamera>(KABUL_CAMERA);
   const [me, setMe] = useState<Coordinate | null>(null);
   const [locating, setLocating] = useState(false);
-  const [outside, setOutside] = useState(false);
   const [problem, setProblem] = useState<LocationProblem | null>(null);
   // Until the map reports what it shows, ask for the area its starting camera implies.
   const [area, setArea] = useState<Area>(() =>
@@ -213,7 +212,6 @@ export default function HomeScreen({ navigation }: Props) {
    */
   const findMe = useCallback(async (auto: boolean) => {
     setLocating(true);
-    setOutside(false);
     const result = await locate({ ask: true });
     if (!mounted.current) return;
     setLocating(false);
@@ -223,7 +221,8 @@ export default function HomeScreen({ navigation }: Props) {
       steered.current = true;
       flyTo(result.coordinate, LOCATION_ZOOM, 0);
     } else if (result.status === 'outside') {
-      setOutside(true);
+      // The phone is outside Afghanistan: the map stays on Kabul and says nothing. A banner about it only worried
+      // people who were simply travelling, and there is nothing for them to do.
     } else {
       setProblem(result.status);
     }
@@ -260,7 +259,6 @@ export default function HomeScreen({ navigation }: Props) {
   };
 
   const selectProperty = (property: Property) => {
-    setOutside(false);
     setSelection({ kind: 'property', property });
     if (property.lat !== null && property.lng !== null) {
       flyTo(
@@ -271,7 +269,6 @@ export default function HomeScreen({ navigation }: Props) {
     }
   };
   const selectAgency = (agency: AgencyMapPin) => {
-    setOutside(false);
     setSelection({ kind: 'agency', agency });
     flyTo(
       { latitude: agency.lat, longitude: agency.lng },
@@ -289,7 +286,6 @@ export default function HomeScreen({ navigation }: Props) {
       setClusterItems(items);
       return;
     }
-    setOutside(false);
     setSelection(null);
     flyTo(centroid(items), target, 0);
   };
@@ -404,7 +400,7 @@ export default function HomeScreen({ navigation }: Props) {
           style={[styles.listHeader, { paddingTop: insets.top + spacing.sm }]}
         >
           <View style={styles.topRow}>{topControls}</View>
-          {!listQuery.isPending && !listQuery.isError ? (
+          {!listQuery.isPending && !listQuery.isError && total > 0 ? (
             <AppText
               variant="caption"
               color={colors.textMuted}
@@ -484,11 +480,6 @@ export default function HomeScreen({ navigation }: Props) {
               {topControls}
             </View>
             {status}
-            {outside ? (
-              <View style={styles.notice}>
-                <Banner kind="info" message={t('home.locationOutside')} />
-              </View>
-            ) : null}
           </View>
 
           {selection ? null : (

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   Alert,
   I18nManager,
@@ -20,13 +20,14 @@ import Badge, { type BadgeTone } from '../../components/Badge';
 import Button from '../../components/Button';
 import Card from '../../components/Card';
 import { Chip } from '../../components/Chip';
+import EditProfileSheet from '../../components/EditProfileSheet';
 import { ScrollScreen } from '../../components/Screen';
 import { MAP_ATTRIBUTION, MAP_ATTRIBUTION_URL } from '../../config';
 import { LANGUAGE_META, changeLanguage } from '../../i18n';
 import { formatPhone } from '../../i18n/format';
 import { useFormat } from '../../i18n/useFormat';
 import type { RootStackParamList, TabParamList } from '../../navigation/types';
-import { colors, gradients, radius, shadow, spacing } from '../../theme';
+import { colors, radius, spacing } from '../../theme';
 import MorningMessagesCard from './MorningMessagesCard';
 
 type Props = CompositeScreenProps<
@@ -34,11 +35,11 @@ type Props = CompositeScreenProps<
   NativeStackScreenProps<RootStackParamList>
 >;
 
-/** Badges that sit on the emerald profile card: frosted white, and a warm gold for a running plan. */
+/** Badges that sit on the emerald profile card: solid white with emerald ink, and solid gold for a running plan. */
 const ON_HERO: Record<'role' | 'plan' | 'none', BadgeTone> = {
-  role: { soft: 'rgba(255,255,255,0.2)', strong: colors.textOnPrimary },
-  plan: { soft: colors.accentSoft, strong: colors.warningText },
-  none: { soft: 'rgba(255,255,255,0.2)', strong: colors.textOnPrimary },
+  role: { bg: colors.surface, fg: colors.primaryDark },
+  plan: { bg: colors.accentBright, fg: colors.textOnAccent },
+  none: { bg: colors.surface, fg: colors.textSecondary },
 };
 
 /** What kind of account this is and, for an office, which plan is running and for how long. */
@@ -104,6 +105,7 @@ export default function AccountScreen({ navigation }: Props) {
   const { t } = useTranslation();
   const { language } = useFormat();
   const { user, signOut } = useAuth();
+  const [editing, setEditing] = useState(false);
 
   const confirmSignOut = () =>
     Alert.alert(t('auth.signOut'), t('auth.signOutConfirm'), [
@@ -118,16 +120,21 @@ export default function AccountScreen({ navigation }: Props) {
   return (
     <ScrollScreen edges={['left', 'right']}>
       {user ? (
-        <View style={[styles.hero, shadow.floating]}>
+        <View style={styles.hero}>
           <View style={styles.heroTop}>
-            <View style={styles.avatarRing}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={t('account.editProfile')}
+              onPress={() => setEditing(true)}
+              style={styles.avatarRing}
+            >
               <Avatar
                 name={user.full_name}
                 uri={user.avatar}
                 seed={user.id}
                 size={64}
               />
-            </View>
+            </Pressable>
             <View style={styles.heroText}>
               <AppText
                 variant="heading"
@@ -141,10 +148,25 @@ export default function AccountScreen({ navigation }: Props) {
               </AppText>
             </View>
           </View>
-          <TierBadges role={user.role} />
+          <View style={styles.heroFoot}>
+            <TierBadges role={user.role} />
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={t('account.editProfile')}
+              onPress={() => setEditing(true)}
+              style={({ pressed }) => [
+                styles.editPill,
+                pressed && styles.pressed,
+              ]}
+            >
+              <AppText variant="caption" color={colors.textOnPrimary}>
+                {t('account.editProfile')}
+              </AppText>
+            </Pressable>
+          </View>
         </View>
       ) : (
-        <View style={[styles.hero, shadow.floating]}>
+        <View style={styles.hero}>
           <AppText variant="heading" color={colors.textOnPrimary}>
             {t('welcome.title')}
           </AppText>
@@ -235,19 +257,19 @@ export default function AccountScreen({ navigation }: Props) {
           {t('home.mapCredits')}: {MAP_ATTRIBUTION}
         </AppText>
       </Pressable>
+      <EditProfileSheet visible={editing} onClose={() => setEditing(false)} />
     </ScrollScreen>
   );
 }
 
 const styles = StyleSheet.create({
-  // The emerald profile card. The gradient is the look; the plain colour is what shows where it is not drawn.
+  // The emerald profile card: one flat, solid colour.
   hero: {
     borderRadius: radius.xl + 4,
     padding: spacing.lg + 2,
     marginBottom: spacing.lg,
     gap: spacing.md,
     backgroundColor: colors.primary,
-    backgroundImage: gradients.hero,
   },
   heroTop: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
   heroText: { flex: 1, gap: 2 },
@@ -265,6 +287,22 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  heroFoot: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+  },
+  editPill: {
+    minHeight: 32,
+    paddingHorizontal: spacing.md,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: colors.textOnPrimary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   badges: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
   languages: { flexDirection: 'row', gap: spacing.sm },
   invite: {
@@ -274,9 +312,9 @@ const styles = StyleSheet.create({
     padding: spacing.lg,
     marginBottom: spacing.lg,
     borderRadius: radius.xl,
-    backgroundColor: colors.primaryTint,
+    backgroundColor: colors.surface,
     borderWidth: 1,
-    borderColor: colors.primarySoft,
+    borderColor: colors.border,
   },
   inviteGlyph: { fontSize: 30, lineHeight: 40 },
   navRow: {

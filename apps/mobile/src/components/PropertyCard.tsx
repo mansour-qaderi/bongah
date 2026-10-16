@@ -2,105 +2,185 @@ import React from 'react';
 import { Image, Pressable, StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import type { Property } from '@bongah/shared-types';
-import { formatNumber } from '../i18n/format';
 import { useFormat } from '../i18n/useFormat';
-import { colors, radius, shadow, spacing } from '../theme';
+import { PROPERTY_LINE_ICONS } from '../map/markers';
+import { useShareListing } from '../share/listingShare';
+import { colors, spacing, surfaces } from '../theme';
 import AppText from './AppText';
+import Badge, { badgeTones, dealTone } from './Badge';
+import BookmarkButton from './BookmarkButton';
+import Icon from './Icon';
+import Price from './Price';
+import PropertyFacts, { propertyPlace } from './PropertyFacts';
 
 interface Props {
   property: Property;
   onPress: () => void;
-  /** Extra controls under the card (the "my listings" screen puts its buttons here). */
-  footer?: React.ReactNode;
 }
 
-export default function PropertyCard({ property, onPress, footer }: Props) {
+const MEDIA_HEIGHT = 188;
+
+/**
+ * A listing in the Home list: flat white card with a 1 px border and no shadow.
+ *
+ * - media: the first picture, or a quiet grey container with the kind's line icon when there is none. The deal
+ *   badge sits on it at the start edge (solid emerald for a sale, blue for a rent, gold for a pledge, with the
+ *   "featured" badge beside it if the listing is promoted) and the bookmark ribbon at the other edge;
+ * - body, top to bottom: the title (the biggest text on the card), the price (with a small currency sign and a coin
+ *   icon), the place with a pin icon, and the facts as a grid, two to a row: the kind and the area above, the bedrooms
+ *   and the bathrooms below, each with its own icon;
+ * - footer: one share button that opens the phone's share sheet (WhatsApp included).
+ */
+export default function PropertyCard({ property, onPress }: Props) {
   const { t } = useTranslation();
   const format = useFormat();
+  const share = useShareListing();
   const image = property.images[0];
 
+  const place = propertyPlace(property, format.province);
+
   return (
-    <View
-      style={[
-        styles.card,
-        shadow.card,
-        property.is_featured && styles.featured,
-      ]}
-    >
-      <Pressable accessibilityRole="button" onPress={onPress}>
-        <View style={styles.imageBox}>
+    <View style={[styles.card, property.is_featured && styles.featured]}>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={property.title}
+        onPress={onPress}
+        style={({ pressed }) => (pressed ? styles.pressed : null)}
+      >
+        <View style={styles.media}>
           {image ? (
             <Image
               source={{ uri: image }}
               style={styles.image}
               resizeMode="cover"
+              accessibilityIgnoresInvertColors
             />
           ) : (
-            <View style={[styles.image, styles.placeholder]}>
-              <AppText variant="title">🏠</AppText>
+            <View style={styles.placeholder} testID="listing-placeholder">
+              <Icon
+                name={PROPERTY_LINE_ICONS[property.type]}
+                size={56}
+                color={colors.textMuted}
+                background={colors.neutralSoft}
+                weight={1.3}
+              />
             </View>
           )}
-          {property.is_featured ? (
-            <View style={styles.badge}>
-              <AppText variant="caption" color={colors.textOnAccent}>
-                {t('property.featured')}
-              </AppText>
-            </View>
-          ) : null}
+          <View style={styles.badges} pointerEvents="none">
+            <Badge
+              dot
+              label={t(`dealType.${property.deal_type}`)}
+              tone={dealTone(property.deal_type)}
+            />
+            {property.is_featured ? (
+              <Badge label={t('property.featured')} tone={badgeTones.warning} />
+            ) : null}
+          </View>
         </View>
 
         <View style={styles.body}>
-          <AppText variant="heading" color={colors.primaryDark}>
-            {format.price(property.price, property.currency)}
-          </AppText>
-          <AppText variant="label" numberOfLines={2}>
+          <AppText variant="heading" numberOfLines={2}>
             {property.title}
           </AppText>
-          <AppText variant="caption" color={colors.textMuted}>
-            {t(`propertyType.${property.type}`)} ·{' '}
-            {t(`dealType.${property.deal_type}`)}
-          </AppText>
-          <AppText variant="caption" color={colors.textMuted}>
-            {format.area(property.area_sqm)}
-            {property.bedrooms !== null
-              ? ` · ${formatNumber(property.bedrooms, 0)} ${t(
-                  'property.bedrooms',
-                )}`
-              : ''}
-          </AppText>
-          <AppText variant="caption" color={colors.textMuted} numberOfLines={1}>
-            📍 {format.province(property.province)}، {property.district}
-          </AppText>
+          <View style={styles.priceRow}>
+            <Icon name="coin" size={20} color={colors.textMuted} weight={1.8} />
+            <Price
+              amount={property.price}
+              currency={property.currency}
+              variant="title"
+              color={colors.primary}
+              style={styles.price}
+            />
+          </View>
+          {place ? (
+            <View style={styles.place}>
+              <Icon
+                name="pin"
+                size={16}
+                color={colors.textSecondary}
+                weight={1.9}
+              />
+              <AppText
+                variant="caption"
+                color={colors.textSecondary}
+                numberOfLines={1}
+                style={styles.placeText}
+              >
+                {place}
+              </AppText>
+            </View>
+          ) : null}
+          <PropertyFacts property={property} withType layout="grid" />
         </View>
       </Pressable>
-      {footer}
+
+      <BookmarkButton
+        propertyId={property.id}
+        title={property.title}
+        style={styles.bookmark}
+      />
+
+      <View style={styles.footer}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={`${t('property.share')}: ${property.title}`}
+          onPress={() => share(property)}
+          hitSlop={6}
+          style={({ pressed }) => [styles.share, pressed && styles.pressed]}
+        >
+          <Icon name="share" size={18} color={colors.primary} weight={1.9} />
+          <AppText variant="label" color={colors.primary}>
+            {t('property.share')}
+          </AppText>
+        </Pressable>
+      </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   card: {
-    backgroundColor: colors.surface,
-    borderRadius: radius.lg,
+    ...surfaces.card,
     overflow: 'hidden',
     marginHorizontal: spacing.lg,
     marginBottom: spacing.md,
-    borderWidth: 1,
-    borderColor: colors.border,
-    ...shadow.card,
   },
-  featured: { borderColor: colors.accent, borderWidth: 2 },
-  imageBox: { height: 170, backgroundColor: colors.primarySoft },
+  featured: { borderColor: colors.accentBright },
+  pressed: { opacity: 0.85 },
+  media: { height: MEDIA_HEIGHT, backgroundColor: colors.neutralSoft },
   image: { width: '100%', height: '100%' },
-  placeholder: { alignItems: 'center', justifyContent: 'center' },
-  badge: {
-    position: 'absolute',
-    top: spacing.sm,
-    end: spacing.sm,
-    backgroundColor: colors.accent,
-    borderRadius: radius.pill,
-    paddingHorizontal: spacing.md,
-    paddingVertical: 2,
+  placeholder: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.neutralSoft,
   },
-  body: { padding: spacing.md, gap: 2 },
+  // The badges sit at the start edge; the bookmark owns the other one.
+  badges: {
+    position: 'absolute',
+    top: spacing.md,
+    start: spacing.md,
+    flexDirection: 'row',
+    gap: spacing.sm,
+    alignItems: 'flex-start',
+  },
+  bookmark: { position: 'absolute', top: spacing.md, end: spacing.md },
+  body: { padding: spacing.lg, paddingBottom: spacing.md, gap: spacing.sm },
+  priceRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  price: { lineHeight: 34 },
+  place: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
+  placeText: { flexShrink: 1 },
+  footer: {
+    flexDirection: 'row',
+    justifyContent: 'flex-start',
+    paddingHorizontal: spacing.lg,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+  },
+  share: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    minHeight: 44,
+  },
 });

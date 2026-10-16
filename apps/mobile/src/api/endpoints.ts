@@ -25,6 +25,7 @@ import type {
   PaymentInitiated,
   Pricing,
   Property,
+  PropertyImageUploaded,
   PropertyType,
   RedeemLadderTokenResponse,
   ReferralSummary,
@@ -64,11 +65,37 @@ export const verifyOtp = (
 
 export const getMe = () => request<User>('GET', '/users/me', { auth: true });
 
-export const registerUser = (fullName: string) =>
+/**
+ * Sets the signed-in user's display name and, optionally, their picture. The same call finishes sign-up and edits
+ * the profile later. `avatar`: a picture's URL sets it, `null` removes it, and leaving it out keeps the current one.
+ */
+export const registerUser = (fullName: string, avatar?: string | null) =>
   request<User>('POST', '/users/register', {
     auth: true,
-    body: { full_name: fullName },
+    body: { full_name: fullName, ...(avatar !== undefined ? { avatar } : {}) },
   });
+
+/**
+ * Uploads a profile picture from this phone and returns its public URL (to hand to `registerUser`). The API has one
+ * picture store, the listing photos, and a profile picture lives in it too: it counts towards the account's photo
+ * allowance like any other photo.
+ */
+export async function uploadAvatar(
+  uri: string,
+  contentType: string,
+): Promise<PropertyImageUploaded> {
+  let data: Blob;
+  try {
+    data = await (await fetch(uri)).blob();
+  } catch {
+    throw new ApiError('http', 0, { code: 'IMAGE_UNREADABLE' });
+  }
+  return request<PropertyImageUploaded>('POST', '/property-images', {
+    auth: true,
+    file: { data, contentType },
+    timeoutMs: UPLOAD_TIMEOUT_MS,
+  });
+}
 
 /** The user's own settings: the morning-quote push, and "the welcome card has been shown" (it can only be set to true). */
 export const updatePreferences = (preferences: UpdatePreferencesInput) =>

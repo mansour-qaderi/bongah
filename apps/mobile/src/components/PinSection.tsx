@@ -31,7 +31,9 @@ export default function PinSection({
 
   return (
     <View style={styles.box}>
-      <AppText variant="label">{t('add.location')}</AppText>
+      <AppText variant="label" color={colors.textSecondary}>
+        {t('add.location')}
+      </AppText>
       <AppText variant="caption" color={colors.textMuted}>
         {t('add.locationHelp')}
       </AppText>

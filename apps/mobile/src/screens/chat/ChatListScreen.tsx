@@ -16,7 +16,7 @@ import { EmptyView, ErrorView, LoadingView } from '../../components/States';
 import { messagePreview } from '../../chat/preview';
 import { chatStamp, formatNumber } from '../../i18n/format';
 import type { RootStackParamList, TabParamList } from '../../navigation/types';
-import { colors, radius, shadow, spacing, surfaces } from '../../theme';
+import { colors, radius, spacing, surfaces } from '../../theme';
 
 type Props = CompositeScreenProps<
   BottomTabScreenProps<TabParamList, 'Messages'>,
@@ -103,11 +103,7 @@ function ConversationRow({
       accessibilityRole="button"
       accessibilityLabel={`${name} · ${property.title}`}
       onPress={onPress}
-      style={({ pressed }) => [
-        styles.row,
-        shadow.card,
-        pressed && styles.pressed,
-      ]}
+      style={({ pressed }) => [styles.row, pressed && styles.pressed]}
     >
       <Avatar name={name} seed={counterpart.id} size={52} />
       <View style={styles.main}>

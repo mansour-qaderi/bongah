@@ -286,10 +286,5 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
     borderWidth: 3,
     borderColor: colors.primary,
-    shadowColor: '#064E3B',
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 3,
   },
 });

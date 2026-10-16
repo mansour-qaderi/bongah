@@ -45,6 +45,8 @@ export const MAP_ATTRIBUTION_URL = 'https://www.openstreetmap.org/copyright';
  * launch. Before release point this at a geocoder you host or pay for; the answer's shape is the Nominatim one.
  */
 export const GEOCODER_URL = 'https://nominatim.openstreetmap.org/reverse';
+/** The same service, asked the other way round: a name or landmark in, places with coordinates out (the map's search bar). */
+export const GEOCODER_SEARCH_URL = 'https://nominatim.openstreetmap.org/search';
 export const GEOCODER_USER_AGENT = 'Bongah/1.0 (real-estate app, Afghanistan)';
 /** The place lookup is a convenience: after this long the person types the address themselves. */
 export const GEOCODER_TIMEOUT_MS = 8_000;

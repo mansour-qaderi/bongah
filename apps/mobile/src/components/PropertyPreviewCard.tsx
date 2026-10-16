@@ -4,14 +4,15 @@ import { useTranslation } from 'react-i18next';
 import type { Property } from '@bongah/shared-types';
 import { useAuth } from '../auth/AuthContext';
 import { useContactActions } from '../contact/useContactActions';
-import { formatNumber } from '../i18n/format';
 import { useFormat } from '../i18n/useFormat';
 import { PROPERTY_LINE_ICONS, useSellerLabel } from '../map/markers';
-import { colors, dealColors, radius, shadow, spacing } from '../theme';
+import { colors, dealColors, radius, spacing } from '../theme';
 import AppText from './AppText';
 import ContactActionBar from './ContactActionBar';
 import ContactLockSheet from './ContactLockSheet';
 import Icon from './Icon';
+import Price from './Price';
+import PropertyFacts, { propertyPlace } from './PropertyFacts';
 
 interface Props {
   property: Property;
@@ -44,18 +45,8 @@ export default function PropertyPreviewCard({
     user_id: property.user_id,
   });
 
-  const facts = [
-    format.area(property.area_sqm),
-    property.bedrooms !== null
-      ? `${formatNumber(property.bedrooms, 0)} ${t('property.bedrooms')}`
-      : null,
-    property.bathrooms !== null
-      ? `${formatNumber(property.bathrooms, 0)} ${t('property.bathrooms')}`
-      : null,
-  ].filter((fact): fact is string => fact !== null);
-
   return (
-    <View style={[styles.sheet, shadow.card]} testID="property-preview">
+    <View style={styles.sheet} testID="property-preview">
       <Pressable
         accessibilityRole="button"
         accessibilityLabel={t('home.viewDetails')}
@@ -76,16 +67,19 @@ export default function PropertyPreviewCard({
                 name={PROPERTY_LINE_ICONS[property.type]}
                 size={40}
                 color={dealColors[property.deal_type].main}
-                background={colors.primarySoft}
+                background={colors.neutralSoft}
               />
             )}
           </View>
 
           <View style={styles.info}>
             <View style={styles.priceRow}>
-              <AppText variant="heading" color={colors.primaryDark}>
-                {format.price(property.price, property.currency)}
-              </AppText>
+              <Price
+                amount={property.price}
+                currency={property.currency}
+                variant="heading"
+                color={colors.primaryDark}
+              />
               {property.is_featured ? (
                 <View style={styles.badge}>
                   <AppText variant="caption" color={colors.textOnAccent}>
@@ -109,14 +103,16 @@ export default function PropertyPreviewCard({
         </View>
 
         <View style={styles.facts}>
-          {facts.map(fact => (
-            <View key={fact} style={styles.fact}>
-              <AppText variant="caption">{fact}</AppText>
-            </View>
-          ))}
-          <View style={styles.fact}>
-            <AppText variant="caption" numberOfLines={1}>
-              📍 {format.province(property.province)}، {property.district}
+          <PropertyFacts property={property} />
+          <View style={styles.place}>
+            <Icon name="pin" size={14} color={colors.textMuted} weight={1.9} />
+            <AppText
+              variant="caption"
+              color={colors.textSecondary}
+              numberOfLines={1}
+              style={styles.placeText}
+            >
+              {propertyPlace(property, format.province)}
             </AppText>
           </View>
         </View>
@@ -166,6 +162,8 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
     borderTopLeftRadius: radius.lg,
     borderTopRightRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
     overflow: 'hidden',
   },
   body: { padding: spacing.lg, paddingBottom: spacing.md, gap: spacing.md },
@@ -174,7 +172,7 @@ const styles = StyleSheet.create({
     width: THUMB,
     height: THUMB,
     borderRadius: radius.md,
-    backgroundColor: colors.primarySoft,
+    backgroundColor: colors.neutralSoft,
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'hidden',
@@ -188,15 +186,9 @@ const styles = StyleSheet.create({
     borderRadius: radius.pill,
     paddingHorizontal: spacing.sm,
   },
-  facts: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
-  fact: {
-    backgroundColor: colors.background,
-    borderRadius: radius.pill,
-    borderWidth: 1,
-    borderColor: colors.border,
-    paddingHorizontal: spacing.md,
-    paddingVertical: 2,
-  },
+  facts: { gap: spacing.sm },
+  place: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
+  placeText: { flexShrink: 1 },
   close: { position: 'absolute', top: spacing.sm, end: spacing.md },
   owner: { textAlign: 'center', padding: spacing.md },
 });

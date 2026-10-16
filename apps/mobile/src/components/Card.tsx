@@ -18,8 +18,8 @@ interface Props {
 }
 
 /**
- * The one surface every screen builds on: white, 16-point corners, a hairline edge and a soft emerald-tinted
- * shadow. Screens group their content in cards instead of styling their own boxes, so spacing and corners stay
+ * The one surface every screen builds on: flat white, 16-point corners and a 1 px grey border (no shadow).
+ * Screens group their content in cards instead of styling their own boxes, so spacing and corners stay
  * the same everywhere.
  */
 export default function Card({
