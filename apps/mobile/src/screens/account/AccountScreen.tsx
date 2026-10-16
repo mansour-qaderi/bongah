@@ -18,16 +18,18 @@ import AppText from '../../components/AppText';
 import Avatar from '../../components/Avatar';
 import Badge, { type BadgeTone } from '../../components/Badge';
 import Button from '../../components/Button';
-import Card from '../../components/Card';
 import { Chip } from '../../components/Chip';
 import EditProfileSheet from '../../components/EditProfileSheet';
+import FeedbackSheet from '../../components/FeedbackSheet';
+import Icon, { type IconName } from '../../components/Icon';
 import { ScrollScreen } from '../../components/Screen';
+import { APP_VERSION } from '../../appInfo';
 import { MAP_ATTRIBUTION, MAP_ATTRIBUTION_URL } from '../../config';
 import { LANGUAGE_META, changeLanguage } from '../../i18n';
-import { formatPhone } from '../../i18n/format';
+import { formatPhone, toPersianDigits } from '../../i18n/format';
 import { useFormat } from '../../i18n/useFormat';
 import type { RootStackParamList, TabParamList } from '../../navigation/types';
-import { colors, radius, spacing } from '../../theme';
+import { colors, radius, spacing, surfaces } from '../../theme';
 import MorningMessagesCard from './MorningMessagesCard';
 
 type Props = CompositeScreenProps<
@@ -69,33 +71,119 @@ function TierBadges({ role }: { role: Role }) {
   );
 }
 
-/** A tappable line in a card: a label, an optional hint and an arrow pointing the way forward. */
-function NavRow({
+/** The little square an icon sits in, at the start of a menu line. */
+function IconTile({ name }: { name: IconName }) {
+  return (
+    <View style={styles.iconTile}>
+      <Icon name={name} size={20} color={colors.textSecondary} weight={1.8} />
+    </View>
+  );
+}
+
+/**
+ * One line of a menu group: its icon in a grey tile, the label with a quiet hint under it, and an arrow pointing
+ * the way forward. `trailing` replaces the arrow (a switch, the language choice).
+ */
+function MenuRow({
+  icon,
   label,
   hint,
   onPress,
+  tone = 'default',
 }: {
+  icon: IconName;
   label: string;
   hint?: string;
   onPress: () => void;
+  tone?: 'default' | 'danger';
 }) {
   return (
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={label}
       onPress={onPress}
-      style={({ pressed }) => [styles.navRow, pressed && styles.pressed]}
+      style={({ pressed }) => [styles.menuRow, pressed && styles.pressed]}
     >
-      <View style={styles.navText}>
-        <AppText variant="label">{label}</AppText>
+      <IconTile name={icon} />
+      <View style={styles.menuText}>
+        <AppText
+          variant="label"
+          color={tone === 'danger' ? colors.danger : colors.text}
+        >
+          {label}
+        </AppText>
         {hint ? (
           <AppText variant="caption" color={colors.textMuted}>
             {hint}
           </AppText>
         ) : null}
       </View>
-      <AppText color={colors.textMuted} style={styles.arrow}>
-        {I18nManager.isRTL ? '‹' : '›'}
+      <Icon
+        name={I18nManager.isRTL ? 'chevronLeft' : 'chevronRight'}
+        size={20}
+        color={colors.textMuted}
+        weight={1.8}
+      />
+    </Pressable>
+  );
+}
+
+/** A titled group of lines in one flat white container, a hairline between them. */
+function MenuGroup({
+  title,
+  children,
+  testID,
+}: {
+  title?: string;
+  children: React.ReactNode;
+  testID?: string;
+}) {
+  const lines = React.Children.toArray(children).filter(Boolean);
+  return (
+    <View style={styles.group} testID={testID}>
+      {title ? (
+        <AppText
+          variant="label"
+          color={colors.textMuted}
+          style={styles.groupTitle}
+        >
+          {title}
+        </AppText>
+      ) : null}
+      <View style={styles.groupBox}>
+        {lines.map((line, index) => (
+          <React.Fragment key={index}>
+            {index > 0 ? <View style={styles.divider} /> : null}
+            {line}
+          </React.Fragment>
+        ))}
+      </View>
+    </View>
+  );
+}
+
+/** A square shortcut under the profile card: an icon over one short word. */
+function QuickTile({
+  icon,
+  label,
+  onPress,
+  a11yLabel,
+}: {
+  icon: IconName;
+  label: string;
+  onPress: () => void;
+  a11yLabel?: string;
+}) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={a11yLabel ?? label}
+      onPress={onPress}
+      style={({ pressed }) => [styles.tile, pressed && styles.pressed]}
+    >
+      <IconTile name={icon} />
+      <AppText variant="caption" color={colors.text} numberOfLines={1}>
+        {label}
       </AppText>
     </Pressable>
   );
@@ -106,6 +194,7 @@ export default function AccountScreen({ navigation }: Props) {
   const { language } = useFormat();
   const { user, signOut } = useAuth();
   const [editing, setEditing] = useState(false);
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
 
   const confirmSignOut = () =>
     Alert.alert(t('auth.signOut'), t('auth.signOutConfirm'), [
@@ -186,57 +275,85 @@ export default function AccountScreen({ navigation }: Props) {
         </View>
       )}
 
+      <View style={styles.tiles} testID="quick-actions">
+        <QuickTile
+          icon="bookmark"
+          label={t('nav.saved')}
+          onPress={() => navigation.navigate('Saved')}
+        />
+        <QuickTile
+          icon="listings"
+          label={t('nav.myListings')}
+          onPress={() => navigation.navigate('MyListings')}
+        />
+        <QuickTile
+          icon="plus"
+          label={t('nav.addProperty')}
+          onPress={() => navigation.navigate('AddProperty')}
+        />
+      </View>
+
       {user ? (
-        <Card title={t('account.settings')}>
-          <MorningMessagesCard embedded />
-        </Card>
+        <MenuGroup title={t('account.groupAccount')}>
+          <MenuRow
+            icon="gift"
+            label={t('account.invite')}
+            hint={t('account.inviteHint')}
+            onPress={() => navigation.navigate('Referral')}
+          />
+        </MenuGroup>
       ) : null}
 
-      <Card title={t('account.language')}>
-        <View style={styles.languages}>
-          {LANGUAGES.map(code => (
-            <Chip
-              key={code}
-              label={LANGUAGE_META[code].nativeName}
-              selected={language === code}
-              onPress={() => changeLanguage(code)}
-            />
-          ))}
-        </View>
-      </Card>
-
-      {user ? (
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={t('account.invite')}
-          onPress={() => navigation.navigate('Referral')}
-          style={({ pressed }) => [styles.invite, pressed && styles.pressed]}
-        >
-          <AppText style={styles.inviteGlyph}>🎁</AppText>
-          <View style={styles.navText}>
-            <AppText variant="label" color={colors.primaryDark}>
-              {t('account.invite')}
-            </AppText>
-            <AppText variant="caption" color={colors.primaryDark}>
-              {t('account.inviteHint')}
-            </AppText>
+      <MenuGroup title={t('account.settings')} testID="settings-group">
+        {user ? <MorningMessagesCard embedded /> : null}
+        <View style={styles.languageRow}>
+          <IconTile name="globe" />
+          <AppText variant="label" style={styles.menuText}>
+            {t('account.language')}
+          </AppText>
+          <View style={styles.languages}>
+            {LANGUAGES.map(code => (
+              <Chip
+                compact
+                key={code}
+                label={LANGUAGE_META[code].nativeName}
+                selected={language === code}
+                onPress={() => changeLanguage(code)}
+              />
+            ))}
           </View>
-        </Pressable>
-      ) : null}
+        </View>
+      </MenuGroup>
 
       {user?.role === 'AGENCY' ? (
-        <Card title={t('account.agencyTools')}>
-          <NavRow
+        <MenuGroup title={t('account.agencyTools')}>
+          <MenuRow
+            icon="dashboard"
             label={t('nav.dashboard')}
             onPress={() => navigation.navigate('Dashboard')}
           />
-          <View style={styles.divider} />
-          <NavRow
+          <MenuRow
+            icon="chat"
             label={t('nav.templates')}
             onPress={() => navigation.navigate('Templates')}
           />
-        </Card>
+        </MenuGroup>
       ) : null}
+
+      <MenuGroup title={t('account.groupSupport')}>
+        <MenuRow
+          icon="chat"
+          label={t('account.feedback')}
+          hint={t('account.feedbackHint')}
+          onPress={() => setFeedbackOpen(true)}
+        />
+        <MenuRow
+          icon="info"
+          label={t('account.about')}
+          hint={t('account.aboutHint')}
+          onPress={() => navigation.navigate('About')}
+        />
+      </MenuGroup>
 
       {user ? (
         <Button
@@ -257,7 +374,19 @@ export default function AccountScreen({ navigation }: Props) {
           {t('home.mapCredits')}: {MAP_ATTRIBUTION}
         </AppText>
       </Pressable>
+      <AppText
+        variant="caption"
+        color={colors.textMuted}
+        style={styles.version}
+      >
+        {t('account.version', { version: toPersianDigits(APP_VERSION) })}
+      </AppText>
       <EditProfileSheet visible={editing} onClose={() => setEditing(false)} />
+      <FeedbackSheet
+        visible={feedbackOpen}
+        onClose={() => setFeedbackOpen(false)}
+        onSignIn={() => navigation.navigate('Auth')}
+      />
     </ScrollScreen>
   );
 }
@@ -305,27 +434,46 @@ const styles = StyleSheet.create({
   },
   badges: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
   languages: { flexDirection: 'row', gap: spacing.sm },
-  invite: {
+  languageRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.md,
-    padding: spacing.lg,
-    marginBottom: spacing.lg,
-    borderRadius: radius.xl,
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
+    flexWrap: 'wrap',
   },
-  inviteGlyph: { fontSize: 30, lineHeight: 40 },
-  navRow: {
+  tiles: { flexDirection: 'row', gap: spacing.md, marginBottom: spacing.lg },
+  tile: {
+    ...surfaces.card,
+    flex: 1,
+    alignItems: 'center',
+    gap: spacing.sm,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.sm,
+  },
+  group: { marginBottom: spacing.lg, gap: spacing.sm },
+  groupTitle: { paddingHorizontal: spacing.xs },
+  groupBox: {
+    ...surfaces.card,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.xs,
+  },
+  iconTile: {
+    width: 36,
+    height: 36,
+    borderRadius: radius.sm,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.neutralSoft,
+  },
+  menuRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.md,
-    minHeight: 44,
+    minHeight: 56,
+    paddingVertical: spacing.sm,
   },
-  navText: { flex: 1, gap: 2 },
-  arrow: { fontSize: 22, lineHeight: 28 },
+  menuText: { flex: 1, gap: 2 },
   divider: { height: 1, backgroundColor: colors.border },
   pressed: { opacity: 0.85 },
+  version: { alignSelf: 'center', paddingBottom: spacing.sm },
   credit: { alignSelf: 'center', paddingVertical: spacing.lg },
 });

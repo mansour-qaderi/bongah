@@ -14,6 +14,7 @@ import { MapLocationModule } from './map-location/map-location.module.js';
 import { ReferralModule } from './referral/referral.module.js';
 import { AdminModule } from './admin/admin.module.js';
 import { BannersModule } from './banners/banners.module.js';
+import { FeedbackModule } from './feedback/feedback.module.js';
 import { ModerationModule } from './moderation/moderation.module.js';
 import { WalletModule } from './wallet/wallet.module.js';
 import { NotificationModule } from './notification/notification.module.js';
@@ -33,6 +34,7 @@ import { PropertyImagesModule } from './property-images/property-images.module.j
     ContactModule,
     ChatModule,
     ModerationModule,
+    FeedbackModule,
     BannersModule,
     AdminModule,
     WalletModule,

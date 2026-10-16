@@ -1,5 +1,6 @@
 import React from 'react';
 import { StyleSheet, View } from 'react-native';
+import type { TFunction } from 'i18next';
 import { useTranslation } from 'react-i18next';
 import type { Property } from '@bongah/shared-types';
 import { formatNumber } from '../i18n/format';
@@ -26,10 +27,26 @@ export function propertyPlace(
   return [provinceName(property.province), where].filter(Boolean).join('، ');
 }
 
+/**
+ * What kind of property a listing is, in words: "خانه" or, when the owner also said which unit it is, "خانه، حویلی".
+ * Takes the translate function so the cards, the details page and the saved list all word it the same way.
+ */
+export function propertyKind(
+  property: Pick<Property, 'type' | 'unit_type'>,
+  t: TFunction,
+): string {
+  const type = t(`propertyType.${property.type}`);
+  return property.unit_type
+    ? `${type}، ${t(`unitType.${property.unit_type}`)}`
+    : type;
+}
+
 interface Fact {
   key: string;
   icon: IconName;
   text: string;
+  /** Something small after the text (the jerib info button beside the area). */
+  extra?: React.ReactNode;
 }
 
 /** A fact as a short run: the icon and its words, side by side. */
@@ -44,21 +61,24 @@ function RowFact({ icon, text }: Omit<Fact, 'key'>) {
   );
 }
 
-/** A fact as a grid cell: its icon in a small soft tile, and the words beside it. */
-function GridFact({ icon, text }: Omit<Fact, 'key'>) {
+/** A fact as a grid cell: its icon in a small soft tile, and the words beside it (and a small extra after them). */
+function GridFact({ icon, text, extra }: Omit<Fact, 'key'>) {
   return (
     <View style={styles.cell}>
       <View style={styles.tile}>
         <Icon name={icon} size={16} color={colors.textSecondary} weight={1.8} />
       </View>
-      <AppText
-        variant="label"
-        color={colors.text}
-        numberOfLines={1}
-        style={styles.cellText}
-      >
-        {text}
-      </AppText>
+      <View style={styles.cellBody}>
+        <AppText
+          variant="label"
+          color={colors.text}
+          numberOfLines={2}
+          style={styles.cellText}
+        >
+          {text}
+        </AppText>
+        {extra}
+      </View>
     </View>
   );
 }
@@ -73,6 +93,10 @@ interface Props {
    * bedrooms and the bathrooms below. The list card uses it.
    */
   layout?: 'row' | 'grid';
+  /** Shown right after the area (the details page puts the jerib info button there). Grid layout only. */
+  areaAccessory?: React.ReactNode;
+  /** Grid layout: draw the hairline above it (default), or leave it off when the grid starts a card of its own. */
+  divider?: boolean;
 }
 
 /**
@@ -84,6 +108,8 @@ export default function PropertyFacts({
   property,
   withType,
   layout = 'row',
+  areaAccessory,
+  divider = true,
 }: Props) {
   const { t } = useTranslation();
   const format = useFormat();
@@ -93,13 +119,14 @@ export default function PropertyFacts({
     facts.push({
       key: 'type',
       icon: PROPERTY_LINE_ICONS[property.type],
-      text: t(`propertyType.${property.type}`),
+      text: propertyKind(property, t),
     });
   }
   facts.push({
     key: 'area',
     icon: 'area',
     text: format.area(property.area_sqm),
+    extra: areaAccessory,
   });
   if (property.bedrooms !== null) {
     facts.push({
@@ -118,9 +145,12 @@ export default function PropertyFacts({
 
   if (layout === 'grid') {
     return (
-      <View style={styles.grid} testID="property-facts">
-        {facts.map(({ key, icon, text }) => (
-          <GridFact key={key} icon={icon} text={text} />
+      <View
+        style={[styles.grid, divider ? styles.gridDivider : null]}
+        testID="property-facts"
+      >
+        {facts.map(({ key, icon, text, extra }) => (
+          <GridFact key={key} icon={icon} text={text} extra={extra} />
         ))}
       </View>
     );
@@ -147,6 +177,8 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     rowGap: spacing.sm,
     columnGap: spacing.md,
+  },
+  gridDivider: {
     paddingTop: spacing.sm,
     marginTop: spacing.xs,
     borderTopWidth: 1,
@@ -160,6 +192,13 @@ const styles = StyleSheet.create({
     flexBasis: '45%',
     flexGrow: 1,
     flexShrink: 1,
+  },
+  cellBody: {
+    flexShrink: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    columnGap: spacing.sm,
   },
   cellText: { flexShrink: 1 },
   tile: {

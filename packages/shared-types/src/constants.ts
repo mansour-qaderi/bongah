@@ -13,6 +13,44 @@ export const PROPERTY_TYPES = [
   'GARDEN_VILLA',
   'GARAGE_OTHER',
 ] as const;
+/**
+ * The kind of unit a listing is, within its property type ("واحد"): a courtyard house or a duplex among houses, a
+ * studio or a penthouse among apartments, and so on. Optional on a listing. Enum values here MUST match the Prisma
+ * enum `PropertyUnit` exactly, and each value belongs to ONE property type (see PROPERTY_UNITS), so a value alone says
+ * which type it is for.
+ */
+export const PROPERTY_UNIT_TYPES = [
+  'HAWILI',
+  'DUPLEX',
+  'VILLA_HOUSE',
+  'TOWNHOUSE',
+  'FLAT',
+  'STUDIO',
+  'PENTHOUSE',
+  'SHOP',
+  'OFFICE',
+  'SHOWROOM',
+  'RESIDENTIAL_PLOT',
+  'COMMERCIAL_PLOT',
+  'FARMLAND',
+  'GARDEN',
+  'VILLA',
+  'GARAGE',
+  'WAREHOUSE',
+  'OTHER_UNIT',
+] as const;
+/** Which units each property type offers, in the order the pickers list them. */
+export const PROPERTY_UNITS: Record<(typeof PROPERTY_TYPES)[number], readonly (typeof PROPERTY_UNIT_TYPES)[number][]> = {
+  HOUSE_HAWILI: ['HAWILI', 'DUPLEX', 'VILLA_HOUSE', 'TOWNHOUSE'],
+  APARTMENT: ['FLAT', 'STUDIO', 'PENTHOUSE'],
+  OFFICE_SHOP: ['SHOP', 'OFFICE', 'SHOWROOM'],
+  LAND: ['RESIDENTIAL_PLOT', 'COMMERCIAL_PLOT', 'FARMLAND'],
+  GARDEN_VILLA: ['GARDEN', 'VILLA'],
+  GARAGE_OTHER: ['GARAGE', 'WAREHOUSE', 'OTHER_UNIT'],
+};
+/** Whether `unit` is one of the units a listing of `type` may have. */
+export const isUnitOf = (type: (typeof PROPERTY_TYPES)[number], unit: string): boolean =>
+  (PROPERTY_UNITS[type] as readonly string[]).includes(unit);
 export const DEAL_TYPES = ['SALE', 'RENT', 'MORTGAGE_GROWI'] as const;
 export const CURRENCIES = ['AFGHANI', 'USD'] as const;
 export const PROPERTY_STATUSES = ['ACTIVE', 'SOLD', 'ARCHIVED'] as const;
@@ -66,6 +104,11 @@ export const PRICING_KEYS = [
 ] as const;
 /** Most rows one bulk upload / bulk edit request may carry. */
 export const QUOTE_CATEGORIES = ['WELCOME_ONBOARDING', 'MORNING_NOTIFICATION'] as const;
+/** What a piece of feedback from the Account tab is about. */
+export const FEEDBACK_CATEGORIES = ['SUGGESTION', 'PROBLEM', 'PRAISE', 'OTHER'] as const;
+/** Shortest and longest feedback message (characters). */
+export const FEEDBACK_MIN_LENGTH = 10;
+export const FEEDBACK_MAX_LENGTH = 1000;
 export const PUSH_PLATFORMS = ['ANDROID', 'IOS'] as const;
 /** Longest quote the welcome card and the push body accept. */
 export const QUOTE_MAX_LENGTH = 500;
@@ -79,6 +122,7 @@ export const PROPERTY_MAX_IMAGES = 20;
 export type Language = (typeof LANGUAGES)[number];
 export type Role = (typeof ROLES)[number];
 export type PropertyType = (typeof PROPERTY_TYPES)[number];
+export type PropertyUnitType = (typeof PROPERTY_UNIT_TYPES)[number];
 export type DealType = (typeof DEAL_TYPES)[number];
 export type Currency = (typeof CURRENCIES)[number];
 export type PropertyStatus = (typeof PROPERTY_STATUSES)[number];
@@ -94,6 +138,7 @@ export type AbuseReason = (typeof ABUSE_REASONS)[number];
 export type AbuseReportStatus = (typeof ABUSE_REPORT_STATUSES)[number];
 export type ReportResolutionAction = (typeof REPORT_RESOLUTION_ACTIONS)[number];
 export type QuoteCategory = (typeof QUOTE_CATEGORIES)[number];
+export type FeedbackCategory = (typeof FEEDBACK_CATEGORIES)[number];
 export type PushPlatform = (typeof PUSH_PLATFORMS)[number];
 export type BannerPlacement = (typeof BANNER_PLACEMENTS)[number];
 export type PricingKey = (typeof PRICING_KEYS)[number];

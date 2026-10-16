@@ -5,6 +5,8 @@ import {
   DEAL_TYPES,
   PROPERTY_STATUSES,
   PROPERTY_TYPES,
+  PROPERTY_UNIT_TYPES,
+  isUnitOf,
 } from '@bongah/shared-types';
 import { cleanText, httpUrl, moneyAmount, normalizePlaceName, placeName } from './common';
 
@@ -45,6 +47,8 @@ const propertyShape = {
   /** Optional: a listing can be published without a description. Stored as '' when left out. */
   description: cleanText(0, 5000).optional(),
   type: z.enum(PROPERTY_TYPES),
+  /** Optional: the kind of unit within the type (a duplex, a studio…). null clears it on an update. */
+  unit_type: z.enum(PROPERTY_UNIT_TYPES).nullish(),
   deal_type: z.enum(DEAL_TYPES),
   price: moneyAmount,
   currency: z.enum(CURRENCIES),
@@ -83,6 +87,10 @@ export const createPropertySchema = z
   })
   // Where the listing is: a pin on the map, OR the address written out as one line. A pin makes even the address
   // optional; district and neighbourhood are never required (a pin fills them in, a written address carries them).
+  .refine((value) => !value.unit_type || isUnitOf(value.type, value.unit_type), {
+    message: 'This unit does not belong to the property type',
+    path: ['unit_type'],
+  })
   .superRefine((value, ctx) => {
     if (value.lat !== undefined) return;
     if (!value.address) {
@@ -104,6 +112,11 @@ export const updatePropertySchema = z
   .partial()
   .extend({ status: PROPERTY_STATUS_INPUT.optional() })
   .refine((value) => Object.keys(value).length > 0, 'Send at least one field to update')
+  // When both are sent they must agree. (A unit sent without a type is checked against the stored type by the API.)
+  .refine((value) => !value.unit_type || !value.type || isUnitOf(value.type, value.unit_type), {
+    message: 'This unit does not belong to the property type',
+    path: ['unit_type'],
+  })
   .refine((value) => (value.lat === undefined) === (value.lng === undefined), {
     message: 'lat and lng must be sent together',
     path: ['lat'],
@@ -158,6 +171,8 @@ export const listPropertiesQuerySchema = z
       .transform((value) => value === 'true')
       .optional(),
     type: z.enum(PROPERTY_TYPES).optional(),
+    /** Only listings of this unit (a duplex, a studio…). Combined with `type`, it must be one of that type's units. */
+    unit_type: z.enum(PROPERTY_UNIT_TYPES).optional(),
     deal_type: z.enum(DEAL_TYPES).optional(),
     min_price: queryMoney.optional(),
     max_price: queryMoney.optional(),
@@ -180,6 +195,10 @@ export const listPropertiesQuerySchema = z
   .refine((q) => !AREA_KEYS.every((key) => q[key] !== undefined) || (q.min_lat! <= q.max_lat! && q.min_lng! <= q.max_lng!), {
     message: 'min_lat/min_lng must not be greater than max_lat/max_lng',
     path: ['min_lat'],
+  })
+  .refine((q) => !q.unit_type || !q.type || isUnitOf(q.type, q.unit_type), {
+    message: 'This unit does not belong to the property type',
+    path: ['unit_type'],
   })
   .refine((q) => q.min_lat === undefined || q.has_location !== false, {
     message: 'An area only contains listings that have a pin, so it cannot be combined with has_location=false',

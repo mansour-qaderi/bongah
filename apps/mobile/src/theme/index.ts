@@ -26,10 +26,11 @@ export const colors = {
   text: '#111827',
   textMuted: '#6B7280',
   /**
-   * The hint inside an empty input ("مثلاً شهر نو"). Deliberately much lighter than `textMuted` (captions, helper
-   * lines) and than the typed text, so an example is never mistaken for something the person already filled in.
+   * The hint inside an empty input ("شهر نو"). Lighter than `textMuted` (captions, helper lines) and far lighter than
+   * the typed text, so an example is never mistaken for something the person already filled in, yet still 3:1 against
+   * white (the least the WCAG asks of an interface part), which the old #9CA3AF (2.5:1) was not.
    */
-  placeholder: '#9CA3AF',
+  placeholder: '#8791A1',
   /** Neutral ink for things that are quiet but must still read clearly: the tabs that are not current. */
   textSecondary: '#374151',
   textOnPrimary: '#FFFFFF',

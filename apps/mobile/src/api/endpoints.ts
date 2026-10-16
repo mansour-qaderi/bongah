@@ -1,4 +1,5 @@
 import type {
+  CreateFeedbackInput,
   CreatePropertyInput,
   CreateTemplateInput,
   InitiatePaymentInput,
@@ -20,6 +21,7 @@ import type {
   ContactAccess,
   Currency,
   DealType,
+  FeedbackReceived,
   Language,
   Paginated,
   PaymentInitiated,
@@ -27,6 +29,7 @@ import type {
   Property,
   PropertyImageUploaded,
   PropertyType,
+  PropertyUnitType,
   RedeemLadderTokenResponse,
   ReferralSummary,
   SendOtpResponse,
@@ -130,6 +133,8 @@ export interface PropertyFilters {
   province?: string;
   district?: string;
   type?: PropertyType;
+  /** The unit within the type (a duplex, a studio…); only meaningful together with `type`. */
+  unit_type?: PropertyUnitType;
   deal_type?: DealType;
   min_price?: number;
   max_price?: number;
@@ -324,3 +329,9 @@ export const initiatePayment = (input: InitiatePaymentInput) =>
 
 export const getPayment = (id: string) =>
   request<Transaction>('GET', `/hesabpay/payments/${id}`, { auth: true });
+
+// ───────────── Feedback ─────────────
+
+/** A suggestion, a problem or a thank-you for the Bongah team, from the Account tab. Needs a signed-in account. */
+export const sendFeedback = (input: CreateFeedbackInput) =>
+  request<FeedbackReceived>('POST', '/feedback', { auth: true, body: input });

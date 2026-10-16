@@ -40,6 +40,31 @@ enum PropertyType {
   @@map("property_type")
 }
 
+/// The kind of unit within a property type (a duplex or a courtyard house within HOUSE_HAWILI, a studio within
+/// APARTMENT…). Optional on a listing. Which units belong to which type lives in @bongah/shared-types (PROPERTY_UNITS).
+enum PropertyUnit {
+  HAWILI
+  DUPLEX
+  VILLA_HOUSE
+  TOWNHOUSE
+  FLAT
+  STUDIO
+  PENTHOUSE
+  SHOP
+  OFFICE
+  SHOWROOM
+  RESIDENTIAL_PLOT
+  COMMERCIAL_PLOT
+  FARMLAND
+  GARDEN
+  VILLA
+  GARAGE
+  WAREHOUSE
+  OTHER_UNIT
+
+  @@map("property_unit")
+}
+
 enum DealType {
   SALE
   RENT
@@ -191,6 +216,16 @@ enum AbuseReportStatus {
   @@map("abuse_report_status")
 }
 
+/// What a piece of app feedback is about.
+enum FeedbackCategory {
+  SUGGESTION
+  PROBLEM
+  PRAISE
+  OTHER
+
+  @@map("feedback_category")
+}
+
 /// Where in the app a banner shows.
 enum BannerPlacement {
   HOME_TOP
@@ -302,6 +337,7 @@ model User {
   bannersCreated     Banner[]
   pricingUpdates     PricingOverride[]
   propertyImages     PropertyImage[]
+  feedbackSent       Feedback[]
 
   // Notifications.
   pushDevices        PushDevice[]
@@ -354,6 +390,8 @@ model Property {
   title         String
   description   String
   type          PropertyType
+  /// Optional sub-type of `type` (see PropertyUnit). Cleared when the type changes to one that does not have it.
+  unitType      PropertyUnit?  @map("unit_type")
   dealType      DealType       @map("deal_type")
   price         Decimal        @db.Decimal(14, 2)
   currency      Currency
@@ -738,6 +776,24 @@ model AbuseReport {
   @@index([targetPropertyId])
   @@index([reporterId])
   @@map("abuse_reports")
+}
+
+/// A suggestion, a problem report or a thank-you that a signed-in user sent from the app's Account tab
+/// ("نظرات و پیشنهادات"). Kept for the Bongah team; the app only ever writes these.
+model Feedback {
+  id         String           @id @default(uuid()) @db.Uuid
+  userId     String           @map("user_id") @db.Uuid
+  category   FeedbackCategory
+  message    String
+  /// The app version it was sent from, so a problem report says which build it concerns.
+  appVersion String?          @map("app_version")
+  createdAt  DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@index([userId, createdAt])
+  @@index([createdAt])
+  @@map("feedback")
 }
 
 /// What an admin did, for accountability. Append-only by convention (nothing in the app updates or

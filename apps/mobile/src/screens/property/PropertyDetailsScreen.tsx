@@ -22,19 +22,21 @@ import Badge, { badgeTones, dealTone } from '../../components/Badge';
 import BookmarkButton from '../../components/BookmarkButton';
 import ContactActionBar from '../../components/ContactActionBar';
 import ContactLockSheet from '../../components/ContactLockSheet';
-import Icon, { type IconName } from '../../components/Icon';
+import Icon from '../../components/Icon';
 import JeribInfoButton from '../../components/JeribInfo';
 import Price from '../../components/Price';
 import PromotionSheet from '../../components/PromotionSheet';
-import { propertyPlace } from '../../components/PropertyFacts';
+import PropertyFacts, {
+  propertyKind,
+  propertyPlace,
+} from '../../components/PropertyFacts';
 import PropertyLocationMap from '../../components/PropertyLocationMap';
 import { Screen } from '../../components/Screen';
 import { ErrorView, LoadingView } from '../../components/States';
-import { formatNumber, formatPhone } from '../../i18n/format';
+import { formatPhone } from '../../i18n/format';
 import { useFormat } from '../../i18n/useFormat';
-import { PROPERTY_LINE_ICONS } from '../../map/markers';
 import type { RootStackParamList } from '../../navigation/types';
-import { colors, radius, spacing, surfaces } from '../../theme';
+import { colors, spacing, surfaces } from '../../theme';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'PropertyDetails'>;
 
@@ -89,32 +91,6 @@ function PropertyBody({ property }: { property: Property }) {
   const isOwner = actions.isOwner;
   const revealed = actions.contact;
 
-  /** One figure of the listing: its icon in a soft tile, the name above and the value below. */
-  const spec = (
-    key: string,
-    icon: IconName,
-    label: string,
-    value: string,
-    extra?: React.ReactNode,
-  ) => (
-    <View style={styles.spec} key={key}>
-      <View style={styles.specIcon}>
-        <Icon name={icon} size={20} color={colors.textSecondary} weight={1.8} />
-      </View>
-      <View style={styles.specText}>
-        <View style={styles.specLabel}>
-          <AppText variant="caption" color={colors.textMuted}>
-            {label}
-          </AppText>
-          {extra}
-        </View>
-        <AppText variant="label" numberOfLines={1}>
-          {value}
-        </AppText>
-      </View>
-    </View>
-  );
-
   const place = propertyPlace(property, format.province);
 
   return (
@@ -144,10 +120,7 @@ function PropertyBody({ property }: { property: Property }) {
         <View style={[styles.section, styles.header]}>
           <View style={styles.row}>
             <View style={styles.badges}>
-              <Badge
-                label={t(`propertyType.${property.type}`)}
-                tone="neutral"
-              />
+              <Badge label={propertyKind(property, t)} tone="neutral" />
               <Badge
                 label={t(`dealType.${property.deal_type}`)}
                 tone={dealTone(property.deal_type)}
@@ -194,37 +167,14 @@ function PropertyBody({ property }: { property: Property }) {
 
         <View style={[styles.section, styles.card]}>
           <AppText variant="heading">{t('property.specs')}</AppText>
-          <View style={styles.specGrid}>
-            {spec(
-              'area',
-              'area',
-              t('property.area'),
-              format.area(property.area_sqm),
-              <JeribInfoButton areaSqm={property.area_sqm} />,
-            )}
-            {property.bedrooms !== null
-              ? spec(
-                  'bedrooms',
-                  'bed',
-                  t('property.bedrooms'),
-                  formatNumber(property.bedrooms, 0),
-                )
-              : null}
-            {property.bathrooms !== null
-              ? spec(
-                  'bathrooms',
-                  'shower',
-                  t('property.bathrooms'),
-                  formatNumber(property.bathrooms, 0),
-                )
-              : null}
-            {spec(
-              'type',
-              PROPERTY_LINE_ICONS[property.type],
-              t('add.type'),
-              t(`propertyType.${property.type}`),
-            )}
-          </View>
+          {/* The same icon grid as the Home list and My Listings; the jerib help sits beside the area. */}
+          <PropertyFacts
+            property={property}
+            withType
+            layout="grid"
+            divider={false}
+            areaAccessory={<JeribInfoButton areaSqm={property.area_sqm} />}
+          />
           {property.type === 'GARDEN_VILLA' ? (
             <AppText variant="caption" color={colors.primaryDark}>
               {t('property.gardenVillaNote')}
@@ -347,24 +297,5 @@ const styles = StyleSheet.create({
     paddingBottom: spacing.xl,
     gap: spacing.lg,
   },
-  specGrid: { flexDirection: 'row', flexWrap: 'wrap', rowGap: spacing.lg },
-  // Two to a row.
-  spec: {
-    flexBasis: '50%',
-    flexGrow: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.md,
-  },
-  specIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: radius.md,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.neutralSoft,
-  },
-  specText: { flexShrink: 1, gap: 2 },
-  specLabel: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   phone: { fontSize: 18 },
 });

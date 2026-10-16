@@ -1,4 +1,5 @@
 import {
+  createFeedbackSchema,
   createPropertySchema,
   initiatePaymentSchema,
   listPropertiesQuerySchema,
@@ -207,5 +208,47 @@ describe('registration and payment schemas', () => {
     expect(setAgencyLocationSchema.safeParse({ lat: 34.5 }).success).toBe(false);
     expect(setAgencyLocationSchema.safeParse({ lat: 51.5, lng: -0.12 }).success).toBe(false);
     expect(setAgencyLocationSchema.safeParse({ lat: 34.5, lng: 69.1, agency_id: 'x' }).success).toBe(false);
+  });
+});
+
+describe('the unit of a property', () => {
+  it('createPropertySchema takes none, null, or a unit of the chosen type', () => {
+    expect(createPropertySchema.safeParse(valid).success).toBe(true);
+    expect(createPropertySchema.safeParse({ ...valid, unit_type: null }).success).toBe(true);
+    expect(createPropertySchema.safeParse({ ...valid, unit_type: 'STUDIO' }).success).toBe(true);
+    expect(createPropertySchema.safeParse({ ...valid, type: 'HOUSE_HAWILI', unit_type: 'DUPLEX' }).success).toBe(true);
+  });
+  it('createPropertySchema refuses a unit of another type, and an unknown unit', () => {
+    const wrong = createPropertySchema.safeParse({ ...valid, unit_type: 'DUPLEX' });
+    expect(wrong.success).toBe(false);
+    expect(fields(wrong)).toContain('unit_type');
+    expect(createPropertySchema.safeParse({ ...valid, unit_type: 'PALACE' }).success).toBe(false);
+  });
+  it('updatePropertySchema checks the pair only when both are sent', () => {
+    expect(updatePropertySchema.safeParse({ unit_type: 'DUPLEX' }).success).toBe(true);
+    expect(updatePropertySchema.safeParse({ unit_type: null }).success).toBe(true);
+    expect(updatePropertySchema.safeParse({ type: 'APARTMENT', unit_type: 'FLAT' }).success).toBe(true);
+    expect(updatePropertySchema.safeParse({ type: 'APARTMENT', unit_type: 'DUPLEX' }).success).toBe(false);
+  });
+  it('listPropertiesQuerySchema takes a unit only with a type that has it', () => {
+    expect(listPropertiesQuerySchema.safeParse({ type: 'HOUSE_HAWILI', unit_type: 'DUPLEX' }).success).toBe(true);
+    expect(listPropertiesQuerySchema.safeParse({ type: 'APARTMENT', unit_type: 'DUPLEX' }).success).toBe(false);
+  });
+});
+
+describe('createFeedbackSchema', () => {
+  const ok = { category: 'SUGGESTION', message: 'It would help to see the price on the map.' };
+  it('accepts a message and keeps its paragraphs, tidying spaces and runs of blank lines', () => {
+    const r = createFeedbackSchema.parse({ ...ok, message: '  First   line \n\n\n\n Second line, long enough  ' });
+    expect(r.message).toBe('First line\n\nSecond line, long enough');
+  });
+  it('takes an optional app version', () => {
+    expect(createFeedbackSchema.parse({ ...ok, app_version: ' 1.2.3 ' }).app_version).toBe('1.2.3');
+  });
+  it('rejects too short, too long, an unknown kind and unknown fields', () => {
+    expect(createFeedbackSchema.safeParse({ ...ok, message: 'short' }).success).toBe(false);
+    expect(createFeedbackSchema.safeParse({ ...ok, message: 'x'.repeat(1001) }).success).toBe(false);
+    expect(createFeedbackSchema.safeParse({ ...ok, category: 'RUDE' }).success).toBe(false);
+    expect(createFeedbackSchema.safeParse({ ...ok, user_id: 'x' }).success).toBe(false);
   });
 });

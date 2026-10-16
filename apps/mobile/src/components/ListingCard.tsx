@@ -16,7 +16,7 @@ import AppText from './AppText';
 import Badge, { badgeTones, dealTone } from './Badge';
 import Icon from './Icon';
 import Price from './Price';
-import PropertyFacts, { propertyPlace } from './PropertyFacts';
+import PropertyFacts, { propertyKind, propertyPlace } from './PropertyFacts';
 
 /**
  * The little dot before a status word: emerald while the listing is live, near-black once the deal is done, grey
@@ -48,7 +48,8 @@ const THUMB = 104;
 /**
  * One of the person's own listings, as a flat horizontal card (white, 1 px border, no shadow): the picture beside
  * the title, a row of badges right under it (the kind of property, the deal as a solid pill, and whether it is live as
- * a quiet white pill) and then the price and the rest; under a divider, the few things they can do with it: promote
+ * a quiet white pill) and then the price and the place; across the card's width, the kind, area, bedrooms and bathrooms
+ * as the same icon grid every listing card uses; under a divider, the few things they can do with it: promote
  * (solid emerald), edit (white with an edge) and deactivate (white with a red edge). Nothing is drawn over the picture. The top part opens the listing; the buttons act on it. A listing with no picture gets a grey tile with the
  * kind's line icon.
  */
@@ -83,7 +84,7 @@ export default function ListingCard({ property, onPress, actions }: Props) {
             {property.title}
           </AppText>
           <View style={styles.badges} testID="listing-badges">
-            <Badge label={t(`propertyType.${property.type}`)} tone="neutral" />
+            <Badge label={propertyKind(property, t)} tone="neutral" />
             <Badge
               label={t(`dealType.${property.deal_type}`)}
               tone={dealTone(property.deal_type)}
@@ -101,10 +102,9 @@ export default function ListingCard({ property, onPress, actions }: Props) {
           <Price
             amount={property.price}
             currency={property.currency}
-            variant="heading"
-            color={colors.primaryDark}
+            variant="title"
+            color={colors.primary}
           />
-          <PropertyFacts property={property} />
           {place ? (
             <View style={styles.place}>
               <Icon
@@ -125,6 +125,9 @@ export default function ListingCard({ property, onPress, actions }: Props) {
           ) : null}
         </View>
       </Pressable>
+
+      {/* The same four facts, in the same icon grid, as the Home list and the details page. */}
+      <PropertyFacts property={property} withType layout="grid" />
 
       {property.is_featured && property.featured_until ? (
         <AppText variant="caption" color={colors.accentText}>

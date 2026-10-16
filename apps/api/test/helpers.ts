@@ -256,6 +256,7 @@ export class TestContext {
     await this.prisma.abuseReport.deleteMany({
       where: { OR: [{ reporterId: { in: userIds } }, { targetUserId: { in: userIds } }, { resolvedById: { in: userIds } }] },
     });
+    await this.prisma.feedback.deleteMany({ where: { userId: { in: userIds } } });
     await this.prisma.banner.deleteMany({
       where: { OR: [{ createdById: { in: userIds } }, { linkProperty: { userId: { in: userIds } } }] },
     });

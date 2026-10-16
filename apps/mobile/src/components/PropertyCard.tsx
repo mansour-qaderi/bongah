@@ -26,9 +26,9 @@ const MEDIA_HEIGHT = 188;
  * - media: the first picture, or a quiet grey container with the kind's line icon when there is none. The deal
  *   badge sits on it at the start edge (solid emerald for a sale, blue for a rent, gold for a pledge, with the
  *   "featured" badge beside it if the listing is promoted) and the bookmark ribbon at the other edge;
- * - body, top to bottom: the title (the biggest text on the card), the price (with a small currency sign and a coin
- *   icon), the place with a pin icon, and the facts as a grid, two to a row: the kind and the area above, the bedrooms
- *   and the bathrooms below, each with its own icon;
+ * - body, top to bottom: the title (the biggest text on the card), the price (the figure with its ؋ sign), the place
+ *   with a pin icon, and the facts as a grid, two to a row: the kind and the area above, the bedrooms and the
+ *   bathrooms below, each with its own icon. My Listings and the details page show the same four in the same grid;
  * - footer: one share button that opens the phone's share sheet (WhatsApp included).
  */
 export default function PropertyCard({ property, onPress }: Props) {
@@ -82,16 +82,13 @@ export default function PropertyCard({ property, onPress }: Props) {
           <AppText variant="heading" numberOfLines={2}>
             {property.title}
           </AppText>
-          <View style={styles.priceRow}>
-            <Icon name="coin" size={20} color={colors.textMuted} weight={1.8} />
-            <Price
-              amount={property.price}
-              currency={property.currency}
-              variant="title"
-              color={colors.primary}
-              style={styles.price}
-            />
-          </View>
+          <Price
+            amount={property.price}
+            currency={property.currency}
+            variant="title"
+            color={colors.primary}
+            style={styles.price}
+          />
           {place ? (
             <View style={styles.place}>
               <Icon
@@ -166,7 +163,6 @@ const styles = StyleSheet.create({
   },
   bookmark: { position: 'absolute', top: spacing.md, end: spacing.md },
   body: { padding: spacing.lg, paddingBottom: spacing.md, gap: spacing.sm },
-  priceRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   price: { lineHeight: 34 },
   place: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
   placeText: { flexShrink: 1 },

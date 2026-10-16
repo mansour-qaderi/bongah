@@ -1,0 +1,826 @@
+import React from 'react';
+import { StyleSheet } from 'react-native';
+import ReactTestRenderer from 'react-test-renderer';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import {
+  FEEDBACK_MAX_LENGTH,
+  FEEDBACK_MIN_LENGTH,
+  PROPERTY_TYPES,
+  PROPERTY_UNITS,
+  PROPERTY_UNIT_TYPES,
+  isUnitOf,
+  type Property,
+} from '@bongah/shared-types';
+import {
+  createFeedbackSchema,
+  createPropertySchema,
+  listPropertiesQuerySchema,
+  updatePropertySchema,
+} from '@bongah/validation';
+import { initI18n } from '../src/i18n';
+import { toPersianDigits } from '../src/i18n/format';
+import prs from '../src/i18n/locales/prs.json';
+import ps from '../src/i18n/locales/ps.json';
+import {
+  allText,
+  callsTo,
+  inputLabelled,
+  mockApi,
+  pressableWith,
+  render as renderTree,
+} from '../test-utils';
+import { APP_VERSION } from '../src/appInfo';
+import FeedbackSheet from '../src/components/FeedbackSheet';
+import ListingCard from '../src/components/ListingCard';
+import { propertyKind } from '../src/components/PropertyFacts';
+import PropertyCard from '../src/components/PropertyCard';
+import Price, { SIGN_SCALE } from '../src/components/Price';
+import TextField from '../src/components/TextField';
+import { resetSavedForTests, toggleSaved } from '../src/favorites/store';
+import { KV_KEYS, kv } from '../src/storage/kv';
+import { PROPERTY_LINE_ICONS } from '../src/map/markers';
+import { colors } from '../src/theme';
+import i18next from 'i18next';
+
+declare const __dirname: string;
+
+const fetchMock = jest.fn();
+let mockAuth: Record<string, unknown> = {};
+
+jest.mock('../src/auth/AuthContext', () => ({
+  useAuth: () => mockAuth,
+  AuthProvider: ({ children }: { children: React.ReactNode }) => children,
+}));
+jest.mock('@react-navigation/native', () =>
+  require('../test-utils/navMock').navigationModule(),
+);
+jest.mock('../src/navigation/useRequireAuth', () => ({
+  useRequireAuth: () => (action: () => void) => action(),
+}));
+
+// Imported after the mocks so the screens pick them up.
+import AboutScreen from '../src/screens/about/AboutScreen';
+import AccountScreen from '../src/screens/account/AccountScreen';
+import SavedListingsScreen from '../src/screens/saved/SavedListingsScreen';
+import PropertyDetailsScreen from '../src/screens/property/PropertyDetailsScreen';
+
+const act = ReactTestRenderer.act;
+
+const user = {
+  id: 'u1',
+  role: 'USER',
+  phone_number: '+93701234567',
+  full_name: 'احمد',
+  avatar: null,
+};
+
+const property = (overrides: Partial<Property> = {}): Property => ({
+  id: 'p1',
+  user_id: 'u1',
+  agency_id: null,
+  agency_name: null,
+  title: 'خانه سه خوابه در شهر نو',
+  description: '',
+  type: 'HOUSE_HAWILI',
+  unit_type: 'DUPLEX',
+  deal_type: 'SALE',
+  price: 1200000,
+  currency: 'AFGHANI',
+  area_sqm: 253,
+  bedrooms: 3,
+  bathrooms: 2,
+  province: 'nimroz',
+  district: 'زرنج',
+  neighborhood: null,
+  address: '',
+  lat: null,
+  lng: null,
+  images: [],
+  status: 'ACTIVE',
+  is_featured: false,
+  featured_until: null,
+  laddered_at: null,
+  created_at: '2026-10-01T08:00:00Z',
+  updated_at: '2026-10-01T08:00:00Z',
+  ...overrides,
+});
+
+const mounted: ReactTestRenderer.ReactTestRenderer[] = [];
+const show = async (element: React.ReactElement) => {
+  const tree = await renderTree(element);
+  mounted.push(tree);
+  return tree;
+};
+const withQuery = (node: React.ReactElement) => (
+  <QueryClientProvider
+    client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
+  >
+    {node}
+  </QueryClientProvider>
+);
+const navigation = () => ({
+  navigate: jest.fn(),
+  replace: jest.fn(),
+  goBack: jest.fn(),
+  setOptions: jest.fn(),
+  addListener: jest.fn(() => () => undefined),
+});
+const screenElement = <P extends object>(
+  Screen: React.ComponentType<P>,
+  nav: ReturnType<typeof navigation> = navigation(),
+  route: object = {},
+) =>
+  withQuery(
+    <Screen
+      {...({
+        navigation: nav,
+        route: { params: undefined, ...route },
+      } as unknown as P)}
+    />,
+  );
+const settle = async () => {
+  for (let i = 0; i < 4; i += 1) {
+    await act(async () => {
+      await new Promise<void>(resolve => setTimeout(() => resolve(), 0));
+    });
+  }
+};
+const press = (root: ReactTestRenderer.ReactTestInstance, label: string) =>
+  act(async () => {
+    pressableWith(root, label).props.onPress();
+  });
+const byTestId = (root: ReactTestRenderer.ReactTestInstance, id: string) =>
+  root.findAll(n => n.props.testID === id && typeof n.type === 'string');
+const flat = (node: ReactTestRenderer.ReactTestInstance) =>
+  StyleSheet.flatten(node.props.style) ?? {};
+
+beforeAll(async () => {
+  await initI18n();
+});
+beforeEach(async () => {
+  fetchMock.mockReset();
+  (globalThis as unknown as { fetch: unknown }).fetch = fetchMock;
+  mockAuth = { status: 'signedIn', user };
+  await kv.remove(KV_KEYS.favorites);
+  resetSavedForTests();
+});
+afterEach(async () => {
+  await act(async () => {
+    mounted.splice(0).forEach(tree => tree.unmount());
+  });
+});
+
+// ───────────────────────────── 3. the unit (sub-type) ─────────────────────────────
+
+describe('units: the shared list', () => {
+  it('gives every property type at least one unit, and every unit to exactly one type', () => {
+    for (const type of PROPERTY_TYPES) {
+      expect(PROPERTY_UNITS[type].length).toBeGreaterThan(0);
+    }
+    const owners = PROPERTY_UNIT_TYPES.map(
+      unit => PROPERTY_TYPES.filter(type => isUnitOf(type, unit)).length,
+    );
+    expect(owners.every(count => count === 1)).toBe(true);
+  });
+
+  it('knows the units a house and an apartment can be', () => {
+    expect(isUnitOf('HOUSE_HAWILI', 'HAWILI')).toBe(true);
+    expect(isUnitOf('HOUSE_HAWILI', 'DUPLEX')).toBe(true);
+    expect(isUnitOf('APARTMENT', 'FLAT')).toBe(true);
+    expect(isUnitOf('APARTMENT', 'DUPLEX')).toBe(false);
+    expect(isUnitOf('LAND', 'HAWILI')).toBe(false);
+  });
+
+  it('has a Dari and a Pashto name for every unit', () => {
+    for (const unit of PROPERTY_UNIT_TYPES) {
+      expect(prs.unitType[unit]).toBeTruthy();
+      expect(ps.unitType[unit]).toBeTruthy();
+    }
+    expect(Object.keys(prs.unitType).sort()).toEqual(
+      [...PROPERTY_UNIT_TYPES].sort(),
+    );
+  });
+});
+
+describe('units: the shared validation', () => {
+  const base = {
+    title: 'خانه دو منزله',
+    type: 'HOUSE_HAWILI' as const,
+    deal_type: 'SALE' as const,
+    price: 100000,
+    currency: 'AFGHANI' as const,
+    area_sqm: 200,
+    bedrooms: 3,
+    bathrooms: 2,
+    province: 'کابل',
+    address: 'کابل، شهر نو',
+  };
+
+  it('accepts a listing with no unit, with a null unit, and with a unit of its type', () => {
+    expect(createPropertySchema.safeParse(base).success).toBe(true);
+    expect(
+      createPropertySchema.safeParse({ ...base, unit_type: null }).success,
+    ).toBe(true);
+    expect(
+      createPropertySchema.safeParse({ ...base, unit_type: 'DUPLEX' }).success,
+    ).toBe(true);
+  });
+
+  it('refuses a unit that belongs to another type, and an unknown unit', () => {
+    expect(
+      createPropertySchema.safeParse({ ...base, unit_type: 'STUDIO' }).success,
+    ).toBe(false);
+    expect(
+      createPropertySchema.safeParse({ ...base, unit_type: 'PALACE' }).success,
+    ).toBe(false);
+  });
+
+  it('checks the pair on an update only when both are sent', () => {
+    expect(
+      updatePropertySchema.safeParse({ type: 'APARTMENT', unit_type: 'DUPLEX' })
+        .success,
+    ).toBe(false);
+    expect(
+      updatePropertySchema.safeParse({ type: 'APARTMENT', unit_type: 'FLAT' })
+        .success,
+    ).toBe(true);
+    expect(
+      updatePropertySchema.safeParse({ unit_type: 'DUPLEX' }).success,
+    ).toBe(true);
+    expect(updatePropertySchema.safeParse({ unit_type: null }).success).toBe(
+      true,
+    );
+  });
+
+  it('takes a unit in the list query only together with a type that has it', () => {
+    expect(
+      listPropertiesQuerySchema.safeParse({
+        type: 'HOUSE_HAWILI',
+        unit_type: 'DUPLEX',
+      }).success,
+    ).toBe(true);
+    expect(
+      listPropertiesQuerySchema.safeParse({
+        type: 'APARTMENT',
+        unit_type: 'DUPLEX',
+      }).success,
+    ).toBe(false);
+  });
+});
+
+describe('the kind of a property, as a card says it', () => {
+  const t = i18next.t.bind(i18next);
+  it('says the type, then the unit when there is one', () => {
+    expect(propertyKind(property(), t)).toBe(
+      `${prs.propertyType.HOUSE_HAWILI}، ${prs.unitType.DUPLEX}`,
+    );
+    expect(propertyKind(property({ unit_type: null }), t)).toBe(
+      prs.propertyType.HOUSE_HAWILI,
+    );
+    expect(propertyKind(property({ unit_type: undefined }), t)).toBe(
+      prs.propertyType.HOUSE_HAWILI,
+    );
+  });
+});
+
+// ─────────────────── 5. the same specs and price in the three views ───────────────────
+
+describe('property specs: the list card, My Listings and the details page agree', () => {
+  const id = '11111111-1111-4111-8111-111111111111';
+  const p = property({ id, province: 'کابل' });
+
+  const expectSpecs = (text: string) => {
+    expect(text).toContain(prs.propertyType.HOUSE_HAWILI);
+    expect(text).toContain(prs.unitType.DUPLEX);
+    expect(text).toContain(toPersianDigits(253));
+    expect(text).toContain(prs.unit.sqm);
+    expect(text).toContain(toPersianDigits(3));
+    expect(text).toContain(toPersianDigits(2));
+    expect(text).toContain('؋');
+    expect(text).toContain('۱,۲۰۰,۰۰۰');
+  };
+
+  it('shows type, area, bedrooms, bathrooms and a priced ؋ on the Home list card', async () => {
+    const tree = await show(<PropertyCard property={p} onPress={jest.fn()} />);
+    expectSpecs(allText(tree.root));
+  });
+
+  it('shows the same on a My Listings card', async () => {
+    const tree = await show(
+      <ListingCard property={p} onPress={jest.fn()} actions={[]} />,
+    );
+    expectSpecs(allText(tree.root));
+  });
+
+  it('shows the same on the details page', async () => {
+    mockApi(fetchMock, { [`GET /properties/${id}`]: { body: p } });
+    const tree = await show(
+      screenElement(PropertyDetailsScreen, navigation(), { params: { id } }),
+    );
+    await settle();
+    expectSpecs(allText(tree.root));
+  });
+
+  it('draws the same four icon chips (type, area, bedrooms, bathrooms) in all three views', async () => {
+    mockApi(fetchMock, { [`GET /properties/${id}`]: { body: p } });
+    const chipIcons = (root: ReactTestRenderer.ReactTestInstance) => {
+      const strip = byTestId(root, 'property-facts')[0];
+      expect(strip).toBeDefined();
+      return (
+        strip
+          .findAll(n => typeof n.props.name === 'string' && n.props.size === 16)
+          .map(icon => icon.props.name as string)
+          // The details page also carries the little ℹ of the jerib helper beside the area.
+          .filter(name => name !== 'info')
+      );
+    };
+    const home = await show(<PropertyCard property={p} onPress={jest.fn()} />);
+    const mine = await show(
+      <ListingCard property={p} onPress={jest.fn()} actions={[]} />,
+    );
+    const details = await show(
+      screenElement(PropertyDetailsScreen, navigation(), { params: { id } }),
+    );
+    await settle();
+    const expected = [
+      PROPERTY_LINE_ICONS.HOUSE_HAWILI,
+      'area',
+      'bed',
+      'shower',
+    ];
+    expect(chipIcons(home.root)).toEqual(expected);
+    expect(chipIcons(mine.root)).toEqual(expected);
+    expect(chipIcons(details.root)).toEqual(expected);
+  });
+
+  it('draws the currency sign at four fifths of the figure, not a speck', async () => {
+    expect(SIGN_SCALE).toBeGreaterThanOrEqual(0.75);
+    expect(SIGN_SCALE).toBeLessThan(1);
+    const tree = await show(
+      <Price amount={1200000} currency="AFGHANI" variant="title" />,
+    );
+    expect(allText(tree.root)).toContain('؋');
+  });
+});
+
+// ───────────────────── 7. the ℹ جریب beside the "مساحت" label ─────────────────────
+
+describe('TextField: an accessory beside the label', () => {
+  it('draws the accessory in the label row, before the input', async () => {
+    const tree = await show(
+      <TextField
+        label="مساحت"
+        value=""
+        onChangeText={jest.fn()}
+        labelAccessory={<TextField_Probe />}
+      />,
+    );
+    const row = byTestId(tree.root, 'label-row');
+    expect(row).toHaveLength(1);
+    expect(allText(row[0])).toContain('مساحت');
+    expect(allText(row[0])).toContain('probe');
+  });
+});
+function TextField_Probe() {
+  const { Text } = jest.requireActual('react-native');
+  return <Text>probe</Text>;
+}
+
+// ───────────────────────────── 8. placeholder colour ─────────────────────────────
+
+describe('placeholders look like hints, never like filled values', () => {
+  const luminance = (hex: string) => {
+    const channel = (offset: number) => {
+      const v = parseInt(hex.slice(offset, offset + 2), 16) / 255;
+      return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
+    };
+    return 0.2126 * channel(1) + 0.7152 * channel(3) + 0.0722 * channel(5);
+  };
+  const contrast = (a: string, b: string) => {
+    const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x);
+    return (hi + 0.05) / (lo + 0.05);
+  };
+
+  it('is readable (3:1 against white) yet clearly lighter than the typed text and the muted text', () => {
+    expect(contrast(colors.placeholder, '#FFFFFF')).toBeGreaterThanOrEqual(3);
+    expect(colors.placeholder).not.toBe(colors.text);
+    expect(colors.placeholder).not.toBe(colors.textMuted);
+    // A typed value is at least twice as strong against white as a hint is.
+    expect(contrast(colors.text, '#FFFFFF')).toBeGreaterThan(
+      contrast(colors.placeholder, '#FFFFFF') * 2,
+    );
+    expect(luminance(colors.placeholder)).toBeGreaterThan(
+      luminance(colors.textMuted),
+    );
+  });
+
+  it('gives every text box the hint colour for an empty value and the text colour once filled', async () => {
+    const field = (value: string) =>
+      show(
+        <TextField
+          label="نام"
+          value={value}
+          onChangeText={jest.fn()}
+          placeholder="۱۰۰۰"
+        />,
+      );
+    const empty = await field('');
+    const input = inputLabelled(empty.root, 'نام');
+    expect(input.props.placeholderTextColor).toBe(colors.placeholder);
+    const filled = await field('احمد');
+    expect(flat(inputLabelled(filled.root, 'نام')).color).toBe(colors.text);
+  });
+});
+
+// ─────────────────────── 4. no "مثلاً" in any placeholder ───────────────────────
+
+describe('placeholders carry no "for example" word', () => {
+  const words = ['مثلاً', 'مثلا', 'لکه'];
+  const strings = (value: unknown, path: string): [string, string][] =>
+    typeof value === 'string'
+      ? [[path, value]]
+      : value && typeof value === 'object'
+      ? Object.entries(value).flatMap(([key, child]) =>
+          strings(child, path ? `${path}.${key}` : key),
+        )
+      : [];
+
+  it.each([
+    ['Dari', prs],
+    ['Pashto', ps],
+  ])('has none in the %s texts that go into a text box', (_name, locale) => {
+    const offenders = strings(locale, '')
+      .filter(([key]) => /placeholder|titleExamples/i.test(key))
+      .filter(([, text]) => words.some(word => text.includes(word)))
+      .map(([key]) => key);
+    expect(offenders).toEqual([]);
+  });
+
+  it('has dropped the shared "for example" prefix key', () => {
+    expect((prs.common as Record<string, unknown>).example).toBeUndefined();
+    expect((ps.common as Record<string, unknown>).example).toBeUndefined();
+  });
+
+  it('has no source file that builds a placeholder from such a word', () => {
+    const fs = require('node:fs') as {
+      readdirSync(
+        p: string,
+        o: { withFileTypes: true },
+      ): { name: string; isDirectory(): boolean }[];
+      readFileSync(p: string, e: 'utf8'): string;
+    };
+    const path = require('node:path') as { join(...p: string[]): string };
+    const walk = (dir: string): string[] =>
+      fs.readdirSync(dir, { withFileTypes: true }).flatMap(entry => {
+        const full = path.join(dir, entry.name);
+        if (entry.isDirectory()) return walk(full);
+        return /\.tsx?$/.test(entry.name) ? [full] : [];
+      });
+    const hits = walk(path.join(__dirname, '..', 'src')).filter(file =>
+      /placeholder[^\n]*(مثلاً|common\.example)/.test(
+        fs.readFileSync(file, 'utf8'),
+      ),
+    );
+    expect(hits).toEqual([]);
+  });
+});
+
+// ─────────────────────────── 1. feedback, and the About view ───────────────────────────
+
+describe('FeedbackSheet', () => {
+  const open = async (onSignIn = jest.fn(), onClose = jest.fn()) => {
+    const tree = await show(
+      withQuery(
+        <FeedbackSheet visible onClose={onClose} onSignIn={onSignIn} />,
+      ),
+    );
+    await settle();
+    return { tree, onSignIn, onClose };
+  };
+  const write = (root: ReactTestRenderer.ReactTestInstance, text: string) =>
+    act(async () => {
+      inputLabelled(root, prs.feedback.messageLabel).props.onChangeText(text);
+    });
+
+  it('offers the four kinds of message and a message box with a hint', async () => {
+    const { tree } = await open();
+    const text = allText(tree.root);
+    expect(text).toContain(prs.feedback.title);
+    for (const label of Object.values(prs.feedback.category)) {
+      expect(text).toContain(label);
+    }
+    expect(
+      inputLabelled(tree.root, prs.feedback.messageLabel).props.placeholder,
+    ).toBe(prs.feedback.messagePlaceholder);
+  });
+
+  it('refuses a message that is too short and sends nothing', async () => {
+    const { tree } = await open();
+    await write(tree.root, 'سلام');
+    await press(tree.root, prs.feedback.send);
+    await settle();
+    expect(callsTo(fetchMock).filter(c => c.path === '/feedback')).toHaveLength(
+      0,
+    );
+    expect(allText(tree.root)).toContain(
+      prs.feedback.tooShort.replace(
+        '{{min}}',
+        toPersianDigits(FEEDBACK_MIN_LENGTH),
+      ),
+    );
+  });
+
+  it('sends the chosen kind, the message and the app version, then says thank you', async () => {
+    mockApi(fetchMock, {
+      'POST /feedback': {
+        status: 201,
+        body: { id: 'f1', created_at: '2026-10-16T00:00:00Z' },
+      },
+    });
+    const { tree } = await open();
+    await press(tree.root, prs.feedback.category.PROBLEM);
+    await write(tree.root, 'نقشه در بخش ثبت آگهی کند باز می‌شود.');
+    await press(tree.root, prs.feedback.send);
+    await settle();
+
+    const sent = callsTo(fetchMock).find(c => c.path === '/feedback');
+    expect(sent?.method).toBe('POST');
+    expect(sent?.body).toEqual({
+      category: 'PROBLEM',
+      message: 'نقشه در بخش ثبت آگهی کند باز می‌شود.',
+      app_version: APP_VERSION,
+    });
+    expect(allText(tree.root)).toContain(prs.feedback.success);
+  });
+
+  it('shows a visitor the sign-in prompt, which closes the sheet and goes to sign-in', async () => {
+    mockAuth = { status: 'signedOut', user: null };
+    const { tree, onSignIn, onClose } = await open();
+    expect(allText(tree.root)).toContain(prs.auth.signInRequired);
+    expect(
+      inputLabelledOrNull(tree.root, prs.feedback.messageLabel),
+    ).toBeNull();
+    await press(tree.root, prs.auth.signIn);
+    expect(onClose).toHaveBeenCalled();
+    expect(onSignIn).toHaveBeenCalled();
+  });
+
+  it('knows its limits from the shared package', () => {
+    expect(FEEDBACK_MIN_LENGTH).toBeGreaterThan(0);
+    expect(FEEDBACK_MAX_LENGTH).toBeGreaterThan(FEEDBACK_MIN_LENGTH);
+    expect(
+      createFeedbackSchema.safeParse({
+        category: 'PRAISE',
+        message: 'x'.repeat(FEEDBACK_MAX_LENGTH + 1),
+      }).success,
+    ).toBe(false);
+    expect(
+      createFeedbackSchema.safeParse({
+        category: 'PRAISE',
+        message: 'برنامه خیلی خوب است',
+      }).success,
+    ).toBe(true);
+    expect(
+      createFeedbackSchema.safeParse({
+        category: 'RUDE',
+        message: 'برنامه خیلی خوب است',
+      }).success,
+    ).toBe(false);
+  });
+});
+function inputLabelledOrNull(
+  root: ReactTestRenderer.ReactTestInstance,
+  label: string,
+) {
+  try {
+    return inputLabelled(root, label);
+  } catch {
+    return null;
+  }
+}
+
+describe('AboutScreen', () => {
+  it('tells what the app is for, its version, its languages and where the map comes from', async () => {
+    const tree = await show(screenElement(AboutScreen));
+    await settle();
+    const text = allText(tree.root);
+    expect(text).toContain(prs.app.name);
+    expect(text).toContain(prs.about.mission);
+    expect(text).toContain(prs.about.point1);
+    expect(text).toContain(toPersianDigits(APP_VERSION));
+    expect(text).toContain(prs.about.languagesValue);
+    expect(text).toContain('OpenStreetMap');
+  });
+
+  it('opens the feedback sheet from its contact card', async () => {
+    const tree = await show(screenElement(AboutScreen));
+    await settle();
+    expect(allText(tree.root)).not.toContain(prs.feedback.intro);
+    await press(tree.root, prs.about.sendFeedback);
+    await settle();
+    expect(allText(tree.root)).toContain(prs.feedback.intro);
+  });
+});
+
+// ───────────────────────── 1 + 2. the redesigned Account tab ─────────────────────────
+
+describe('AccountScreen: the settings layout', () => {
+  const mount = async (nav = navigation()) => {
+    const tree = await show(screenElement(AccountScreen, nav));
+    await settle();
+    return { tree, nav };
+  };
+
+  it('puts saved, my listings and add-property in a row of quick tiles', async () => {
+    mockApi(fetchMock, {});
+    const { tree, nav } = await mount();
+    const tiles = byTestId(tree.root, 'quick-actions')[0];
+    expect(tiles).toBeDefined();
+    const text = allText(tiles);
+    expect(text).toContain(prs.nav.saved);
+    expect(text).toContain(prs.nav.myListings);
+    expect(text).toContain(prs.nav.addProperty);
+
+    await press(tiles, prs.nav.saved);
+    expect(nav.navigate).toHaveBeenCalledWith('Saved');
+    await press(tiles, prs.nav.myListings);
+    expect(nav.navigate).toHaveBeenCalledWith('MyListings');
+    await press(tiles, prs.nav.addProperty);
+    expect(nav.navigate).toHaveBeenCalledWith('AddProperty');
+  });
+
+  it('has feedback and about cards under “پشتیبانی”, with a hint line each', async () => {
+    mockApi(fetchMock, {});
+    const { tree } = await mount();
+    const text = allText(tree.root);
+    expect(text).toContain(prs.account.groupSupport);
+    expect(text).toContain(prs.account.feedback);
+    expect(text).toContain(prs.account.feedbackHint);
+    expect(text).toContain(prs.account.about);
+    expect(text).toContain(prs.account.aboutHint);
+  });
+
+  it('opens the About view from its card', async () => {
+    mockApi(fetchMock, {});
+    const { tree, nav } = await mount();
+    await press(tree.root, prs.account.aboutHint);
+    expect(nav.navigate).toHaveBeenCalledWith('About');
+  });
+
+  it('opens the feedback form from its card, in a sheet, without leaving the tab', async () => {
+    mockApi(fetchMock, {});
+    const { tree, nav } = await mount();
+    expect(allText(tree.root)).not.toContain(prs.feedback.intro);
+    await press(tree.root, prs.account.feedbackHint);
+    await settle();
+    expect(allText(tree.root)).toContain(prs.feedback.intro);
+    expect(nav.navigate).not.toHaveBeenCalled();
+  });
+
+  it('shows the app version at the foot of the page', async () => {
+    mockApi(fetchMock, {});
+    const { tree } = await mount();
+    expect(allText(tree.root)).toContain(
+      prs.account.version.replace('{{version}}', toPersianDigits(APP_VERSION)),
+    );
+  });
+
+  it('keeps sign-out and the morning-messages switch inside the groups', async () => {
+    mockApi(fetchMock, {});
+    const { tree } = await mount();
+    const settings = byTestId(tree.root, 'settings-group')[0];
+    expect(settings).toBeDefined();
+    expect(allText(settings)).toContain(prs.account.morningMessages);
+    expect(allText(settings)).toContain(prs.account.language);
+    expect(allText(tree.root)).toContain(prs.auth.signOut);
+  });
+
+  it('still lets a visitor in: sign-in card, support rows, no account group', async () => {
+    mockAuth = { status: 'signedOut', user: null };
+    mockApi(fetchMock, {});
+    const { tree } = await mount();
+    const text = allText(tree.root);
+    expect(text).toContain(prs.auth.signIn);
+    expect(text).toContain(prs.account.about);
+    expect(text).toContain(prs.account.feedback);
+    expect(text).not.toContain(prs.account.groupAccount);
+    expect(text).not.toContain(prs.account.morningMessages);
+  });
+});
+
+// ──────────────────────────────── 2. saved listings ────────────────────────────────
+
+describe('SavedListingsScreen', () => {
+  const idA = '11111111-1111-4111-8111-111111111111';
+  const idB = '22222222-2222-4222-8222-222222222222';
+  const idC = '33333333-3333-4333-8333-333333333333';
+
+  it('says there is nothing yet, and leads back to the listings', async () => {
+    const nav = navigation();
+    const tree = await show(screenElement(SavedListingsScreen, nav));
+    await settle();
+    expect(allText(tree.root)).toContain(prs.saved.empty);
+    await press(tree.root, prs.saved.browse);
+    expect(nav.navigate).toHaveBeenCalledWith('Tabs', { screen: 'Home' });
+  });
+
+  it('lists every saved listing as a card, newest save first, and opens one on a tap', async () => {
+    mockApi(fetchMock, {
+      [`GET /properties/${idA}`]: {
+        body: property({ id: idA, title: 'آگهی اول' }),
+      },
+      [`GET /properties/${idB}`]: {
+        body: property({ id: idB, title: 'آگهی دوم' }),
+      },
+    });
+    await toggleSaved(idA);
+    await toggleSaved(idB);
+    const nav = navigation();
+    const tree = await show(screenElement(SavedListingsScreen, nav));
+    await settle();
+    const text = allText(tree.root);
+    expect(text).toContain('آگهی اول');
+    expect(text).toContain('آگهی دوم');
+    expect(text.indexOf('آگهی دوم')).toBeLessThan(text.indexOf('آگهی اول'));
+    expect(text).toContain(
+      prs.saved.count.replace('{{count}}', toPersianDigits(2)),
+    );
+    // The same card as the Home list: the specs are on it too.
+    expect(text).toContain(prs.unitType.DUPLEX);
+
+    await press(tree.root, 'آگهی اول');
+    expect(nav.navigate).toHaveBeenCalledWith('PropertyDetails', { id: idA });
+  });
+
+  it('keeps a removed listing as a short note that can be forgotten, without hiding the others', async () => {
+    mockApi(fetchMock, {
+      [`GET /properties/${idA}`]: {
+        body: property({ id: idA, title: 'آگهی اول' }),
+      },
+      // idB is not routed: the mock answers 404.
+    });
+    await toggleSaved(idA);
+    await toggleSaved(idB);
+    const tree = await show(screenElement(SavedListingsScreen));
+    await settle();
+    expect(allText(tree.root)).toContain('آگهی اول');
+    expect(byTestId(tree.root, `saved-gone-${idB}`)).toHaveLength(1);
+    expect(allText(tree.root)).toContain(prs.saved.gone);
+
+    await act(async () => {
+      tree.root
+        .find(
+          n =>
+            typeof n.props.onPress === 'function' &&
+            n.props.accessibilityLabel === `${prs.saved.remove}: ${idB}`,
+        )
+        .props.onPress();
+    });
+    await settle();
+    expect(byTestId(tree.root, `saved-gone-${idB}`)).toHaveLength(0);
+    expect(allText(tree.root)).toContain('آگهی اول');
+  });
+
+  it('offers a retry for a listing that failed to load, and loads it on the retry', async () => {
+    let failing = true;
+    mockApi(fetchMock, {
+      [`GET /properties/${idC}`]: () =>
+        failing
+          ? { status: 500, body: { message: 'خطا' } }
+          : { body: property({ id: idC, title: 'آگهی سوم' }) },
+    });
+    await toggleSaved(idC);
+    const tree = await show(screenElement(SavedListingsScreen));
+    await settle();
+    // One automatic retry first (after its short wait), then the note with a button.
+    await act(async () => {
+      await new Promise<void>(resolve => setTimeout(() => resolve(), 1300));
+    });
+    expect(byTestId(tree.root, `saved-failed-${idC}`)).toHaveLength(1);
+
+    failing = false;
+    await press(tree.root, prs.common.retry);
+    await settle();
+    expect(allText(tree.root)).toContain('آگهی سوم');
+  });
+});
+
+// ─────────────────────────── the navigation bar stays as it was ───────────────────────────
+
+describe('the floating bottom navigation bar', () => {
+  it('has not been given any of the new screens or routes', () => {
+    const fs = require('node:fs') as {
+      readFileSync(p: string, e: 'utf8'): string;
+    };
+    const path = require('node:path') as { join(...p: string[]): string };
+    const read = (file: string) =>
+      fs.readFileSync(
+        path.join(__dirname, '..', 'src', 'navigation', file),
+        'utf8',
+      );
+    for (const file of ['FloatingTabBar.tsx', 'MainTabs.tsx']) {
+      const source = read(file);
+      expect(source).not.toMatch(/Saved|About|Feedback/);
+    }
+  });
+});

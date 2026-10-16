@@ -64,6 +64,7 @@ jest.mock('@maplibre/maplibre-react-native', () => {
     GeoJSONSource: passthrough('GeoJSONSource'),
     Layer: passthrough('Layer'),
     Marker: passthrough('Marker'),
+    ViewAnnotation: passthrough('ViewAnnotation'),
     LocationManager,
     __flyTo: mockFlyTo,
     __location: location,

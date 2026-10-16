@@ -52,6 +52,7 @@ export function toPropertyDto(row: PropertyRowWithAgency, now: Date): PropertyDt
     title: row.title,
     description: row.description,
     type: row.type,
+    unit_type: row.unitType,
     deal_type: row.dealType,
     // NUMERIC(14,2) always fits a double exactly enough to round-trip with 2 decimals.
     price: row.price.toNumber(),

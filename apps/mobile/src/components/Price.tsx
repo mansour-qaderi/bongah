@@ -15,9 +15,10 @@ interface Props extends Omit<TextProps, 'children'> {
 
 /**
  * The sign is drawn at this fraction of the figure, in the regular weight. At full size the Afghani sign (؋) is as tall as the digits
- * and twice as heavy, so it shouts over the number it belongs to; at about 60% it sits beside the digits as a unit.
+ * and twice as heavy, so it shouts over the number it belongs to; at 60% it shrank to a speck that could not be read
+ * as a currency at all. About four fifths keeps it plainly legible and still quieter than the figure.
  */
-export const SIGN_SCALE = 0.6;
+export const SIGN_SCALE = 0.8;
 
 /**
  * A price: the figure at the size of `variant` and the currency sign small and quiet beside it. The figure is grouped

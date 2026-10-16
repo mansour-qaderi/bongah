@@ -106,6 +106,7 @@ function activeFilterCount(filters: PropertyFilters): number {
     filters.province,
     filters.district,
     filters.type,
+    filters.unit_type,
     filters.deal_type,
     filters.min_price ?? filters.max_price,
   ].filter(value => value !== undefined).length;
@@ -334,6 +335,12 @@ export default function HomeScreen({ navigation }: Props) {
 
   const topControls = (
     <>
+      <RoundButton
+        testID="open-saved"
+        icon="bookmark"
+        label={t('nav.saved')}
+        onPress={() => navigation.navigate('Saved')}
+      />
       <DealFilter value={filters.deal_type} onChange={chooseDeal} />
       <RoundButton
         testID="open-filters"
