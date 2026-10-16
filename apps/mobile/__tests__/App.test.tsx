@@ -2,6 +2,7 @@ import React from 'react';
 import ReactTestRenderer from 'react-test-renderer';
 import App from '../App';
 import prs from '../src/i18n/locales/prs.json';
+import { SPLASH_DURATION_MS } from '../src/screens/splash/SplashScreen';
 import { queryClient } from '../src/api/hooks';
 import {
   allText,
@@ -48,6 +49,14 @@ jest.mock('../src/i18n/rtl', () => ({
 
 afterEach(() => queryClient.clear());
 
+/** The app opens on the splash screen; this waits it out (it hands over to the map by itself). */
+const pastSplash = () =>
+  ReactTestRenderer.act(async () => {
+    await new Promise<void>(resolve =>
+      setTimeout(() => resolve(), SPLASH_DURATION_MS + 150),
+    );
+  });
+
 test('the app opens on the map in Dari, and the list shows Persian digits and the right currency word', async () => {
   const fetchMock = jest.fn(async (url: string) => {
     if (url.includes('/properties?')) {
@@ -62,6 +71,8 @@ test('the app opens on the map in Dari, and the list shows Persian digits and th
   (globalThis as unknown as { fetch: unknown }).fetch = fetchMock;
 
   const tree = await render(<App />);
+  await flush();
+  await pastSplash();
   await flush();
   await flush();
 
@@ -116,6 +127,8 @@ test('the bottom bar has exactly four tabs, in this order: home, my listings, me
   );
   const tree = await render(<App />);
   await flush();
+  await pastSplash();
+  await flush();
 
   const tabs = tree.root
     .findAll(
@@ -139,6 +152,40 @@ test('the bottom bar has exactly four tabs, in this order: home, my listings, me
         typeof n.type === 'string',
     ),
   ).toHaveLength(1);
+
+  ReactTestRenderer.act(() => tree.unmount());
+});
+
+test('the app starts on the splash screen with the bottom bar nowhere in sight, then lands on the map', async () => {
+  (globalThis as unknown as { fetch: unknown }).fetch = jest.fn(
+    async (url: string) =>
+      url.includes('/properties?')
+        ? jsonResponse(200, {
+            data: [],
+            meta: { page: 1, limit: 50, total: 0, total_pages: 0 },
+          })
+        : jsonResponse(200, []),
+  );
+  const tree = await render(<App />);
+  await flush();
+
+  const tabsShown = () =>
+    tree.root.findAll(
+      n => n.props.accessibilityRole === 'tab' && typeof n.type === 'string',
+    ).length;
+  expect(
+    tree.root.findAll(n => n.props.testID === 'splash-screen').length,
+  ).toBeGreaterThan(0);
+  expect(allText(tree.root)).toContain(prs.splash.name);
+  expect(allText(tree.root)).toContain(prs.splash.tagline);
+  expect(tabsShown()).toBe(0);
+
+  await pastSplash();
+  await flush();
+  expect(
+    tree.root.findAll(n => n.props.testID === 'splash-screen'),
+  ).toHaveLength(0);
+  expect(tabsShown()).toBe(4);
 
   ReactTestRenderer.act(() => tree.unmount());
 });
