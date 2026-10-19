@@ -151,7 +151,7 @@ const styles = StyleSheet.create({
     borderRadius: radius.md,
     backgroundColor: colors.surface,
     paddingHorizontal: spacing.md,
-    fontSize: 16,
+    fontSize: 13,
     fontFamily: fonts.regular,
   },
   row: {

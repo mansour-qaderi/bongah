@@ -9,6 +9,7 @@ import type {
 import AppText from '../components/AppText';
 import Icon, { type IconName } from '../components/Icon';
 import { formatNumber } from '../i18n/format';
+import { currentPropertyType, propertyTypeLabel } from '../i18n/propertyType';
 import { useFormat } from '../i18n/useFormat';
 import { colors, dealColors, radius, spacing } from '../theme';
 
@@ -37,6 +38,14 @@ export const PROPERTY_LINE_ICONS: Record<PropertyType, IconName> = {
   GARAGE: 'garage',
   OTHER: 'more',
 };
+
+/** The line icon of a listing's type; a type from an older server still gets a picture instead of a crash. */
+export const propertyLineIcon = (type: string): IconName =>
+  PROPERTY_LINE_ICONS[currentPropertyType(type)];
+
+/** The same for the emoji a cluster list shows. */
+export const propertyEmoji = (type: string): string =>
+  PROPERTY_ICONS[currentPropertyType(type)];
 
 /** Who is selling, for a marker: the agency's name, or "owner" for a private seller. */
 export function useSellerLabel() {
@@ -82,7 +91,7 @@ function PropertyMarkerView({
     <View
       style={styles.markerBox}
       accessibilityLabel={[
-        t(`propertyType.${property.type}`),
+        propertyTypeLabel(property.type, t),
         t(`dealType.${property.deal_type}`),
         price,
         seller,
@@ -114,7 +123,7 @@ function PropertyMarkerView({
           ]}
         >
           <Icon
-            name={PROPERTY_LINE_ICONS[property.type]}
+            name={propertyLineIcon(property.type)}
             size={20}
             color={WHITE}
             background={tone.main}

@@ -3,7 +3,7 @@ import { Image, Pressable, StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import type { Property } from '@bongah/shared-types';
 import { useFormat } from '../i18n/useFormat';
-import { PROPERTY_LINE_ICONS } from '../map/markers';
+import { propertyLineIcon } from '../map/markers';
 import { useShareListing } from '../share/listingShare';
 import { colors, spacing, surfaces } from '../theme';
 import AppText from './AppText';
@@ -58,7 +58,7 @@ export default function PropertyCard({ property, onPress }: Props) {
           ) : (
             <View style={styles.placeholder} testID="listing-placeholder">
               <Icon
-                name={PROPERTY_LINE_ICONS[property.type]}
+                name={propertyLineIcon(property.type)}
                 size={56}
                 color={colors.textMuted}
                 background={colors.neutralSoft}

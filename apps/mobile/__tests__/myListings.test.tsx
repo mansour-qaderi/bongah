@@ -195,7 +195,7 @@ describe('ListingCard', () => {
     return { tree, onPress };
   };
 
-  it('shows the title, the price with ؋ in Persian digits, the deal and the status', async () => {
+  it('shows the title, the price with ؋ in Persian digits, the status and the deal tag', async () => {
     const { tree } = await card(property());
     const text = allText(tree.root);
     expect(text).toContain('خانه حویلی در شهر نو');
@@ -206,11 +206,16 @@ describe('ListingCard', () => {
     expect(text).not.toMatch(/[0-9]/);
   });
 
-  it('shows the kind as a badge and the picture when there is one', async () => {
+  it('says the kind once, in the facts grid, and shows the picture when there is one', async () => {
     const { tree } = await card(
       property({ images: ['https://img.example/a.jpg'] }),
     );
     expect(allText(tree.root)).toContain(prs.propertyType.HOUSE_HAWILI);
+    // The tag row holds the deal only (no "featured" badge on a plain listing).
+    const row = tree.root.findAll(
+      node => node.props.testID === 'listing-badges',
+    )[0];
+    expect(allText(row)).not.toContain(prs.property.featured);
     const images = tree.root.findAll(
       node =>
         node.props.source?.uri === 'https://img.example/a.jpg' &&
@@ -450,7 +455,7 @@ describe('MyListingsScreen', () => {
       ARCHIVED: 'غیرفعال',
     });
     const badges = tree.root.findAll(
-      node => node.props.testID === 'listing-badges',
+      node => node.props.testID === 'listing-status',
     );
     const words = badges.map(badge => allText(badge));
     expect(words.some(text => text.includes(prs.status.ACTIVE))).toBe(true);
@@ -512,7 +517,7 @@ describe('MyListingsScreen', () => {
     ).toBeGreaterThan(0);
   });
 
-  it('draws the deal as a solid pill with a dot before the word, the same on every card', async () => {
+  it("shows each card's own deal tag, and only that one", async () => {
     const { tree } = await mine(
       ['SALE', 'RENT', 'MORTGAGE_GROWI'].map(deal_type =>
         property({
@@ -525,8 +530,9 @@ describe('MyListingsScreen', () => {
       const badges = tree.root
         .findAllByType(Badge)
         .filter(badge => badge.props.label === prs.dealType[deal]);
-      expect(badges.length).toBeGreaterThan(0);
-      for (const badge of badges) expect(badge.props.dot).toBe(true);
+      expect(badges).toHaveLength(1);
+      // a plain tag: no dot
+      expect(badges[0].props.dot).toBe(false);
     }
   });
 

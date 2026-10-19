@@ -39,6 +39,7 @@ import PinSection from '../../components/PinSection';
 import ProvincePicker from '../../components/ProvincePicker';
 import SegmentedControl from '../../components/SegmentedControl';
 import Stepper from '../../components/Stepper';
+import { showToast } from '../../components/Toast';
 import { EmptyView, ErrorView, LoadingView } from '../../components/States';
 import TextField from '../../components/TextField';
 import {
@@ -47,6 +48,7 @@ import {
   type Province,
 } from '../../constants/provinces';
 import { formatNumber, jeribToSqm, parseNumberInput } from '../../i18n/format';
+import { propertyTypeLabel } from '../../i18n/propertyType';
 import { useFormat } from '../../i18n/useFormat';
 import {
   AFGHANISTAN_CAMERA,
@@ -59,10 +61,19 @@ import {
 import { findAddress as findOnMap, lookUpPlace } from '../../map/geocode';
 import type { RootStackParamList } from '../../navigation/types';
 import { colors, radius, spacing } from '../../theme';
+import {
+  failingFields,
+  formFieldFor,
+  fieldMessage,
+  serverFieldErrors,
+  toastForErrors,
+  type FieldErrors,
+  type FormField,
+} from './formErrors';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'AddProperty'>;
 type AreaUnit = 'sqm' | 'jerib';
-type FieldErrors = Partial<Record<string, string>>;
+type ViewNode = React.ComponentRef<typeof View>;
 /** What the pin's address lookup did: still asking, filled the form in, or the service could not say. */
 type Lookup = 'idle' | 'finding' | 'filled' | 'failed';
 /** What the map did about a written address: still looking, moved there, or did not know the place. */
@@ -214,6 +225,29 @@ export default function AddPropertyScreen({ navigation, route }: Props) {
     [navigation],
   );
   const scroller = useRef<React.ComponentRef<typeof ScrollView>>(null);
+  // Where each field sits, so the form can scroll to the first one that needs fixing.
+  const anchors = useRef<Partial<Record<FormField, ViewNode | null>>>({});
+  const anchor = (field: FormField) => (node: ViewNode | null) => {
+    anchors.current[field] = node;
+  };
+  const scrollToFirst = (failed: FieldErrors) => {
+    const first = failingFields(failed)[0];
+    const node = first ? anchors.current[first] : null;
+    const inner = scroller.current?.getInnerViewRef?.();
+    if (!node || !inner) {
+      scroller.current?.scrollTo({ y: 0, animated: true });
+      return;
+    }
+    node.measureLayout(
+      inner as never,
+      (_x, y) =>
+        scroller.current?.scrollTo({
+          y: Math.max(0, y - spacing.xl),
+          animated: true,
+        }),
+      () => scroller.current?.scrollTo({ y: 0, animated: true }),
+    );
+  };
 
   function fillFrom(property: Property) {
     setTitle(property.title);
@@ -256,6 +290,22 @@ export default function AddPropertyScreen({ navigation, route }: Props) {
   const mutation = useMutation({
     mutationFn: (data: CreatePropertyInput) =>
       editing ? updateProperty(propertyId, data) : createProperty(data),
+    onError: error => {
+      // The server said which fields it did not accept: show each under its own field, and say so in a toast.
+      const fields = serverFieldErrors(error, t);
+      if (fields) {
+        setErrors(fields);
+        showToast(toastForErrors(fields, t));
+        scrollToFirst(fields);
+        return;
+      }
+      // The listing needs a subscription: the banner at the top of the form has the button for it.
+      if (isSubscriptionRequired(error)) {
+        scroller.current?.scrollTo({ y: 0, animated: true });
+        return;
+      }
+      showToast(errorMessage(error, t));
+    },
     onSuccess: async property => {
       await queryClient.invalidateQueries({ queryKey: queryKeys.properties });
       if (editing) stepAside(() => navigation.goBack());
@@ -424,32 +474,30 @@ export default function AddPropertyScreen({ navigation, route }: Props) {
     const parsed = createPropertySchema.safeParse(raw);
     if (!parsed.success) {
       for (const issue of parsed.error.issues) {
-        let field = String(issue.path[0] ?? 'form');
-        if (field === 'lat' || field === 'lng') field = 'location';
-        // The district and neighbourhood have no box of their own: what is wrong with them is wrong with the address.
-        if (field === 'district' || field === 'neighborhood') field = 'address';
-        if (next[field]) continue;
+        const field = formFieldFor(String(issue.path[0] ?? ''));
+        if (!field || next[field]) continue;
         const value = (raw as Record<string, unknown>)[issue.path[0] as string];
         const empty =
           value === undefined ||
           value === '' ||
           (Array.isArray(value) && !value.length);
-        next[field] =
-          field === 'location'
-            ? t('map.outside')
-            : empty
-            ? t('add.required')
-            : t('add.fieldInvalid');
+        // Each field says what is wrong with it in its own words (a price is not "invalid", it is "not a number above zero").
+        next[field] = fieldMessage(field, empty ? 'required' : 'invalid', t);
       }
     }
     if (!parsed.success || Object.keys(next).length > 0) {
       setErrors(next);
-      // The banner that says what is wrong is at the top of the form.
-      scroller.current?.scrollTo({ y: 0, animated: true });
+      showToast(toastForErrors(next, t));
+      scrollToFirst(next);
       return;
     }
     setErrors({});
-    mutation.mutate(parsed.data);
+    mutation.reset();
+    // A blank unit is not sent unless it clears one that was there: a server that has no such field yet (an older
+    // deployment) would refuse the whole listing over a field nobody filled in.
+    const { unit: sentUnit, ...rest } = parsed.data;
+    const clearsUnit = editing && Boolean(original?.unit);
+    mutation.mutate(sentUnit || clearsUnit ? parsed.data : rest);
   };
 
   const setImageLink = (index: number, value: string) =>
@@ -467,288 +515,335 @@ export default function AddPropertyScreen({ navigation, route }: Props) {
       ref={scroller}
       contentContainerStyle={styles.content}
     >
-      {mutation.isError ? (
+      {/* The one banner left has a button: a listing that needs a subscription says so, and offers to buy one. Every
+          other failure is a toast, and every field that is wrong says so under itself. */}
+      {isSubscriptionRequired(mutation.error) ? (
         <Banner kind="error" message={errorMessage(mutation.error, t)}>
-          {isSubscriptionRequired(mutation.error) ? (
-            <Button
-              title={t('add.buySubscription')}
-              variant="outline"
-              onPress={() =>
-                stepAside(() =>
-                  navigation.navigate('Checkout', { tab: 'subscription' }),
-                )
-              }
-            />
-          ) : null}
+          <Button
+            title={t('add.buySubscription')}
+            variant="outline"
+            onPress={() =>
+              stepAside(() =>
+                navigation.navigate('Checkout', { tab: 'subscription' }),
+              )
+            }
+          />
         </Banner>
-      ) : null}
-      {Object.keys(errors).length > 0 ? (
-        <Banner kind="error" message={t('add.fixErrors')} />
       ) : null}
 
       <Card title={t('add.sectionBasics')} flush>
-        <TextField
-          label={t('add.titleField')}
-          value={title}
-          onChangeText={v => {
-            setTitle(v);
-            clearError('title');
-          }}
-          placeholder={t(`add.titleExamples.${type}`)}
-          maxLength={150}
-          error={errors.title}
-        />
-
-        <AppText variant="label" color={colors.textSecondary}>
-          {t('add.type')}
-        </AppText>
-        <View style={styles.wrap}>
-          {PROPERTY_TYPES.map(p => (
-            <Chip
-              compact
-              key={p}
-              label={t(`propertyType.${p}`)}
-              selected={type === p}
-              onPress={() => setType(p)}
-            />
-          ))}
+        <View ref={anchor('title')} collapsable={false}>
+          <TextField
+            label={t('add.titleField')}
+            value={title}
+            onChangeText={v => {
+              setTitle(v);
+              clearError('title');
+            }}
+            placeholder={t(`add.titleExamples.${type}`)}
+            maxLength={150}
+            error={errors.title}
+          />
         </View>
+        <View ref={anchor('type')} collapsable={false}>
+          <AppText variant="label" color={colors.textSecondary}>
+            {t('add.type')}
+          </AppText>
+          <View style={styles.wrap}>
+            {PROPERTY_TYPES.map(p => (
+              <Chip
+                compact
+                key={p}
+                label={propertyTypeLabel(p, t)}
+                selected={type === p}
+                onPress={() => setType(p)}
+              />
+            ))}
+          </View>
 
-        <TextField
-          label={`${t('add.unit')} (${t('common.optional')})`}
-          value={unit}
-          onChangeText={v => {
-            setUnit(v);
-            clearError('unit');
-          }}
-          placeholder={t('add.unitPlaceholder')}
-          helper={t('add.unitHelp')}
-          maxLength={PROPERTY_UNIT_MAX_LENGTH}
-          error={errors.unit}
-        />
-
-        <AppText variant="label" color={colors.textSecondary}>
-          {t('add.deal')}
-        </AppText>
-        <View style={styles.wrap}>
-          {DEAL_TYPES.map(d => (
-            <Chip
-              compact
-              key={d}
-              label={t(`dealType.${d}`)}
-              selected={deal === d}
-              onPress={() => setDeal(d)}
-            />
-          ))}
+          {errors.type ? (
+            <AppText
+              variant="caption"
+              color={colors.danger}
+              style={styles.chipError}
+            >
+              {errors.type}
+            </AppText>
+          ) : null}
+        </View>
+        <View ref={anchor('unit')} collapsable={false}>
+          <TextField
+            label={`${t('add.unit')} (${t('common.optional')})`}
+            value={unit}
+            onChangeText={v => {
+              setUnit(v);
+              clearError('unit');
+            }}
+            placeholder={t('add.unitPlaceholder')}
+            helper={t('add.unitHelp')}
+            maxLength={PROPERTY_UNIT_MAX_LENGTH}
+            error={errors.unit}
+          />
+        </View>
+        <View ref={anchor('deal_type')} collapsable={false}>
+          <AppText variant="label" color={colors.textSecondary}>
+            {t('add.deal')}
+          </AppText>
+          <View style={styles.wrap}>
+            {DEAL_TYPES.map(d => (
+              <Chip
+                compact
+                key={d}
+                label={t(`dealType.${d}`)}
+                selected={deal === d}
+                onPress={() => setDeal(d)}
+              />
+            ))}
+          </View>
+          {errors.deal_type ? (
+            <AppText
+              variant="caption"
+              color={colors.danger}
+              style={styles.chipError}
+            >
+              {errors.deal_type}
+            </AppText>
+          ) : null}
         </View>
       </Card>
 
       <Card title={t('add.sectionPrice')} flush>
-        <TextField
-          label={t('add.price')}
-          value={priceText}
-          onChangeText={v => {
-            setPriceText(v);
-            clearError('price');
-          }}
-          keyboardType="decimal-pad"
-          placeholder={example(currency === 'USD' ? 25_000 : 2_500_000)}
-          thousands
-          error={errors.price}
-        />
-        <View style={styles.toggle}>
-          <SegmentedControl
-            value={currency}
-            onChange={setCurrency}
-            options={CURRENCIES.map(c => ({
-              value: c,
-              label: t(`currency.${c}`),
-            }))}
+        <View ref={anchor('price')} collapsable={false}>
+          <TextField
+            label={t('add.price')}
+            value={priceText}
+            onChangeText={v => {
+              setPriceText(v);
+              clearError('price');
+            }}
+            keyboardType="decimal-pad"
+            placeholder={example(currency === 'USD' ? 25_000 : 2_500_000)}
+            thousands
+            error={errors.price}
           />
-        </View>
-
-        <TextField
-          label={t('add.area')}
-          labelAccessory={areaInfo}
-          value={areaText}
-          onChangeText={v => {
-            setAreaText(v);
-            clearError('area_sqm');
-          }}
-          keyboardType="decimal-pad"
-          placeholder={example(areaUnit === 'jerib' ? 2 : 200)}
-          helper={areaHelper}
-          error={errors.area_sqm}
-        />
-        <View style={styles.toggle}>
-          <SegmentedControl
-            value={areaUnit}
-            onChange={setAreaUnit}
-            options={(['sqm', 'jerib'] as const).map(measure => ({
-              value: measure,
-              label: t(`unit.${measure}`),
-            }))}
-          />
-        </View>
-
-        {hasRooms ? (
-          <View style={styles.counts}>
-            <Stepper
-              label={t('add.bedrooms')}
-              required
-              value={bedrooms}
-              onChange={v => {
-                setBedrooms(v);
-                clearError('bedrooms');
-              }}
-              error={errors.bedrooms}
-            />
-            <Stepper
-              label={t('add.bathrooms')}
-              required
-              value={bathrooms}
-              onChange={v => {
-                setBathrooms(v);
-                clearError('bathrooms');
-              }}
-              error={errors.bathrooms}
+          <View style={styles.toggle}>
+            <SegmentedControl
+              value={currency}
+              onChange={setCurrency}
+              options={CURRENCIES.map(c => ({
+                value: c,
+                label: t(`currency.${c}`),
+              }))}
             />
           </View>
-        ) : null}
+          {errors.currency ? (
+            <AppText
+              variant="caption"
+              color={colors.danger}
+              style={styles.chipError}
+            >
+              {errors.currency}
+            </AppText>
+          ) : null}
+        </View>
+        <View ref={anchor('area_sqm')} collapsable={false}>
+          <TextField
+            label={t('add.area')}
+            labelAccessory={areaInfo}
+            value={areaText}
+            onChangeText={v => {
+              setAreaText(v);
+              clearError('area_sqm');
+            }}
+            keyboardType="decimal-pad"
+            placeholder={example(areaUnit === 'jerib' ? 2 : 200)}
+            helper={areaHelper}
+            error={errors.area_sqm}
+          />
+          <View style={styles.toggle}>
+            <SegmentedControl
+              value={areaUnit}
+              onChange={setAreaUnit}
+              options={(['sqm', 'jerib'] as const).map(measure => ({
+                value: measure,
+                label: t(`unit.${measure}`),
+              }))}
+            />
+          </View>
+        </View>
+        <View ref={anchor('bedrooms')} collapsable={false}>
+          {hasRooms ? (
+            <View style={styles.counts}>
+              <Stepper
+                label={t('add.bedrooms')}
+                required
+                value={bedrooms}
+                onChange={v => {
+                  setBedrooms(v);
+                  clearError('bedrooms');
+                }}
+                error={errors.bedrooms}
+              />
+              <Stepper
+                label={t('add.bathrooms')}
+                required
+                value={bathrooms}
+                onChange={v => {
+                  setBathrooms(v);
+                  clearError('bathrooms');
+                }}
+                error={errors.bathrooms}
+              />
+            </View>
+          ) : null}
+        </View>
       </Card>
 
       <Card title={t('add.sectionPlace')} flush>
-        <PinSection
-          value={coordinate}
-          camera={camera}
-          onChange={placePin}
-          error={errors.location}
-        >
-          {lookup === 'finding' ? (
-            <View style={styles.finding}>
-              <ActivityIndicator size="small" color={colors.primary} />
-              <AppText variant="caption" color={colors.textMuted}>
-                {t('add.finding')}
+        <View ref={anchor('location')} collapsable={false}>
+          <PinSection
+            value={coordinate}
+            camera={camera}
+            onChange={placePin}
+            error={errors.location}
+          >
+            {lookup === 'finding' ? (
+              <View style={styles.finding}>
+                <ActivityIndicator size="small" color={colors.primary} />
+                <AppText variant="caption" color={colors.textMuted}>
+                  {t('add.finding')}
+                </AppText>
+              </View>
+            ) : lookup === 'filled' ? (
+              <AppText variant="caption" color={colors.primaryDark}>
+                {t('add.filled')}
               </AppText>
-            </View>
-          ) : lookup === 'filled' ? (
-            <AppText variant="caption" color={colors.primaryDark}>
-              {t('add.filled')}
+            ) : lookup === 'failed' ? (
+              <AppText variant="caption" color={colors.textMuted}>
+                {t('add.lookupFailed')}
+              </AppText>
+            ) : null}
+            {mapSync === 'finding' ? (
+              <View style={styles.finding}>
+                <ActivityIndicator size="small" color={colors.primary} />
+                <AppText variant="caption" color={colors.textMuted}>
+                  {t('add.mapFinding')}
+                </AppText>
+              </View>
+            ) : mapSync === 'found' ? (
+              <AppText variant="caption" color={colors.primaryDark}>
+                {t('add.mapFound')}
+              </AppText>
+            ) : mapSync === 'none' ? (
+              <AppText variant="caption" color={colors.textMuted}>
+                {t('add.mapNotFound')}
+              </AppText>
+            ) : null}
+          </PinSection>
+        </View>
+        <View ref={anchor('province')} collapsable={false}>
+          <AppText variant="label" color={colors.textSecondary}>
+            {t('add.province')}
+          </AppText>
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => setPickerOpen(true)}
+            style={[styles.select, errors.province ? styles.selectError : null]}
+          >
+            <AppText color={province ? colors.text : colors.placeholder}>
+              {province ? province.name[language] : t('home.selectProvince')}
             </AppText>
-          ) : lookup === 'failed' ? (
-            <AppText variant="caption" color={colors.textMuted}>
-              {t('add.lookupFailed')}
+          </Pressable>
+          {errors.province ? (
+            <AppText
+              variant="caption"
+              color={colors.danger}
+              style={styles.fieldError}
+            >
+              {errors.province}
+            </AppText>
+          ) : provinceGuessed ? (
+            <AppText
+              variant="caption"
+              color={colors.accentText}
+              style={styles.fieldError}
+            >
+              {t('add.provinceGuessed')}
             </AppText>
           ) : null}
-          {mapSync === 'finding' ? (
-            <View style={styles.finding}>
-              <ActivityIndicator size="small" color={colors.primary} />
-              <AppText variant="caption" color={colors.textMuted}>
-                {t('add.mapFinding')}
-              </AppText>
-            </View>
-          ) : mapSync === 'found' ? (
-            <AppText variant="caption" color={colors.primaryDark}>
-              {t('add.mapFound')}
-            </AppText>
-          ) : mapSync === 'none' ? (
-            <AppText variant="caption" color={colors.textMuted}>
-              {t('add.mapNotFound')}
-            </AppText>
-          ) : null}
-        </PinSection>
-
-        <AppText variant="label" color={colors.textSecondary}>
-          {t('add.province')}
-        </AppText>
-        <Pressable
-          accessibilityRole="button"
-          onPress={() => setPickerOpen(true)}
-          style={[styles.select, errors.province ? styles.selectError : null]}
-        >
-          <AppText color={province ? colors.text : colors.placeholder}>
-            {province ? province.name[language] : t('home.selectProvince')}
-          </AppText>
-        </Pressable>
-        {errors.province ? (
-          <AppText
-            variant="caption"
-            color={colors.danger}
-            style={styles.fieldError}
-          >
-            {errors.province}
-          </AppText>
-        ) : provinceGuessed ? (
-          <AppText
-            variant="caption"
-            color={colors.accentText}
-            style={styles.fieldError}
-          >
-            {t('add.provinceGuessed')}
-          </AppText>
-        ) : null}
-
-        <TextField
-          label={addressLabel}
-          value={address}
-          onChangeText={v => {
-            setAddress(v);
-            clearError('address');
-          }}
-          placeholder={t('add.addressPlaceholder')}
-          helper={pinned ? t('add.addressOptional') : t('add.addressRequired')}
-          multiline
-          maxLength={300}
-          error={errors.address}
-          style={styles.addressInput}
-        />
+        </View>
+        <View ref={anchor('address')} collapsable={false}>
+          <TextField
+            label={addressLabel}
+            value={address}
+            onChangeText={v => {
+              setAddress(v);
+              clearError('address');
+            }}
+            placeholder={t('add.addressPlaceholder')}
+            helper={
+              pinned ? t('add.addressOptional') : t('add.addressRequired')
+            }
+            multiline
+            maxLength={300}
+            error={errors.address}
+            style={styles.addressInput}
+          />
+        </View>
       </Card>
 
       <Card title={t('add.sectionDetails')} flush>
-        <TextField
-          label={t('add.descriptionField')}
-          value={description}
-          onChangeText={v => {
-            setDescription(v);
-            clearError('description');
-          }}
-          placeholder={t('add.descriptionPlaceholder')}
-          multiline
-          maxLength={5000}
-          error={errors.description}
-          style={styles.descriptionInput}
-        />
-
-        <AppText variant="label" color={colors.textSecondary}>
-          {t('add.images')}
-        </AppText>
-        <AppText variant="caption" color={colors.textMuted} style={styles.help}>
-          {t('add.imagesHelp')}
-        </AppText>
-        {imageLinks.map((link, index) => (
+        <View ref={anchor('description')} collapsable={false}>
           <TextField
-            key={index}
-            value={link}
+            label={t('add.descriptionField')}
+            value={description}
             onChangeText={v => {
-              setImageLink(index, v);
-              clearError('images');
+              setDescription(v);
+              clearError('description');
             }}
-            placeholder={t('add.imageUrl')}
-            autoCapitalize="none"
-            autoCorrect={false}
-            keyboardType="url"
-            digits="keep"
-            ltr
-            error={index === 0 ? errors.images : undefined}
+            placeholder={t('add.descriptionPlaceholder')}
+            multiline
+            maxLength={5000}
+            error={errors.description}
+            style={styles.descriptionInput}
           />
-        ))}
-        {imageLinks.length < MAX_IMAGE_LINKS ? (
-          <Button
-            title={t('add.addImage')}
-            variant="outline"
-            onPress={() => setImageLinks(links => [...links, ''])}
-          />
-        ) : null}
+        </View>
+        <View ref={anchor('images')} collapsable={false}>
+          <AppText variant="label" color={colors.textSecondary}>
+            {t('add.images')}
+          </AppText>
+          <AppText
+            variant="caption"
+            color={colors.textMuted}
+            style={styles.help}
+          >
+            {t('add.imagesHelp')}
+          </AppText>
+          {imageLinks.map((link, index) => (
+            <TextField
+              key={index}
+              value={link}
+              onChangeText={v => {
+                setImageLink(index, v);
+                clearError('images');
+              }}
+              placeholder={t('add.imageUrl')}
+              autoCapitalize="none"
+              autoCorrect={false}
+              keyboardType="url"
+              digits="keep"
+              ltr
+              error={index === 0 ? errors.images : undefined}
+            />
+          ))}
+          {imageLinks.length < MAX_IMAGE_LINKS ? (
+            <Button
+              title={t('add.addImage')}
+              variant="outline"
+              onPress={() => setImageLinks(links => [...links, ''])}
+            />
+          ) : null}
+        </View>
       </Card>
 
       <ProvincePicker
@@ -802,6 +897,8 @@ const styles = StyleSheet.create({
   },
   selectError: { borderColor: colors.danger },
   fieldError: { marginTop: -spacing.sm, marginBottom: spacing.md },
+  // Under a row of chips: the error sits between the chips and the next field.
+  chipError: { marginTop: -spacing.sm, marginBottom: spacing.md },
   addressInput: { minHeight: 88 },
   help: { marginBottom: spacing.sm },
   descriptionInput: { marginTop: 0 },

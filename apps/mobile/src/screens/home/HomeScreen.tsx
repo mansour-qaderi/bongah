@@ -52,7 +52,7 @@ import {
   type MapCamera,
 } from '../../map/geo';
 import type { MapItem } from '../../map/items';
-import { locate } from '../../map/location';
+import { LOCATE_TIMEOUT_MS, locate } from '../../map/location';
 import {
   areaFor,
   boundsFromCamera,
@@ -90,6 +90,8 @@ type Selection =
 const MAP_MAX_PAGES = 3;
 /** How close the map zooms to the person's own position. */
 const LOCATION_ZOOM = 14;
+/** How long past the search's own time limit the "finding you" mark may stay in the top chip. */
+const LOCATING_GRACE_MS = 2_000;
 /** Never zoom out when a listing is chosen; zoom in to at least street-block level. */
 const SELECT_ZOOM = 13;
 /** Height of the card covering the map, so the chosen marker is centred in what is still visible. */
@@ -148,6 +150,8 @@ export default function HomeScreen({ navigation }: Props) {
   // The person was sent to the phone's settings to allow location; ask again when they come back.
   const awaitingSettings = useRef(false);
   const mounted = useRef(true);
+  // Which position search is the latest; an older one that answers late changes nothing.
+  const locateRun = useRef(0);
   useEffect(
     () => () => {
       mounted.current = false;
@@ -211,9 +215,20 @@ export default function HomeScreen({ navigation }: Props) {
    * The button (not auto) always moves it. Either way a refusal or a dead GPS opens the explanation card.
    */
   const findMe = useCallback(async (auto: boolean) => {
+    const run = (locateRun.current += 1);
     setLocating(true);
-    const result = await locate({ ask: true });
-    if (!mounted.current) return;
+    // The "finding you" mark in the top chip must never outlive the search: whatever the phone's location service
+    // does (or never answers), it is gone shortly after the time the search itself is allowed to take.
+    const watchdog = setTimeout(() => {
+      if (mounted.current && locateRun.current === run) setLocating(false);
+    }, LOCATE_TIMEOUT_MS + LOCATING_GRACE_MS);
+    let result: Awaited<ReturnType<typeof locate>>;
+    try {
+      result = await locate({ ask: true });
+    } finally {
+      clearTimeout(watchdog);
+    }
+    if (!mounted.current || locateRun.current !== run) return;
     setLocating(false);
     if (result.status === 'ok') {
       setMe(result.coordinate);
@@ -449,6 +464,7 @@ export default function HomeScreen({ navigation }: Props) {
       <StatusPill
         loading={mapQuery.isPending}
         refreshing={mapQuery.isFetching}
+        locating={locating}
         message={
           inView === 0
             ? t('home.noMapResults')
@@ -498,7 +514,6 @@ export default function HomeScreen({ navigation }: Props) {
                   testID="locate"
                   icon="locate"
                   label={t('home.locate')}
-                  busy={locating}
                   size={LOCATE_SIZE}
                   accent
                   onPress={() => findMe(false)}

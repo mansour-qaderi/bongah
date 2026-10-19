@@ -12,6 +12,7 @@ import {
 import { initI18n } from '../src/i18n';
 import { allText, render } from '../test-utils';
 import AppText from '../src/components/AppText';
+import { fonts } from '../src/theme';
 import TextField from '../src/components/TextField';
 import { ScrollScreen } from '../src/components/Screen';
 import {
@@ -125,93 +126,121 @@ describe('TextField digits', () => {
     expect(allText(tree.root)).not.toContain('۱٬۲۰۰٬۰۰۰ ؋');
   });
 
-  describe('on a digits-only keyboard (no Latin digit is ever on screen)', () => {
+  describe('no Latin digit is ever on screen', () => {
     const flat = (node: ReactTestRenderer.ReactTestInstance) =>
       StyleSheet.flatten(node.props.style) as Record<string, unknown>;
-    const overlay = (tree: ReactTestRenderer.ReactTestRenderer) =>
-      tree.root.findAll(node => node.props.testID === 'digits-overlay');
+    const fs = require('node:fs') as {
+      readFileSync(p: string): {
+        toString(e: 'latin1'): string;
+        length: number;
+      };
+    };
+    const path = require('node:path') as { join(...p: string[]): string };
 
-    it("hides the input's own text and draws the Persian text over it", async () => {
+    it('sets every Persian-digit field in the digits font, whatever its keyboard', async () => {
+      for (const props of [
+        { value: '1200000', keyboardType: 'number-pad' as const },
+        {
+          value: '1300000',
+          keyboardType: 'decimal-pad' as const,
+          thousands: true,
+        },
+        { value: '0701234567', keyboardType: 'phone-pad' as const, ltr: true },
+        { value: 'خانه 3 اتاقه' },
+        { value: '12', multiline: true },
+      ]) {
+        const tree = await field(props);
+        expect(flat(input(tree)).fontFamily).toBe(fonts.digits);
+      }
+    });
+
+    it('keeps the ordinary font where digits are kept as typed (links, codes)', async () => {
+      const tree = await field({ value: 'https://a.b/1', digits: 'keep' });
+      expect(flat(input(tree)).fontFamily).toBe(fonts.regular);
+    });
+
+    it('lets a screen choose its own font for a field', async () => {
+      const tree = await field({
+        value: '12',
+        style: { fontFamily: fonts.bold },
+      });
+      expect(flat(input(tree)).fontFamily).toBe(fonts.bold);
+    });
+
+    it('draws nothing on top of the input, and never hides its text (no second copy of the value)', async () => {
       const tree = await field({
         value: '1200000',
         keyboardType: 'number-pad',
       });
-      expect(flat(input(tree)).color).toBe('transparent');
-      const drawn = overlay(tree).filter(node => typeof node.type === 'string');
-      expect(drawn.length).toBeGreaterThan(0);
-      expect(drawn[0].props.children).toBe('۱۲۰۰۰۰۰');
+      expect(
+        tree.root.findAll(node => node.props.testID === 'digits-overlay'),
+      ).toHaveLength(0);
+      expect(flat(input(tree)).color).not.toBe('transparent');
+      expect(tree.root.findAllByType(TextInput)).toHaveLength(1);
     });
 
-    it('draws the grouped amount, and lays it out like the input does', async () => {
+    it('hands the input the Persian digits of what the screen holds', async () => {
       const tree = await field({
         value: '1300000',
         keyboardType: 'decimal-pad',
         thousands: true,
       });
-      const drawn = overlay(tree).filter(
-        node => typeof node.type === 'string',
-      )[0];
-      expect(drawn.props.children).toBe('۱,۳۰۰,۰۰۰');
-      const typed = flat(input(tree));
-      const over = flat(drawn);
-      for (const key of ['fontFamily', 'fontSize', 'textAlign'] as const) {
-        expect(over[key]).toBe(typed[key]);
-      }
+      expect(input(tree).props.value).toBe('۱,۳۰۰,۰۰۰');
     });
 
-    it('shows the overlay in a left-to-right field too, aligned the same way as the input', async () => {
-      const tree = await field({
-        value: '0701234567',
-        keyboardType: 'phone-pad',
-        ltr: true,
-      });
-      const drawn = overlay(tree).filter(
-        node => typeof node.type === 'string',
-      )[0];
-      expect(flat(input(tree)).textAlign).toBe('left');
-      expect(flat(drawn).textAlign).toBe('left');
-      expect(flat(drawn).writingDirection).toBe('ltr');
-    });
-
-    it('follows what the screen hands back, never what the keyboard typed', async () => {
-      function Typed() {
-        const [value, setValue] = React.useState('');
-        return (
-          <TextField
-            label="x"
-            keyboardType="number-pad"
-            value={value}
-            onChangeText={setValue}
-          />
+    it('ships a font file whose 0-9 are the Persian glyphs, so the native input draws them itself', () => {
+      const file = path.join(
+        __dirname,
+        '..',
+        'assets',
+        'fonts',
+        `${fonts.digits}.ttf`,
+      );
+      const bytes = fs.readFileSync(file) as unknown as Uint8Array;
+      const view = new DataView(
+        bytes.buffer,
+        bytes.byteOffset,
+        bytes.byteLength,
+      );
+      const u16 = (o: number) => view.getUint16(o);
+      const u32 = (o: number) => view.getUint32(o);
+      // Find the cmap table, then its format-4 subtable, and read the glyph each code point maps to.
+      const tables = u16(4);
+      let cmap = -1;
+      for (let i = 0; i < tables; i++) {
+        const entry = 12 + i * 16;
+        const tag = String.fromCharCode(
+          ...[0, 1, 2, 3].map(k => view.getUint8(entry + k)),
         );
+        if (tag === 'cmap') cmap = u32(entry + 8);
       }
-      const tree = await render(<Typed />);
-      await act(async () => input(tree).props.onChangeText('7'));
-      const drawn = overlay(tree).filter(
-        node => typeof node.type === 'string',
-      )[0];
-      expect(drawn.props.children).toBe('۷');
-      expect(drawn.props.children).not.toMatch(/[0-9]/);
-    });
-
-    it('draws nothing while the field is empty (the placeholder shows)', async () => {
-      const tree = await field({ value: '', keyboardType: 'number-pad' });
-      expect(overlay(tree)).toHaveLength(0);
-    });
-
-    it('is not used for text fields, multi-line fields, or digits kept as typed', async () => {
-      for (const props of [
-        { value: '12' },
-        { value: '12', keyboardType: 'number-pad' as const, multiline: true },
-        {
-          value: '12',
-          keyboardType: 'number-pad' as const,
-          digits: 'keep' as const,
-        },
-      ]) {
-        const tree = await field(props);
-        expect(overlay(tree)).toHaveLength(0);
-        expect(flat(input(tree)).color).not.toBe('transparent');
+      expect(cmap).toBeGreaterThan(0);
+      let sub = -1;
+      for (let i = 0; i < u16(cmap + 2); i++) {
+        const rec = cmap + 4 + i * 8;
+        const offset = cmap + u32(rec + 4);
+        if (u16(offset) === 4) sub = offset;
+      }
+      expect(sub).toBeGreaterThan(0);
+      const segCount = u16(sub + 6) / 2;
+      const glyphOf = (code: number) => {
+        for (let i = 0; i < segCount; i++) {
+          const end = u16(sub + 14 + i * 2);
+          const start = u16(sub + 16 + segCount * 2 + i * 2);
+          if (code > end || code < start) continue;
+          const delta = u16(sub + 16 + segCount * 4 + i * 2);
+          const rangeAt = sub + 16 + segCount * 6 + i * 2;
+          const range = u16(rangeAt);
+          if (range === 0) return (code + delta) & 0xffff;
+          const g = u16(rangeAt + range + (code - start) * 2);
+          return g === 0 ? 0 : (g + delta) & 0xffff;
+        }
+        return 0;
+      };
+      for (let digit = 0; digit < 10; digit++) {
+        const latin = glyphOf(0x30 + digit);
+        expect(latin).toBeGreaterThan(0);
+        expect(latin).toBe(glyphOf(0x6f0 + digit));
       }
     });
   });
@@ -312,6 +341,50 @@ describe('TextField digits', () => {
         expect(shown(tree)).toBe('۱,۳۰۰,۰۰۰');
         expect(seen[seen.length - 1]).toBe('1300000');
         expect(seen.some(v => v.includes(',') || /[۰-۹]/.test(v))).toBe(false);
+      });
+
+      describe('the field keeps its own grouped text, so a big screen never sits between a keystroke and it', () => {
+        const Held = ({ value }: { value: string }) => (
+          <TextField
+            label="x"
+            thousands
+            value={value}
+            onChangeText={() => {}}
+          />
+        );
+
+        it('shows the grouped text in the render the keystroke causes, before the screen has handed the value back', async () => {
+          // The screen has not caught up (its value is still empty), as while it re-renders a long form.
+          const tree = await render(<Held value="" />);
+          await act(async () => input(tree).props.onFocus({}));
+          await typeInto(tree, '۹۹۹۹');
+          expect(shown(tree)).toBe('۹,۹۹۹');
+        });
+
+        it('is not pulled back by a stale value arriving after newer typing', async () => {
+          const tree = await render(<Held value="" />);
+          await typeInto(tree, '۱');
+          await typeInto(tree, '۱۲');
+          await typeInto(tree, '۱۲۳');
+          await typeInto(tree, '۱,۲۳۴');
+          expect(shown(tree)).toBe('۱,۲۳۴');
+          // The screen answers the older keystrokes first.
+          await act(async () => tree.update(<Held value="1" />));
+          await act(async () => tree.update(<Held value="12" />));
+          expect(shown(tree)).toBe('۱,۲۳۴');
+          await act(async () => tree.update(<Held value="1234" />));
+          expect(shown(tree)).toBe('۱,۲۳۴');
+        });
+
+        it('follows a value the screen sets on its own (a reset, a restored draft)', async () => {
+          const tree = await render(<Held value="" />);
+          await typeInto(tree, '۵۰۰');
+          expect(shown(tree)).toBe('۵۰۰');
+          await act(async () => tree.update(<Held value="2500000" />));
+          expect(shown(tree)).toBe('۲,۵۰۰,۰۰۰');
+          await act(async () => tree.update(<Held value="" />));
+          expect(shown(tree)).toBe('');
+        });
       });
 
       it('shows a stored amount grouped, with Persian digits', async () => {

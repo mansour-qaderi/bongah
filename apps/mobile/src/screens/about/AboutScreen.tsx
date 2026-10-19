@@ -7,12 +7,12 @@ import AppText from '../../components/AppText';
 import Button from '../../components/Button';
 import Card from '../../components/Card';
 import FeedbackSheet from '../../components/FeedbackSheet';
-import Icon from '../../components/Icon';
+import Logo from '../../components/Logo';
 import { ScrollScreen } from '../../components/Screen';
 import { MAP_ATTRIBUTION, MAP_ATTRIBUTION_URL } from '../../config';
 import { toPersianDigits } from '../../i18n/format';
 import type { RootStackParamList } from '../../navigation/types';
-import { colors, radius, spacing } from '../../theme';
+import { colors, spacing } from '../../theme';
 
 /** One "label … value" line of the app's details. */
 function Detail({
@@ -51,19 +51,10 @@ export default function AboutScreen({ navigation }: Props) {
   return (
     <ScrollScreen edges={['left', 'right']}>
       <View style={styles.brand}>
-        <View style={styles.logo}>
-          <Icon
-            name="house"
-            size={34}
-            color={colors.textOnPrimary}
-            weight={1.8}
-          />
-        </View>
+        {/* The app's own mark, drawn as it is everywhere else (the splash screen, the app icon). */}
+        <Logo size={96} testID="about-logo" style={styles.logo} />
         <AppText variant="title">{t('app.name')}</AppText>
         <AppText color={colors.textMuted}>{t('app.tagline')}</AppText>
-        <AppText variant="caption" color={colors.textMuted}>
-          {t('account.version', { version: toPersianDigits(APP_VERSION) })}
-        </AppText>
       </View>
 
       <Card title={t('about.missionTitle')}>
@@ -89,6 +80,7 @@ export default function AboutScreen({ navigation }: Props) {
           label={t('about.languages')}
           value={t('about.languagesValue')}
         />
+        <Detail label={t('about.manager')} value={t('about.managerValue')} />
         <Pressable
           accessibilityRole="link"
           accessibilityLabel={`${t('about.map')}: ${MAP_ATTRIBUTION}`}
@@ -118,15 +110,7 @@ export default function AboutScreen({ navigation }: Props) {
 
 const styles = StyleSheet.create({
   brand: { alignItems: 'center', gap: spacing.xs, paddingVertical: spacing.xl },
-  logo: {
-    width: 72,
-    height: 72,
-    borderRadius: radius.xl,
-    marginBottom: spacing.sm,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.primary,
-  },
+  logo: { marginBottom: spacing.sm },
   point: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.md },
   bullet: {
     width: 8,

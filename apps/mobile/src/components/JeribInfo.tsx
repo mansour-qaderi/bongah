@@ -65,7 +65,7 @@ export function JeribConversion({ areaSqm, style }: ConversionProps) {
               jerib: `${formatNumber(sqmToJerib(areaSqm))} ${t('unit.jerib')}`,
             })}
           </AppText>
-          <AppText color={colors.textSecondary}>
+          <AppText variant="bodySm" color={colors.textSecondary}>
             {t('property.jeribInfoIntro')}
           </AppText>
           <View style={styles.rows}>
@@ -126,11 +126,11 @@ export default function JeribInfoButton({ areaSqm }: Props) {
           >
             <View style={styles.head}>
               <Icon name="info" size={22} color={colors.primary} weight={1.9} />
-              <AppText variant="heading">
+              <AppText variant="section">
                 {t('property.jeribInfoTitle')}
               </AppText>
             </View>
-            <AppText color={colors.textSecondary}>
+            <AppText variant="bodySm" color={colors.textSecondary}>
               {t('property.jeribInfoIntro')}
             </AppText>
             <View style={styles.rows}>

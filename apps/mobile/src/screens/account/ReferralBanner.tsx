@@ -45,7 +45,7 @@ export default function ReferralBanner({ onOpen }: { onOpen: () => void }) {
           <Icon name="gift" size={24} color={colors.primaryDark} weight={1.8} />
         </View>
         <View style={styles.topText}>
-          <AppText variant="heading" color={colors.textOnAccent}>
+          <AppText variant="section" color={colors.textOnAccent}>
             {t('account.invite')}
           </AppText>
           <AppText variant="caption" color={colors.textOnAccent}>

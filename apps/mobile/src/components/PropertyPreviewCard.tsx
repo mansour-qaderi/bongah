@@ -5,7 +5,8 @@ import type { Property } from '@bongah/shared-types';
 import { useAuth } from '../auth/AuthContext';
 import { useContactActions } from '../contact/useContactActions';
 import { useFormat } from '../i18n/useFormat';
-import { PROPERTY_LINE_ICONS, useSellerLabel } from '../map/markers';
+import { propertyTypeLabel } from '../i18n/propertyType';
+import { propertyLineIcon, useSellerLabel } from '../map/markers';
 import { colors, dealColors, radius, spacing } from '../theme';
 import AppText from './AppText';
 import { DealBadge } from './Badge';
@@ -65,7 +66,7 @@ export default function PropertyPreviewCard({
               />
             ) : (
               <Icon
-                name={PROPERTY_LINE_ICONS[property.type]}
+                name={propertyLineIcon(property.type)}
                 size={40}
                 color={dealColors[property.deal_type].main}
                 background={colors.neutralSoft}
@@ -94,7 +95,7 @@ export default function PropertyPreviewCard({
             </AppText>
             <View style={styles.kindRow}>
               <AppText variant="caption" color={colors.textMuted}>
-                {t(`propertyType.${property.type}`)}
+                {propertyTypeLabel(property.type, t)}
               </AppText>
               <DealBadge deal={property.deal_type} />
             </View>

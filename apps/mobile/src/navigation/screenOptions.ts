@@ -2,15 +2,15 @@ import { colors, fonts } from '../theme';
 
 /**
  * The header every screen with a title bar shares: white, no hard shadow line, the title in Vazirmatn
- * semibold, and emerald for the back arrow and header buttons. Page content sits on the app background.
+ * bold, and emerald for the back arrow and header buttons. Page content sits on the app background.
  */
 export const headerOptions = {
   headerTitleAlign: 'center',
   headerShadowVisible: false,
   headerStyle: { backgroundColor: colors.surface },
   headerTitleStyle: {
-    fontFamily: fonts.semibold,
-    fontSize: 17,
+    fontFamily: fonts.bold,
+    fontSize: 18,
     color: colors.text,
   },
   headerTintColor: colors.primary,

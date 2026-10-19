@@ -170,7 +170,9 @@ describe('AddPropertyScreen', () => {
       pressableWith(tree.root, prs.add.submit).props.onPress();
     });
     const text = allText(tree.root);
-    expect(text).toContain(prs.add.fixErrors);
+    // Each empty field says it is needed under itself; there is no all-purpose banner above the form.
+    expect(text).not.toContain(prs.add.fixErrors);
+    expect(text).not.toContain(prs.errors.validation);
     expect(text).toContain(prs.add.required);
     // The form may ask the server about map credits, but it must not try to publish.
     expect(

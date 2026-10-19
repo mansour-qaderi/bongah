@@ -65,7 +65,7 @@ export default function MorningMessagesCard({
     <View style={embedded ? styles.embedded : styles.card}>
       <View style={styles.row}>
         <View style={styles.text}>
-          <AppText variant={embedded ? 'label' : 'heading'}>
+          <AppText variant={embedded ? 'label' : 'section'}>
             {t('account.morningMessages')}
           </AppText>
           <AppText variant="caption" color={colors.textMuted}>
@@ -97,7 +97,13 @@ export default function MorningMessagesCard({
 }
 
 const styles = StyleSheet.create({
-  embedded: { gap: spacing.md },
+  // Inside the Settings group it is a line like the others: the height and padding of a menu row.
+  embedded: {
+    gap: spacing.md,
+    minHeight: 56,
+    paddingVertical: spacing.sm,
+    justifyContent: 'center',
+  },
   card: {
     ...surfaces.card,
     padding: spacing.lg,

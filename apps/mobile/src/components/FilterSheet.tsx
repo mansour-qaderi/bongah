@@ -20,6 +20,7 @@ import { priceStops } from '../constants/priceStops';
 import { useFormat } from '../i18n/useFormat';
 import { colors, radius, spacing } from '../theme';
 import AppText from './AppText';
+import { propertyTypeLabel } from '../i18n/propertyType';
 import Button from './Button';
 import BottomSheet from './BottomSheet';
 import Card from './Card';
@@ -204,7 +205,7 @@ export default function FilterSheet({
                 <Chip
                   compact
                   key={p}
-                  label={t(`propertyType.${p}`)}
+                  label={propertyTypeLabel(p, t)}
                   selected={types.includes(p)}
                   onPress={() => toggleType(p)}
                 />

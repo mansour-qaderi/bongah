@@ -37,7 +37,7 @@ import TextField from '../src/components/TextField';
 import { resetSavedForTests, toggleSaved } from '../src/favorites/store';
 import { KV_KEYS, kv } from '../src/storage/kv';
 import { PROPERTY_LINE_ICONS } from '../src/map/markers';
-import { colors } from '../src/theme';
+import { colors, spacing } from '../src/theme';
 import i18next from 'i18next';
 
 declare const __dirname: string;
@@ -622,6 +622,37 @@ describe('AboutScreen', () => {
     expect(text).toContain('OpenStreetMap');
   });
 
+  it('shows the app logo, not a house icon, and no version line under the tagline', async () => {
+    const tree = await show(screenElement(AboutScreen));
+    await settle();
+    expect(byTestId(tree.root, 'about-logo').length).toBeGreaterThan(0);
+    const text = allText(tree.root);
+    // the tagline is followed straight by the first card: the version appears once, in the details
+    expect(text.indexOf(prs.app.tagline)).toBeGreaterThan(-1);
+    const afterTagline = text.slice(
+      text.indexOf(prs.app.tagline) + prs.app.tagline.length,
+    );
+    expect(afterTagline.trimStart().startsWith(prs.about.missionTitle)).toBe(
+      true,
+    );
+    expect(text.split(toPersianDigits(APP_VERSION)).length - 1).toBe(1);
+  });
+
+  it('lists the project manager right after the languages', async () => {
+    const tree = await show(screenElement(AboutScreen));
+    await settle();
+    const text = allText(tree.root);
+    expect(prs.about.manager).toBe('مدیر تیم و پروژه');
+    expect(prs.about.managerValue).toBe('منصور قادری');
+    const at = (s: string) => text.indexOf(s);
+    expect(at(prs.about.languagesValue)).toBeGreaterThan(-1);
+    expect(at(prs.about.manager)).toBeGreaterThan(at(prs.about.languagesValue));
+    expect(at(prs.about.managerValue)).toBeGreaterThan(at(prs.about.manager));
+    expect(text.lastIndexOf('OpenStreetMap')).toBeGreaterThan(
+      at(prs.about.managerValue),
+    );
+  });
+
   it('opens the feedback sheet from its contact card', async () => {
     const tree = await show(screenElement(AboutScreen));
     await settle();
@@ -685,6 +716,21 @@ describe('AccountScreen: the settings layout', () => {
     await settle();
     expect(allText(tree.root)).toContain(prs.feedback.intro);
     expect(nav.navigate).not.toHaveBeenCalled();
+  });
+
+  it('spaces the language row and the morning-messages row like the support menu rows', async () => {
+    mockApi(fetchMock, {});
+    const { tree } = await mount();
+    const group = byTestId(tree.root, 'settings-group')[0];
+    const boxes = group.findAll(
+      n =>
+        typeof n.type === 'string' && n.props.style && flat(n).minHeight === 56,
+    );
+    // morning-messages line + language line, each with the menu-row height and padding
+    expect(boxes.length).toBeGreaterThanOrEqual(2);
+    for (const box of boxes) {
+      expect(flat(box).paddingVertical).toBe(spacing.sm);
+    }
   });
 
   it('shows the app version at the foot of the page', async () => {

@@ -284,46 +284,104 @@ describe('saving a listing', () => {
 // ───────────────────────── 6. My Listings: badges near the title ─────────────────────────
 
 describe('ListingCard badges', () => {
-  const card = (p: Property) =>
-    show(<ListingCard property={p} onPress={jest.fn()} actions={[]} />);
+  const card = (p: Property, images: string[] = []) =>
+    show(
+      <ListingCard
+        property={{ ...p, images }}
+        onPress={jest.fn()}
+        actions={[]}
+      />,
+    );
+  const statusOf = (tree: ReactTestRenderer.ReactTestRenderer) =>
+    hosts(tree.root, n => n.props.testID === 'listing-status')[0];
 
-  it('shows the kind, the deal and the status together, right under the title', async () => {
-    const tree = await card(property());
-    const badges = hosts(
-      tree.root,
-      n => n.props.testID === 'listing-badges',
+  it("puts the status in the card's top-left corner, clear of the picture and the title", async () => {
+    const tree = await card(property(), ['https://img.example/a.jpg']);
+    const status = statusOf(tree);
+    expect(allText(status)).toContain(prs.status.ACTIVE);
+    // Laid over the card's own corner: absolute, at its top and far (left, in RTL) edge.
+    const style = styleOf(status);
+    expect(style.position).toBe('absolute');
+    expect(style.top).toBeGreaterThan(0);
+    expect(style.end).toBeGreaterThan(0);
+    expect(style.start).toBeUndefined();
+    // It is not inside the box of the picture (nor of the title column): it belongs to the card itself.
+    const picture = tree.root.findAll(
+      n => n.props.source?.uri === 'https://img.example/a.jpg',
     )[0];
-    const text = allText(badges);
-    expect(text).toContain(prs.propertyType.HOUSE_HAWILI);
-    expect(text).toContain(prs.dealType.SALE);
-    expect(text).toContain(prs.status.ACTIVE);
-    expect(text.indexOf(prs.propertyType.HOUSE_HAWILI)).toBeLessThan(
-      text.indexOf(prs.dealType.SALE),
-    );
-    // Beside the title, in the same column: nothing is laid over the picture.
-    expect(styleOf(badges).position).not.toBe('absolute');
-    let column = badges.parent;
-    while (column && !allText(column).includes('خانه سه خوابه در شهر نو'))
-      column = column.parent;
-    const inColumn = allText(column!);
-    expect(inColumn.indexOf('خانه سه خوابه در شهر نو')).toBeLessThan(
-      inColumn.indexOf(prs.dealType.SALE),
-    );
+    const pictureBox = picture.parent!;
+    expect(pictureBox.findAll(n => n === status)).toHaveLength(0);
+    expect(allText(pictureBox)).not.toContain('خانه سه خوابه در شهر نو');
   });
 
-  it('draws the deal as a solid green pill and the status as a neutral white one', async () => {
-    const tree = await card(property({ deal_type: 'SALE', status: 'ACTIVE' }));
-    const pill = (label: string) =>
-      hosts(
-        tree.root,
-        n => allText(n).trim() === label && styleOf(n).borderRadius === 999,
-      )[0];
-    expect(styleOf(pill(prs.dealType.SALE)).backgroundColor).toBe('#047857');
-    const status = styleOf(pill(prs.status.ACTIVE));
-    expect(status.backgroundColor).toBe('#FFFFFF');
-    expect(status.borderColor).toBe('#E5E7EB');
-    const kind = styleOf(pill(prs.propertyType.HOUSE_HAWILI));
-    expect(kind.backgroundColor).toBe('#FFFFFF');
+  it('keeps room beside the title for the status pill, so a long title never runs under it', async () => {
+    const tree = await card(property());
+    const title = hosts(
+      tree.root,
+      n => n.props.children === 'خانه سه خوابه در شهر نو',
+    );
+    expect(title).toHaveLength(1);
+    expect(styleOf(title[0]).paddingEnd).toBeGreaterThanOrEqual(80);
+  });
+
+  it('names the deal in a plain tag, with no dot, under the address', async () => {
+    const tree = await card(property({ deal_type: 'SALE' }));
+    const row = hosts(tree.root, n => n.props.testID === 'listing-badges')[0];
+    expect(allText(row)).toContain(prs.dealType.SALE);
+    // a pill holding the word and nothing else: no 6 x 6 round dot inside it
+    const dots = hosts(
+      row,
+      n => styleOf(n).width === 6 && styleOf(n).height === 6,
+    );
+    expect(dots).toHaveLength(0);
+    // after the place line, in reading order
+    const text = allText(tree.root);
+    expect(text.indexOf(prs.dealType.SALE)).toBeGreaterThan(text.indexOf('؋'));
+  });
+
+  it.each(['SALE', 'RENT', 'MORTGAGE_GROWI'] as const)(
+    'shows the %s tag, not the other two',
+    async deal => {
+      const tree = await card(property({ deal_type: deal }));
+      const row = hosts(tree.root, n => n.props.testID === 'listing-badges')[0];
+      const text = allText(row);
+      for (const other of ['SALE', 'RENT', 'MORTGAGE_GROWI'] as const) {
+        if (other === deal) expect(text).toContain(prs.dealType[other]);
+        else expect(text).not.toContain(prs.dealType[other]);
+      }
+    },
+  );
+
+  it('draws the status on the grey tile of a listing with no picture too', async () => {
+    const tree = await card(property());
+    expect(allText(statusOf(tree))).toContain(prs.status.ACTIVE);
+  });
+
+  it('draws the status as a quiet white pill with a dot', async () => {
+    const tree = await card(property({ status: 'ACTIVE' }));
+    const pill = hosts(
+      statusOf(tree),
+      n =>
+        allText(n).trim() === prs.status.ACTIVE &&
+        styleOf(n).borderRadius === 999,
+    )[0];
+    expect(styleOf(pill).backgroundColor).toBe('#FFFFFF');
+    expect(styleOf(pill).borderColor).toBe('#E5E7EB');
+  });
+
+  it('shows the "featured" badge beside the deal tag, and only for a featured listing', async () => {
+    const plain = await card(property({ is_featured: false }));
+    expect(
+      allText(hosts(plain.root, n => n.props.testID === 'listing-badges')[0]),
+    ).not.toContain(prs.property.featured);
+    const featured = await card(
+      property({ is_featured: true, featured_until: '2026-12-01T00:00:00Z' }),
+    );
+    const row = hosts(
+      featured.root,
+      n => n.props.testID === 'listing-badges',
+    )[0];
+    expect(allText(row)).toContain(prs.property.featured);
   });
 
   it.each(['SOLD', 'ARCHIVED'] as const)(
@@ -331,7 +389,7 @@ describe('ListingCard badges', () => {
     async status => {
       const tree = await card(property({ status }));
       const pill = hosts(
-        tree.root,
+        statusOf(tree),
         n =>
           allText(n).trim() === prs.status[status] &&
           styleOf(n).borderRadius === 999,

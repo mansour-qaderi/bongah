@@ -387,15 +387,29 @@ describe('ListingCard (My Listings)', () => {
     expect(solid).toHaveLength(0);
   });
 
-  it('shows the deal as the solid green pill', async () => {
+  it('has the deal as a plain solid tag, and the status as the white pill', async () => {
     const tree = await card(property({ status: 'ACTIVE', deal_type: 'SALE' }));
-    const deal = hosts(
+    const tag = hosts(
       tree.root,
       n =>
         styleOf(n).backgroundColor === '#047857' &&
+        styleOf(n).borderRadius === 999 &&
         allText(n).trim() === prs.dealType.SALE,
     );
-    expect(deal.length).toBeGreaterThan(0);
+    expect(tag).toHaveLength(1);
+    // no dot inside the deal tag
+    expect(
+      hosts(tag[0], n => styleOf(n).width === 6 && styleOf(n).height === 6),
+    ).toHaveLength(0);
+    // the status pill is the white one
+    const white = hosts(
+      tree.root,
+      n =>
+        styleOf(n).backgroundColor === '#FFFFFF' &&
+        styleOf(n).borderRadius === 999 &&
+        allText(n).includes(prs.status.ACTIVE),
+    );
+    expect(white.length).toBeGreaterThan(0);
   });
 
   it('gives the actions flat looks: promote solid emerald, edit white with an edge, deactivate white with a red edge', async () => {

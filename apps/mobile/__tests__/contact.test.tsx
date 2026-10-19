@@ -38,6 +38,7 @@ jest.mock('../src/navigation/useRequireAuth', () => ({
 
 // Imported after the mocks so the screens pick them up.
 import PropertyDetailsScreen from '../src/screens/property/PropertyDetailsScreen';
+import Badge from '../src/components/Badge';
 
 const L = '11111111-1111-4111-8111-111111111111';
 const viewer = {
@@ -553,6 +554,18 @@ describe('PropertyDetailsScreen: layout and the jerib helper', () => {
     );
   });
 
+  it('shows the deal tag at the top but not the type, which the specs say once', async () => {
+    const tree = await open();
+    const labels = tree.root
+      .findAllByType(Badge)
+      .map(badge => badge.props.label as string);
+    expect(labels).toContain(prs.dealType.SALE);
+    expect(labels).not.toContain(prs.propertyType.HOUSE_HAWILI);
+    // The type is in the specs card, once.
+    const specs = allText(tree.root).split(prs.property.specs)[1] ?? '';
+    expect(specs).toContain(prs.propertyType.HOUSE_HAWILI);
+  });
+
   const toggle = (root: ReactTestRenderer.ReactTestInstance) =>
     byId(root, 'jerib-conversion-toggle').find(
       n => typeof n.props.onPress === 'function',
@@ -596,10 +609,24 @@ describe('PropertyDetailsScreen: layout and the jerib helper', () => {
       return tree;
     };
 
-    it('gets an "edit listing" button that opens the listing in the form', async () => {
+    it('gets a small pencil button next to the bookmark, which opens the listing in the form', async () => {
       const tree = await asOwner();
-      expect(byId(tree.root, 'edit-listing').length).toBeGreaterThan(0);
-      await press(tree.root, prs.property.editListing);
+      const button = byId(tree.root, 'edit-listing').find(
+        node => typeof node.props.onPress === 'function',
+      );
+      expect(button).toBeDefined();
+      expect(button?.props.accessibilityLabel).toBe(prs.property.editListing);
+      // The same row as the bookmark: one parent holds both.
+      const bookmark = byId(tree.root, `bookmark-${L}`).find(
+        node => typeof node.props.onPress === 'function',
+      );
+      expect(bookmark?.parent?.parent).toBe(button?.parent?.parent);
+      // Its name is written beside the icon, and the big "ویرایش آگهی" button in the page is gone.
+      expect(allText(button as ReactTestRenderer.ReactTestInstance)).toBe(
+        prs.my.edit,
+      );
+      expect(allText(tree.root)).not.toContain(prs.property.editListing);
+      await act(async () => button?.props.onPress());
       expect(mockNavigation.navigate).toHaveBeenCalledWith('AddProperty', {
         propertyId: L,
       });

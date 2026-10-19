@@ -16,7 +16,7 @@ interface Props {
   required?: boolean;
 }
 
-const BUTTON = 40;
+const BUTTON = 36;
 
 /**
  * A count the person sets with two big buttons instead of the keyboard: rooms, bathrooms. It is a tile in its
@@ -71,7 +71,7 @@ export default function Stepper({
             </AppText>
           </Pressable>
           <AppText
-            variant="title"
+            variant="heading"
             color={value === null ? colors.textMuted : colors.text}
             style={styles.value}
             accessibilityLabel={label}

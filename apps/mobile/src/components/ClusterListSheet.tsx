@@ -10,9 +10,10 @@ import {
 import { useTranslation } from 'react-i18next';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { formatNumber } from '../i18n/format';
+import { propertyTypeLabel } from '../i18n/propertyType';
 import type { MapItem } from '../map/items';
 import { comparePriority } from '../map/priority';
-import { PROPERTY_ICONS, useSellerLabel } from '../map/markers';
+import { propertyEmoji, useSellerLabel } from '../map/markers';
 import { colors, radius, spacing } from '../theme';
 import AppText from './AppText';
 import Price from './Price';
@@ -93,7 +94,7 @@ export default function ClusterListSheet({ items, onPick, onClose }: Props) {
                     />
                   ) : (
                     <AppText variant="heading">
-                      {PROPERTY_ICONS[item.property.type]}
+                      {propertyEmoji(item.property.type)}
                     </AppText>
                   )}
                 </View>
@@ -108,7 +109,7 @@ export default function ClusterListSheet({ items, onPick, onClose }: Props) {
                     {item.property.title}
                   </AppText>
                   <AppText variant="caption" color={colors.textMuted}>
-                    {t(`propertyType.${item.property.type}`)} ·{' '}
+                    {propertyTypeLabel(item.property.type, t)} ·{' '}
                     {sellerOf(item.property)}
                   </AppText>
                 </View>

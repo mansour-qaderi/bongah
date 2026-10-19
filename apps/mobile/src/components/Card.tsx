@@ -33,7 +33,7 @@ export default function Card({
     <View style={[styles.card, flush ? styles.flush : null, style]}>
       {title ? (
         <View style={[styles.head, flush ? styles.headFlush : null]}>
-          <AppText variant="heading">{title}</AppText>
+          <AppText variant="section">{title}</AppText>
           {hint ? (
             <AppText variant="caption" color={colors.textMuted}>
               {hint}

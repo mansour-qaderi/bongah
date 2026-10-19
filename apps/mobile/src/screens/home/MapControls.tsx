@@ -139,42 +139,41 @@ export function DealFilter({ value, onChange }: DealFilterProps) {
   );
 }
 
-/** The small line under the top row: how many listings are in view, or a spinner while they load. */
+/**
+ * The small chip under the top row: how many listings are in view. It is also where the map says it is busy, so
+ * nothing spins on its own anywhere else on the map: a spinner sits beside its words while the first listings load,
+ * while a newer count is on its way, and while the phone's position is being found.
+ */
 export function StatusPill({
   loading,
   refreshing = false,
+  locating = false,
   message,
 }: {
-  /** Nothing to count yet: just the spinner. */
+  /** Nothing to count yet: the chip says it is loading instead of giving a count. */
   loading: boolean;
-  /** A newer count is on its way: a small spinner beside the one on screen. */
+  /** A newer count is on its way: the spinner joins the count already on screen. */
   refreshing?: boolean;
+  /** The phone's position is being looked for. */
+  locating?: boolean;
   message: string | null;
 }) {
   const { t } = useTranslation();
-  if (loading) {
-    return (
-      <View
-        accessibilityRole="progressbar"
-        accessibilityLabel={t('common.loading')}
-        style={styles.loader}
-      >
-        <ActivityIndicator size="small" color={colors.primary} />
-      </View>
-    );
-  }
-  if (!message) return null;
+  const busy = loading || refreshing || locating;
+  const words = loading ? t('common.loading') : message;
+  if (!words) return null;
   return (
     <View style={styles.status} testID="map-status">
-      {refreshing ? (
+      {busy ? (
         <ActivityIndicator
           size="small"
           color={colors.primary}
+          accessibilityRole="progressbar"
           accessibilityLabel={t('common.loading')}
         />
       ) : null}
       <AppText variant="caption" color={colors.textMuted}>
-        {message}
+        {words}
       </AppText>
     </View>
   );
@@ -270,14 +269,6 @@ const styles = StyleSheet.create({
   },
   swatch: { width: 8, height: 8, borderRadius: 4 },
   segmentText: { flexShrink: 1, fontWeight: '600' },
-  loader: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    ...surfaces.floating,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
   status: {
     alignSelf: 'center',
     flexDirection: 'row',

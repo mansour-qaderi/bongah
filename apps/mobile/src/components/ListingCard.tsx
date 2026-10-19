@@ -10,19 +10,19 @@ import { useTranslation } from 'react-i18next';
 import type { Property, PropertyStatus } from '@bongah/shared-types';
 import { formatDate } from '../i18n/format';
 import { useFormat } from '../i18n/useFormat';
-import { PROPERTY_LINE_ICONS } from '../map/markers';
+import { propertyLineIcon } from '../map/markers';
 import { colors, radius, spacing, surfaces } from '../theme';
 import ActionMenuSheet from './ActionMenuSheet';
 import AppText from './AppText';
 import Badge, { badgeTones, DealBadge } from './Badge';
 import Icon, { type IconName } from './Icon';
 import Price from './Price';
-import PropertyFacts, { propertyKind, propertyPlace } from './PropertyFacts';
+import PropertyFacts, { propertyPlace } from './PropertyFacts';
 
 /**
  * The little dot before a status word: emerald while the listing is live, near-black once the deal is done, grey
- * when it is switched off. The badge itself is always the same quiet white pill, so the only solid-coloured badge
- * on the card is the one that says what kind of deal it is.
+ * when it is switched off. The badge itself is always the same quiet white pill, drawn in the top-left corner of the
+ * picture.
  */
 const STATUS_DOT: Record<PropertyStatus, string> = {
   ACTIVE: colors.primary,
@@ -52,15 +52,17 @@ interface Props {
 }
 
 const THUMB = 104;
+/** Width kept free beside the title for the status pill: the widest word («معامله شد») plus its dot and padding. */
+const STATUS_RESERVE = 88;
 
 /**
  * One of the person's own listings, as a flat horizontal card (white, 1 px border, no shadow): the picture beside
- * the title, a row of badges right under it (the kind of property, the deal as a solid pill, and whether it is live as
- * a quiet white pill) and then the price and the place; across the card's width, the kind, area, bedrooms and bathrooms
- * as the same icon grid every listing card uses; under a divider, the things they can do with it (the screen decides
- * which): the main ones as white buttons with an edge, and a "more" button that opens a sheet with the rest.
- * Nothing is drawn over the picture. The top part opens the listing; the buttons act on it. A listing with no
- * picture gets a grey tile with the kind's line icon.
+ * the title, then the price and the place; the card carries the listing's status (active, traded, switched off) as
+ * a quiet white pill in the card's top-left corner; under the address sits the deal's tag (for sale, rent, mortgage; no
+ * dot), with a "featured" badge beside it when the listing is promoted. The kind, area, bedrooms and bathrooms are said once, in the icon grid across the card's width that
+ * every listing card uses. Under a divider, the things they can do with it (the screen decides which): the main
+ * ones as white buttons with an edge, and a "more" button that opens a sheet with the rest. The top part opens the
+ * listing; the buttons act on it. A listing with no picture gets a grey tile with the kind's line icon.
  */
 export default function ListingCard({
   property,
@@ -78,41 +80,51 @@ export default function ListingCard({
 
   return (
     <View style={[styles.card, property.is_featured ? styles.featured : null]}>
+      {/* The status sits in the card's own top-left corner, clear of the picture and of the tags. */}
+      <View style={styles.status} pointerEvents="none" testID="listing-status">
+        <DealBadge deal={property.deal_type} />
+        {property.is_featured ? (
+          <Badge label={t('property.featured')} tone={badgeTones.warning} />
+        ) : null}
+      </View>
       <Pressable
         accessibilityRole="button"
         accessibilityLabel={property.title}
         onPress={onPress}
         style={({ pressed }) => [styles.top, pressed ? styles.pressed : null]}
       >
-        {image ? (
-          <Image source={{ uri: image }} style={styles.thumb} />
-        ) : (
-          <View style={[styles.thumb, styles.placeholder]}>
-            <Icon
-              name={PROPERTY_LINE_ICONS[property.type]}
-              size={36}
-              color={colors.textMuted}
-              weight={1.4}
-            />
-          </View>
-        )}
-        <View style={styles.main}>
-          <AppText variant="label" numberOfLines={2}>
-            {property.title}
-          </AppText>
-          <View style={styles.badges} testID="listing-badges">
-            <Badge label={propertyKind(property, t)} tone="neutral" />
-            <DealBadge deal={property.deal_type} />
+        {/* The picture, on its own. */}
+        <View style={styles.media}>
+          {image ? (
+            <Image source={{ uri: image }} style={styles.thumb} />
+          ) : (
+            <View style={[styles.thumb, styles.placeholder]}>
+              <Icon
+                name={propertyLineIcon(property.type)}
+                size={36}
+                color={colors.textMuted}
+                weight={1.4}
+              />
+            </View>
+          )}
+          <View
+            style={styles.status}
+            pointerEvents="none"
+            testID="listing-status"
+          >
             <Badge
               dot
               dotColor={STATUS_DOT[property.status]}
               label={t(`status.${property.status}`)}
               tone="neutral"
             />
-            {property.is_featured ? (
-              <Badge label={t('property.featured')} tone={badgeTones.warning} />
-            ) : null}
           </View>
+        </View>
+        <View style={styles.main}>
+          {/* Leaves room for the status pill in the corner, so a long title never runs under it. */}
+          <AppText variant="label" numberOfLines={2} style={styles.title}>
+            {property.title}
+          </AppText>
           <Price
             amount={property.price}
             currency={property.currency}
@@ -258,7 +270,13 @@ const styles = StyleSheet.create({
   featured: { borderColor: colors.accentBright },
   top: { flexDirection: 'row', gap: spacing.md },
   pressed: { opacity: 0.85 },
+  media: { width: THUMB, height: THUMB },
   thumb: { width: THUMB, height: THUMB, borderRadius: radius.md },
+  // Top-left of the card: `end`, because the app reads right to left. Above the content, so it is never covered.
+  status: { position: 'absolute', top: spacing.xs, end: spacing.xs },
+
+  // The room the status pill takes at the far end of the first lines (a Persian word, a dot and the padding).
+  title: { paddingEnd: STATUS_RESERVE },
   placeholder: {
     backgroundColor: colors.neutralSoft,
     alignItems: 'center',

@@ -26,6 +26,7 @@ import {
 import { mockNavigation } from '../test-utils/navMock';
 import FilterSheet from '../src/components/FilterSheet';
 import { MARKER_TAP_GRACE_MS } from '../src/components/PropertyMap';
+import { LOCATE_TIMEOUT_MS } from '../src/map/location';
 import { dealColors } from '../src/theme';
 
 const fetchMock = jest.fn();
@@ -1791,16 +1792,68 @@ describe('Home map: plot boundaries', () => {
 });
 
 describe('Home map: overlay controls', () => {
-  it('shows a small spinner, not a text badge, while the listings load', async () => {
+  const progress = (root: ReactTestRenderer.ReactTestInstance) =>
+    root.findAll(n => n.props.accessibilityRole === 'progressbar');
+  const chip = (root: ReactTestRenderer.ReactTestInstance) =>
+    root.findAll(n => n.props.testID === 'map-status')[0];
+
+  it('says it is loading inside the top status chip, with a spinner beside the words, while the listings load', async () => {
     fetchMock.mockImplementation(() => new Promise(() => undefined));
     const tree = await render(home());
     await settle();
-    const loader = tree.root.findAll(
-      n => n.props.accessibilityRole === 'progressbar',
+    const status = chip(tree.root);
+    expect(status).toBeDefined();
+    expect(allText(status)).toContain(prs.common.loading);
+    expect(progress(status).length).toBeGreaterThan(0);
+    // The chip is not claiming "nothing found" while it has not looked yet.
+    expect(allText(tree.root)).not.toContain(prs.home.noMapResults);
+  });
+
+  it('keeps the spinner in the chip while a newer count is on its way, and drops it when done', async () => {
+    serve([listing()]);
+    const tree = await render(home());
+    await settle();
+    expect(allText(chip(tree.root))).not.toContain(prs.common.loading);
+    expect(progress(chip(tree.root))).toHaveLength(0);
+  });
+
+  it('has no spinner anywhere on the map outside the status chip, and the locate button never turns into one', async () => {
+    // The phone never answers: the position search is still "running".
+    jest
+      .spyOn(LocationManager, 'getCurrentPosition')
+      .mockReturnValue(new Promise(() => undefined) as never);
+    serve([listing()]);
+    const tree = await render(home());
+    await settle();
+    const all = progress(tree.root);
+    const inChip = progress(chip(tree.root));
+    expect(all.length).toBe(inChip.length);
+    const locate = tree.root.find(
+      n => n.props.testID === 'locate' && typeof n.type !== 'string',
     );
-    expect(loader.length).toBeGreaterThan(0);
-    expect(loader[0].props.accessibilityLabel).toBe(prs.common.loading);
-    expect(allText(tree.root)).not.toContain(prs.common.loading);
+    expect(progress(locate)).toHaveLength(0);
+    expect(locate.props.busy).toBeUndefined();
+  });
+
+  it('shows "finding you" as a spinner in the chip, and lets go of it even if the permission question is never answered', async () => {
+    jest.useFakeTimers();
+    try {
+      jest
+        .spyOn(LocationManager, 'requestPermissions')
+        .mockReturnValue(new Promise(() => undefined) as never);
+      serve([listing()]);
+      const tree = await render(home());
+      await act(async () => {
+        await jest.advanceTimersByTimeAsync(500);
+      });
+      expect(progress(chip(tree.root)).length).toBeGreaterThan(0);
+      await act(async () => {
+        await jest.advanceTimersByTimeAsync(LOCATE_TIMEOUT_MS + 3_000);
+      });
+      expect(progress(tree.root)).toHaveLength(0);
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
   it('has a saved-listings button among the top controls, which opens the Saved screen', async () => {

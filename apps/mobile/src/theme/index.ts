@@ -96,6 +96,12 @@ export const fonts = {
   regular: 'Vazirmatn-Regular',
   semibold: 'Vazirmatn-SemiBold',
   bold: 'Vazirmatn-Bold',
+  /**
+   * `assets/fonts/VazirmatnDigits-Regular.ttf` is Vazirmatn Regular with the glyphs for 0-9 swapped for ۰-۹ (same
+   * outlines the app already shows for Persian digits). Only text inputs use it: whatever Latin digit a keyboard
+   * types is drawn Persian by the native input itself, with no frame in between. Never use it for display text.
+   */
+  digits: 'VazirmatnDigits-Regular',
 } as const;
 
 /** The family for a CSS-style weight: 100-500 regular, 600 semibold, 700 and up (or "bold") bold. */
@@ -112,8 +118,14 @@ export function fontFamilyFor(weight: TextStyle['fontWeight']): string {
  */
 export const typography = {
   title: { fontSize: 24, lineHeight: 36, fontFamily: fonts.bold },
+  /** Page headers, and the big line of a page (a listing's title and price): 18-20, bold. */
+  pageTitle: { fontSize: 20, lineHeight: 30, fontFamily: fonts.bold },
   heading: { fontSize: 18, lineHeight: 28, fontFamily: fonts.bold },
+  /** The title of a section or a card: 15, semibold. (Field labels are `label`, 14.) */
+  section: { fontSize: 15, lineHeight: 24, fontFamily: fonts.semibold },
   body: { fontSize: 15, lineHeight: 24, fontFamily: fonts.regular },
+  /** Body text and card text on the compact screens (Account, the listing form, listing details): 13, regular. */
+  bodySm: { fontSize: 13, lineHeight: 21, fontFamily: fonts.regular },
   label: { fontSize: 14, lineHeight: 22, fontFamily: fonts.semibold },
   caption: { fontSize: 12, lineHeight: 18, fontFamily: fonts.regular },
 } satisfies Record<string, TextStyle>;

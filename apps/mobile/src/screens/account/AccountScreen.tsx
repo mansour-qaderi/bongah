@@ -233,7 +233,7 @@ export default function AccountScreen({ navigation }: Props) {
               >
                 {user.full_name ?? t('account.notSet')}
               </AppText>
-              <AppText variant="body" color="rgba(255,255,255,0.88)">
+              <AppText variant="bodySm" color="rgba(255,255,255,0.88)">
                 {formatPhone(user.phone_number)}
               </AppText>
             </View>
@@ -260,7 +260,7 @@ export default function AccountScreen({ navigation }: Props) {
           <AppText variant="heading" color={colors.textOnPrimary}>
             {t('welcome.title')}
           </AppText>
-          <AppText color="rgba(255,255,255,0.88)">
+          <AppText variant="bodySm" color="rgba(255,255,255,0.88)">
             {t('account.guestHint')}
           </AppText>
           <Pressable
@@ -428,11 +428,14 @@ const styles = StyleSheet.create({
   },
   badges: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
   languages: { flexDirection: 'row', gap: spacing.sm },
+  // The same rhythm as a `menuRow`, so every line of every group is spaced alike.
   languageRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.md,
     flexWrap: 'wrap',
+    minHeight: 56,
+    paddingVertical: spacing.sm,
   },
   tiles: { flexDirection: 'row', gap: spacing.md, marginBottom: spacing.lg },
   tile: {

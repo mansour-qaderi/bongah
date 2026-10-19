@@ -4,8 +4,9 @@ import type { TFunction } from 'i18next';
 import { useTranslation } from 'react-i18next';
 import type { Property } from '@bongah/shared-types';
 import { formatNumber } from '../i18n/format';
+import { propertyTypeLabel } from '../i18n/propertyType';
 import { useFormat } from '../i18n/useFormat';
-import { PROPERTY_LINE_ICONS } from '../map/markers';
+import { propertyLineIcon } from '../map/markers';
 import { colors, radius, spacing } from '../theme';
 import AppText from './AppText';
 import Icon, { type IconName } from './Icon';
@@ -35,7 +36,7 @@ export function propertyKind(
   property: Pick<Property, 'type' | 'unit'>,
   t: TFunction,
 ): string {
-  const type = t(`propertyType.${property.type}`);
+  const type = propertyTypeLabel(property.type, t);
   return property.unit ? `${type}، ${property.unit}` : type;
 }
 
@@ -116,7 +117,7 @@ export default function PropertyFacts({
   if (withType) {
     facts.push({
       key: 'type',
-      icon: PROPERTY_LINE_ICONS[property.type],
+      icon: propertyLineIcon(property.type),
       text: propertyKind(property, t),
     });
   }

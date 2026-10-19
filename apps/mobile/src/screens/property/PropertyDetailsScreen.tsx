@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import {
   FlatList,
   Image,
+  Pressable,
   ScrollView,
   StyleSheet,
   View,
@@ -26,17 +27,14 @@ import Icon from '../../components/Icon';
 import { JeribConversion } from '../../components/JeribInfo';
 import Price from '../../components/Price';
 import PromotionSheet from '../../components/PromotionSheet';
-import PropertyFacts, {
-  propertyKind,
-  propertyPlace,
-} from '../../components/PropertyFacts';
+import PropertyFacts, { propertyPlace } from '../../components/PropertyFacts';
 import PropertyLocationMap from '../../components/PropertyLocationMap';
 import { Screen } from '../../components/Screen';
 import { ErrorView, LoadingView } from '../../components/States';
 import { formatPhone } from '../../i18n/format';
 import { useFormat } from '../../i18n/useFormat';
 import type { RootStackParamList } from '../../navigation/types';
-import { colors, spacing, surfaces } from '../../theme';
+import { colors, fonts, spacing, surfaces } from '../../theme';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'PropertyDetails'>;
 
@@ -75,6 +73,36 @@ export default function PropertyDetailsScreen({ route, navigation }: Props) {
   return <PropertyBody property={query.data} navigation={navigation} />;
 }
 
+/**
+ * The owner's way to edit the listing: a pencil with its name beside it, in the same row and the same white, edged
+ * style as the bookmark. (A phone has no hover, so the name is written out where a tooltip would have been.)
+ */
+function EditListingButton({
+  label,
+  accessibilityLabel,
+  onPress,
+}: {
+  label: string;
+  accessibilityLabel: string;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      testID="edit-listing"
+      accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel}
+      onPress={onPress}
+      hitSlop={6}
+      style={({ pressed }) => [styles.editButton, pressed && styles.pressed]}
+    >
+      <Icon name="edit" size={18} color={colors.primary} weight={1.9} />
+      <AppText variant="bodySm" color={colors.primary} style={styles.editLabel}>
+        {label}
+      </AppText>
+    </Pressable>
+  );
+}
+
 /** The loaded listing, its contact details and the Call / WhatsApp / Chat bar pinned below. */
 function PropertyBody({
   property,
@@ -85,6 +113,8 @@ function PropertyBody({
 }) {
   const { t } = useTranslation();
   const format = useFormat();
+  // null, '' and a few spaces all mean the owner wrote nothing.
+  const hasDescription = (property.description ?? '').trim().length > 0;
   const { user } = useAuth();
   const { width } = useWindowDimensions();
   const [promoting, setPromoting] = useState(false);
@@ -126,7 +156,6 @@ function PropertyBody({
         <View style={[styles.section, styles.header]}>
           <View style={styles.row}>
             <View style={styles.badges}>
-              <Badge label={propertyKind(property, t)} tone="neutral" />
               <DealBadge deal={property.deal_type} />
               {property.is_featured ? (
                 <Badge
@@ -135,9 +164,23 @@ function PropertyBody({
                 />
               ) : null}
             </View>
-            <BookmarkButton propertyId={property.id} title={property.title} />
+            {/* The owner's Edit sits with the bookmark, as a small icon button, not as a button in the page. */}
+            <View style={styles.actions}>
+              {isOwner ? (
+                <EditListingButton
+                  label={t('my.edit')}
+                  accessibilityLabel={t('property.editListing')}
+                  onPress={() =>
+                    navigation.navigate('AddProperty', {
+                      propertyId: property.id,
+                    })
+                  }
+                />
+              ) : null}
+              <BookmarkButton propertyId={property.id} title={property.title} />
+            </View>
           </View>
-          <AppText variant="title">{property.title}</AppText>
+          <AppText variant="pageTitle">{property.title}</AppText>
           {place ? (
             <View style={styles.place}>
               <Icon
@@ -147,6 +190,7 @@ function PropertyBody({
                 weight={1.9}
               />
               <AppText
+                variant="bodySm"
                 color={colors.textSecondary}
                 numberOfLines={2}
                 style={styles.placeText}
@@ -162,26 +206,14 @@ function PropertyBody({
             <Price
               amount={property.price}
               currency={property.currency}
-              variant="title"
+              variant="pageTitle"
               color={colors.primary}
             />
           </View>
-          {isOwner ? (
-            <View testID="edit-listing">
-              <Button
-                title={t('property.editListing')}
-                onPress={() =>
-                  navigation.navigate('AddProperty', {
-                    propertyId: property.id,
-                  })
-                }
-              />
-            </View>
-          ) : null}
         </View>
 
         <View style={[styles.section, styles.card]}>
-          <AppText variant="heading">{t('property.specs')}</AppText>
+          <AppText variant="section">{t('property.specs')}</AppText>
           {/* The same icon grid as the Home list and My Listings. */}
           <PropertyFacts
             property={property}
@@ -200,13 +232,24 @@ function PropertyBody({
         <JeribConversion areaSqm={property.area_sqm} style={styles.fold} />
 
         <View style={[styles.section, styles.card]}>
-          <AppText variant="heading">{t('property.description')}</AppText>
-          <AppText>{property.description}</AppText>
+          <AppText variant="section">{t('property.description')}</AppText>
+          {/* An owner may leave the description out (it is stored as ''): say so politely instead of an empty card. */}
+          {hasDescription ? (
+            <AppText variant="bodySm">{property.description}</AppText>
+          ) : (
+            <AppText
+              variant="bodySm"
+              color={colors.textMuted}
+              testID="no-description"
+            >
+              {t('property.noDescription')}
+            </AppText>
+          )}
         </View>
 
         <View style={[styles.section, styles.card]}>
-          <AppText variant="heading">{t('property.location')}</AppText>
-          <AppText>
+          <AppText variant="section">{t('property.location')}</AppText>
+          <AppText variant="bodySm">
             {[
               format.province(property.province),
               property.district,
@@ -215,7 +258,9 @@ function PropertyBody({
               .filter(Boolean)
               .join('، ')}
           </AppText>
-          <AppText color={colors.textMuted}>{property.address}</AppText>
+          <AppText variant="bodySm" color={colors.textMuted}>
+            {property.address}
+          </AppText>
           {property.lat !== null && property.lng !== null ? (
             <PropertyLocationMap
               at={{ latitude: property.lat, longitude: property.lng }}
@@ -229,18 +274,18 @@ function PropertyBody({
 
         {revealed ? (
           <View style={[styles.section, styles.card]}>
-            <AppText variant="heading">{t('property.contact')}</AppText>
+            <AppText variant="section">{t('property.contact')}</AppText>
             {revealed.agency_name ? (
-              <AppText>
+              <AppText variant="bodySm">
                 {t('property.agency')}: {revealed.agency_name}
               </AppText>
             ) : null}
             {revealed.full_name ? (
-              <AppText>
+              <AppText variant="bodySm">
                 {t('property.owner')}: {revealed.full_name}
               </AppText>
             ) : null}
-            <AppText variant="label" style={styles.phone}>
+            <AppText variant="section">
               {formatPhone(revealed.phone_number)}
             </AppText>
           </View>
@@ -314,6 +359,20 @@ const styles = StyleSheet.create({
     paddingBottom: spacing.xl,
     gap: spacing.lg,
   },
+  actions: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  editButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.xs,
+    height: 40,
+    paddingHorizontal: spacing.md,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+  },
+  pressed: { opacity: 0.8 },
+  editLabel: { fontFamily: fonts.semibold },
   fold: { marginHorizontal: spacing.lg, marginTop: spacing.md },
-  phone: { fontSize: 18 },
 });

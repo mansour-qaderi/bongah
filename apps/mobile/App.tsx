@@ -7,6 +7,7 @@ import { queryClient } from './src/api/hooks';
 import { AuthProvider } from './src/auth/AuthContext';
 import { ChatProvider } from './src/chat/ChatProvider';
 import { LoadingView } from './src/components/States';
+import { ToastHost } from './src/components/Toast';
 import { initI18n } from './src/i18n';
 import { isRtlActive } from './src/i18n/rtl';
 import { linking } from './src/navigation/linking';
@@ -68,6 +69,8 @@ export default function App() {
               >
                 <RootNavigator />
               </NavigationContainer>
+              {/* Messages such as "could not save" are drawn here, over whatever screen is open. */}
+              <ToastHost />
             </ChatProvider>
           </AuthProvider>
         </QueryClientProvider>

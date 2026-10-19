@@ -71,14 +71,17 @@ interface Props {
 export function DealBadge({
   deal,
   style,
+  dot = true,
 }: {
   deal: DealType;
   style?: StyleProp<ViewStyle>;
+  /** The small dot before the word. On by default; a card that wants a plain tag turns it off. */
+  dot?: boolean;
 }) {
   const { t } = useTranslation();
   return (
     <Badge
-      dot
+      dot={dot}
       label={t(`dealType.${deal}`)}
       tone={dealTone(deal)}
       style={style}

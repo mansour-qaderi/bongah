@@ -12,6 +12,7 @@ import { useTranslation } from 'react-i18next';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, radius, spacing } from '../theme';
 import AppText from './AppText';
+import { ToastHost } from './Toast';
 import { KeyboardAvoider, useKeyboardTop } from './KeyboardAware';
 
 interface Props {
@@ -198,6 +199,8 @@ export default function BottomSheet({
             </View>
           ) : null}
         </Animated.View>
+        {/* A sheet is a modal: a toast has to be drawn inside it to be seen over it. */}
+        <ToastHost />
       </KeyboardAvoider>
     </Modal>
   );

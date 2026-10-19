@@ -54,12 +54,16 @@ export default function MainTabs() {
     <>
       <Tab.Navigator
         tabBar={renderTabBar}
+        detachInactiveScreens={false}
         screenOptions={{
           ...headerOptions,
           tabBarActiveTintColor: colors.primary,
           tabBarInactiveTintColor: colors.textMuted,
-          // Moving between tabs fades the pages into each other instead of cutting.
-          animation: 'fade',
+          // Every tab stays mounted once it has been opened (react-navigation never unmounts a tab on blur), and
+          // stays attached to the window too: a detached screen takes the native map view with it, and bringing it
+          // back rebuilds the map and its tiles, which is the flicker on returning to Home. And no cross-fade: the
+          // page that was left is simply replaced, so switching tabs is instant.
+          animation: 'none',
           sceneStyle: { backgroundColor: colors.background },
         }}
       >

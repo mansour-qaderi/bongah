@@ -883,6 +883,44 @@ describe('PropertyDetailsScreen: location', () => {
   });
 });
 
+describe('PropertyDetailsScreen: a listing with no description', () => {
+  const id = '11111111-1111-4111-8111-111111111111';
+  const route = { params: { id } };
+  const SENTENCE = 'توضیحات تکمیلی برای این ملک ثبت نشده است.';
+  const show = async (description: unknown) => {
+    mockApi(fetchMock, {
+      [`GET /properties/${id}`]: { body: listing({ description }) },
+    });
+    const tree = await render(
+      screenElement(PropertyDetailsScreen, navigation(), route),
+    );
+    await settle();
+    return tree;
+  };
+  const placeholder = (root: ReactTestRenderer.ReactTestInstance) =>
+    root.findAll(
+      n => n.props.testID === 'no-description' && typeof n.type === 'string',
+    );
+
+  it('says so politely when the description is empty, missing or only spaces', async () => {
+    expect(prs.property.noDescription).toBe(SENTENCE);
+    for (const description of ['', '   ', '\n \t', null, undefined]) {
+      const tree = await show(description);
+      expect(allText(tree.root)).toContain(prs.property.description);
+      expect(placeholder(tree.root)).toHaveLength(1);
+      expect(placeholder(tree.root)[0].props.children).toBe(SENTENCE);
+      ReactTestRenderer.act(() => tree.unmount());
+    }
+  });
+
+  it("shows the owner's own words, and no placeholder, when there are some", async () => {
+    const tree = await show('دو طبقه است و آب و برق دارد.');
+    expect(allText(tree.root)).toContain('دو طبقه است و آب و برق دارد.');
+    expect(placeholder(tree.root)).toHaveLength(0);
+    expect(allText(tree.root)).not.toContain(SENTENCE);
+  });
+});
+
 // ─────────── Round 4: the unit, and the form and the map following each other ───────────
 
 describe('AddPropertyScreen: the unit of the property', () => {
