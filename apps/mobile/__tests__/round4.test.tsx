@@ -6,9 +6,7 @@ import {
   FEEDBACK_MAX_LENGTH,
   FEEDBACK_MIN_LENGTH,
   PROPERTY_TYPES,
-  PROPERTY_UNITS,
-  PROPERTY_UNIT_TYPES,
-  isUnitOf,
+  PROPERTY_UNIT_MAX_LENGTH,
   type Property,
 } from '@bongah/shared-types';
 import {
@@ -82,7 +80,7 @@ const property = (overrides: Partial<Property> = {}): Property => ({
   title: 'خانه سه خوابه در شهر نو',
   description: '',
   type: 'HOUSE_HAWILI',
-  unit_type: 'DUPLEX',
+  unit: 'واحد ۳',
   deal_type: 'SALE',
   price: 1200000,
   currency: 'AFGHANI',
@@ -172,37 +170,38 @@ afterEach(async () => {
 
 // ───────────────────────────── 3. the unit (sub-type) ─────────────────────────────
 
-describe('units: the shared list', () => {
-  it('gives every property type at least one unit, and every unit to exactly one type', () => {
+describe('property types: the shared list', () => {
+  it('has the nine independent types, none of them grouped', () => {
+    expect([...PROPERTY_TYPES]).toEqual([
+      'HOUSE_HAWILI',
+      'APARTMENT',
+      'SHOP',
+      'OFFICE',
+      'LAND',
+      'GARDEN',
+      'VILLA',
+      'GARAGE',
+      'OTHER',
+    ]);
+  });
+
+  it('has a Dari and a Pashto name for every type', () => {
     for (const type of PROPERTY_TYPES) {
-      expect(PROPERTY_UNITS[type].length).toBeGreaterThan(0);
+      expect(prs.propertyType[type]).toBeTruthy();
+      expect(ps.propertyType[type]).toBeTruthy();
+      expect(prs.add.titleExamples[type]).toBeTruthy();
+      expect(ps.add.titleExamples[type]).toBeTruthy();
     }
-    const owners = PROPERTY_UNIT_TYPES.map(
-      unit => PROPERTY_TYPES.filter(type => isUnitOf(type, unit)).length,
+    expect(Object.keys(prs.propertyType).sort()).toEqual(
+      [...PROPERTY_TYPES].sort(),
     );
-    expect(owners.every(count => count === 1)).toBe(true);
-  });
-
-  it('knows the units a house and an apartment can be', () => {
-    expect(isUnitOf('HOUSE_HAWILI', 'HAWILI')).toBe(true);
-    expect(isUnitOf('HOUSE_HAWILI', 'DUPLEX')).toBe(true);
-    expect(isUnitOf('APARTMENT', 'FLAT')).toBe(true);
-    expect(isUnitOf('APARTMENT', 'DUPLEX')).toBe(false);
-    expect(isUnitOf('LAND', 'HAWILI')).toBe(false);
-  });
-
-  it('has a Dari and a Pashto name for every unit', () => {
-    for (const unit of PROPERTY_UNIT_TYPES) {
-      expect(prs.unitType[unit]).toBeTruthy();
-      expect(ps.unitType[unit]).toBeTruthy();
-    }
-    expect(Object.keys(prs.unitType).sort()).toEqual(
-      [...PROPERTY_UNIT_TYPES].sort(),
+    expect(Object.keys(ps.propertyType).sort()).toEqual(
+      [...PROPERTY_TYPES].sort(),
     );
   });
 });
 
-describe('units: the shared validation', () => {
+describe('the unit: the shared validation', () => {
   const base = {
     title: 'خانه دو منزله',
     type: 'HOUSE_HAWILI' as const,
@@ -216,54 +215,65 @@ describe('units: the shared validation', () => {
     address: 'کابل، شهر نو',
   };
 
-  it('accepts a listing with no unit, with a null unit, and with a unit of its type', () => {
+  it('accepts a listing with no unit, a null unit, and a written unit', () => {
     expect(createPropertySchema.safeParse(base).success).toBe(true);
     expect(
-      createPropertySchema.safeParse({ ...base, unit_type: null }).success,
+      createPropertySchema.safeParse({ ...base, unit: null }).success,
     ).toBe(true);
+    expect(
+      createPropertySchema.safeParse({ ...base, unit: 'واحد ۳' }).success,
+    ).toBe(true);
+  });
+
+  it('refuses a unit that is too long, and the old unit_type field', () => {
+    expect(
+      createPropertySchema.safeParse({
+        ...base,
+        unit: 'x'.repeat(PROPERTY_UNIT_MAX_LENGTH + 1),
+      }).success,
+    ).toBe(false);
     expect(
       createPropertySchema.safeParse({ ...base, unit_type: 'DUPLEX' }).success,
-    ).toBe(true);
-  });
-
-  it('refuses a unit that belongs to another type, and an unknown unit', () => {
-    expect(
-      createPropertySchema.safeParse({ ...base, unit_type: 'STUDIO' }).success,
-    ).toBe(false);
-    expect(
-      createPropertySchema.safeParse({ ...base, unit_type: 'PALACE' }).success,
     ).toBe(false);
   });
 
-  it('checks the pair on an update only when both are sent', () => {
-    expect(
-      updatePropertySchema.safeParse({ type: 'APARTMENT', unit_type: 'DUPLEX' })
-        .success,
-    ).toBe(false);
-    expect(
-      updatePropertySchema.safeParse({ type: 'APARTMENT', unit_type: 'FLAT' })
-        .success,
-    ).toBe(true);
-    expect(
-      updatePropertySchema.safeParse({ unit_type: 'DUPLEX' }).success,
-    ).toBe(true);
-    expect(updatePropertySchema.safeParse({ unit_type: null }).success).toBe(
+  it('refuses the types that were merged away', () => {
+    for (const old of ['OFFICE_SHOP', 'GARDEN_VILLA', 'GARAGE_OTHER']) {
+      expect(
+        createPropertySchema.safeParse({ ...base, type: old }).success,
+      ).toBe(false);
+    }
+    for (const type of PROPERTY_TYPES) {
+      expect(createPropertySchema.safeParse({ ...base, type }).success).toBe(
+        true,
+      );
+    }
+  });
+
+  it('takes a unit on an update, or null to clear it', () => {
+    expect(updatePropertySchema.safeParse({ unit: 'واحد ۳' }).success).toBe(
       true,
     );
+    expect(updatePropertySchema.safeParse({ unit: null }).success).toBe(true);
   });
 
-  it('takes a unit in the list query only together with a type that has it', () => {
+  it('takes several types in the list query, comma-separated, but not together with the single type', () => {
+    expect(
+      listPropertiesQuerySchema.safeParse({ types: 'HOUSE_HAWILI,APARTMENT' })
+        .success,
+    ).toBe(true);
+    expect(
+      listPropertiesQuerySchema.safeParse({ types: 'HOUSE_HAWILI,PALACE' })
+        .success,
+    ).toBe(false);
     expect(
       listPropertiesQuerySchema.safeParse({
         type: 'HOUSE_HAWILI',
-        unit_type: 'DUPLEX',
+        types: 'APARTMENT',
       }).success,
-    ).toBe(true);
+    ).toBe(false);
     expect(
-      listPropertiesQuerySchema.safeParse({
-        type: 'APARTMENT',
-        unit_type: 'DUPLEX',
-      }).success,
+      listPropertiesQuerySchema.safeParse({ unit_type: 'DUPLEX' }).success,
     ).toBe(false);
   });
 });
@@ -272,12 +282,12 @@ describe('the kind of a property, as a card says it', () => {
   const t = i18next.t.bind(i18next);
   it('says the type, then the unit when there is one', () => {
     expect(propertyKind(property(), t)).toBe(
-      `${prs.propertyType.HOUSE_HAWILI}، ${prs.unitType.DUPLEX}`,
+      `${prs.propertyType.HOUSE_HAWILI}، واحد ۳`,
     );
-    expect(propertyKind(property({ unit_type: null }), t)).toBe(
+    expect(propertyKind(property({ unit: null }), t)).toBe(
       prs.propertyType.HOUSE_HAWILI,
     );
-    expect(propertyKind(property({ unit_type: undefined }), t)).toBe(
+    expect(propertyKind(property({ unit: undefined }), t)).toBe(
       prs.propertyType.HOUSE_HAWILI,
     );
   });
@@ -291,7 +301,7 @@ describe('property specs: the list card, My Listings and the details page agree'
 
   const expectSpecs = (text: string) => {
     expect(text).toContain(prs.propertyType.HOUSE_HAWILI);
-    expect(text).toContain(prs.unitType.DUPLEX);
+    expect(text).toContain('واحد ۳');
     expect(text).toContain(toPersianDigits(253));
     expect(text).toContain(prs.unit.sqm);
     expect(text).toContain(toPersianDigits(3));
@@ -746,7 +756,7 @@ describe('SavedListingsScreen', () => {
       prs.saved.count.replace('{{count}}', toPersianDigits(2)),
     );
     // The same card as the Home list: the specs are on it too.
-    expect(text).toContain(prs.unitType.DUPLEX);
+    expect(text).toContain('واحد ۳');
 
     await press(tree.root, 'آگهی اول');
     expect(nav.navigate).toHaveBeenCalledWith('PropertyDetails', { id: idA });

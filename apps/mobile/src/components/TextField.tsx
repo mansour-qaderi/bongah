@@ -1,9 +1,30 @@
-import React, { useState } from 'react';
-import { StyleSheet, TextInput, View, type TextInputProps } from 'react-native';
+import React, { useRef, useState } from 'react';
+import {
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+  type TextInputProps,
+  type TextInputSelectionChangeEvent,
+  type TextStyle,
+} from 'react-native';
 import { toLatinDigits, toPersianDigits } from '../i18n/format';
+import {
+  editGroupedNumber,
+  groupNumber,
+  toRawNumber,
+} from '../i18n/numberInput';
 import { colors, fonts, ltrInput, radius, spacing } from '../theme';
 import AppText from './AppText';
 import { useKeyboardFocus } from './KeyboardAware';
+
+/** The keyboards that only produce digits: every key press on one of them is a digit that has to be turned into ۰-۹. */
+const DIGIT_KEYBOARDS: ReadonlySet<TextInputProps['keyboardType']> = new Set([
+  'number-pad',
+  'numeric',
+  'decimal-pad',
+  'phone-pad',
+]);
 
 interface Props extends TextInputProps {
   label?: string;
@@ -16,12 +37,20 @@ interface Props extends TextInputProps {
   helper?: string;
   /**
    * 'persian' (the default): the value handed to the screen always has plain 0-9, which is what the API and the
-   * number parser expect, and a field that is not being edited shows it as ۰-۹. While the person is typing, the
-   * field shows exactly what the keyboard produced and nothing is rewritten under their fingers; the Persian
-   * digits appear when they leave the field. 'keep': leave digits untouched (web links, invite codes, anything
-   * a person pastes or copies back out).
+   * number parser expect, and the field shows it as ۰-۹ at all times, including while it is being typed into
+   * (whatever digits the keyboard produces are converted as they arrive). 'keep': leave digits untouched (web
+   * links, invite codes, anything a person pastes or copies back out).
+   *
+   * On a digits-only keyboard the Persian text is what the person sees and the native input's own text is kept
+   * invisible (see `drawnOver`), so a Latin digit never shows, not even for the frame between the key press and
+   * the converted value coming back from the screen.
    */
   digits?: 'persian' | 'keep';
+  /**
+   * A money amount or a count: the field shows the number grouped in thousands as it is typed ("۱,۳۰۰,۰۰۰"),
+   * while the value handed to the screen stays plain digits ("1300000"). Needs `digits="persian"`.
+   */
+  thousands?: boolean;
 }
 
 export default function TextField({
@@ -31,6 +60,7 @@ export default function TextField({
   ltr,
   helper,
   digits = 'persian',
+  thousands = false,
   style,
   multiline,
   value,
@@ -38,25 +68,90 @@ export default function TextField({
   onChangeText,
   onFocus,
   onBlur,
+  onSelectionChange,
+  selection,
   ...rest
 }: Props) {
   const focus = useKeyboardFocus();
   const persian = digits === 'persian';
-  const [focused, setFocused] = useState(false);
-  // What the person has typed in this editing session, exactly as the keyboard produced it.
-  const [draft, setDraft] = useState<string | null>(null);
+  const grouped = persian && thousands;
+  // Where the caret is, as last reported. The keyboard reports a change before the new caret position, so at the
+  // time of a change this still describes the field as it was.
+  const caret = useRef({ start: 0, end: 0 });
+  // Set for one edit when grouping moved the digits around and the caret has to be put back beside its digit.
+  const [forcedCaret, setForcedCaret] = useState<number | null>(null);
 
   /**
-   * Rewriting a controlled input's text while it is being typed into is what makes the caret jump and characters
-   * go missing, so while the field is focused it shows the draft (the very text it was just given) and never a
-   * converted copy of it. Digits are converted only for display, when the field is at rest.
+   * The field shows the value in Persian digits (and grouped, for amounts) even while it is being typed into. The
+   * conversion keeps every character in place (a Latin 1 becomes ۱, the same length), so the caret does not move;
+   * grouping does change the length, and `editGroupedNumber` works out where the caret has to go.
    */
   let shown = value;
   if (persian && value !== undefined) {
-    if (!focused) shown = toPersianDigits(value);
-    else if (draft !== null && toLatinDigits(draft) === toLatinDigits(value))
-      shown = draft;
+    shown = grouped ? groupNumber(toRawNumber(value)) : toPersianDigits(value);
   }
+
+  /**
+   * Why a Latin digit used to flash: a controlled input shows what the keyboard typed first, and only shows the
+   * value the screen hands back (the same digit as ۱) once the change has been to JavaScript and back, so for a
+   * frame or two the wrong digit is on screen. JavaScript cannot get in front of that, so on a digits-only keyboard
+   * the input's own text is made transparent (the caret, the selection and the keyboard still work on it) and the
+   * Persian text is drawn over it. Both are laid out with the same font, size, padding and alignment, so the
+   * caret sits where it would anyway. The overlay shows what the screen last handed over, so what is on screen is
+   * Persian at every moment. (Not for multi-line fields: their text scrolls inside the input, which an overlay
+   * cannot follow.)
+   */
+  const drawnOver =
+    persian && !multiline && DIGIT_KEYBOARDS.has(rest.keyboardType);
+  const inputStyle = StyleSheet.flatten([
+    styles.input,
+    multiline && styles.multiline,
+    ltr && ltrInput,
+    error ? styles.inputError : null,
+    style,
+    drawnOver ? { textAlign: ltr ? 'left' : 'right' } : null,
+  ]) as TextStyle;
+  const overlayStyle: TextStyle = {
+    color: String(inputStyle.color ?? colors.text),
+    fontFamily: inputStyle.fontFamily,
+    fontSize: inputStyle.fontSize,
+    fontWeight: inputStyle.fontWeight,
+    letterSpacing: inputStyle.letterSpacing,
+    textAlign: inputStyle.textAlign,
+    writingDirection: inputStyle.writingDirection,
+  };
+  const overlayInset =
+    Number(inputStyle.paddingHorizontal ?? 0) +
+    Number(inputStyle.borderWidth ?? 0);
+
+  const handleChange = (text: string) => {
+    if (!onChangeText) return;
+    if (!persian) {
+      onChangeText(text);
+    } else if (grouped) {
+      const edit = editGroupedNumber(text, {
+        shown: shown ?? '',
+        start: caret.current.start,
+        end: caret.current.end,
+      });
+      setForcedCaret(edit.caret);
+      onChangeText(edit.raw);
+    } else {
+      setForcedCaret(null);
+      onChangeText(toLatinDigits(text));
+    }
+  };
+
+  const handleSelection = (event: TextInputSelectionChangeEvent) => {
+    const { start, end } = event.nativeEvent.selection;
+    caret.current = { start, end };
+    // Once the caret has arrived where it was put, stop controlling it so the person can move it freely.
+    if (forcedCaret !== null && start === forcedCaret && end === forcedCaret) {
+      setForcedCaret(null);
+    }
+    onSelectionChange?.(event);
+  };
+
   return (
     <View style={styles.wrapper}>
       {label ? (
@@ -67,43 +162,50 @@ export default function TextField({
           {labelAccessory}
         </View>
       ) : null}
-      <TextInput
-        placeholderTextColor={colors.placeholder}
-        accessibilityLabel={label}
-        multiline={multiline}
-        {...rest}
-        value={shown}
-        placeholder={
-          persian && placeholder !== undefined
-            ? toPersianDigits(placeholder)
-            : placeholder
-        }
-        onChangeText={
-          onChangeText
-            ? text => {
-                setDraft(text);
-                onChangeText(persian ? toLatinDigits(text) : text);
-              }
-            : undefined
-        }
-        onFocus={event => {
-          setFocused(true);
-          focus?.inputFocused();
-          onFocus?.(event);
-        }}
-        onBlur={event => {
-          setFocused(false);
-          setDraft(null);
-          onBlur?.(event);
-        }}
-        style={[
-          styles.input,
-          multiline && styles.multiline,
-          ltr && ltrInput,
-          error ? styles.inputError : null,
-          style,
-        ]}
-      />
+      <View>
+        <TextInput
+          placeholderTextColor={colors.placeholder}
+          accessibilityLabel={label}
+          multiline={multiline}
+          {...rest}
+          value={shown}
+          placeholder={
+            persian && placeholder !== undefined
+              ? toPersianDigits(placeholder)
+              : placeholder
+          }
+          onChangeText={onChangeText ? handleChange : undefined}
+          onSelectionChange={handleSelection}
+          selection={
+            forcedCaret !== null
+              ? { start: forcedCaret, end: forcedCaret }
+              : selection
+          }
+          onFocus={event => {
+            focus?.inputFocused();
+            onFocus?.(event);
+          }}
+          onBlur={event => {
+            setForcedCaret(null);
+            onBlur?.(event);
+          }}
+          style={[inputStyle, drawnOver ? styles.textHidden : null]}
+        />
+        {drawnOver && shown ? (
+          <View
+            pointerEvents="none"
+            style={[styles.overlay, { paddingHorizontal: overlayInset }]}
+          >
+            <Text
+              testID="digits-overlay"
+              numberOfLines={1}
+              style={overlayStyle}
+            >
+              {shown}
+            </Text>
+          </View>
+        ) : null}
+      </View>
       {error ? (
         <AppText variant="caption" color={colors.danger} style={styles.error}>
           {error}
@@ -146,5 +248,11 @@ const styles = StyleSheet.create({
     textAlignVertical: 'top',
   },
   inputError: { borderColor: colors.danger },
+  // The input's own text, kept invisible while the Persian text is drawn over it (see `drawnOver`).
+  textHidden: { color: 'transparent' },
+  overlay: {
+    ...StyleSheet.absoluteFill,
+    justifyContent: 'center',
+  },
   error: { marginTop: spacing.xs },
 });

@@ -105,8 +105,7 @@ function activeFilterCount(filters: PropertyFilters): number {
   return [
     filters.province,
     filters.district,
-    filters.type,
-    filters.unit_type,
+    filters.types?.length ? filters.types : undefined,
     filters.deal_type,
     filters.min_price ?? filters.max_price,
   ].filter(value => value !== undefined).length;

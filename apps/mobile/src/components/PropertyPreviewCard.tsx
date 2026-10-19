@@ -8,6 +8,7 @@ import { useFormat } from '../i18n/useFormat';
 import { PROPERTY_LINE_ICONS, useSellerLabel } from '../map/markers';
 import { colors, dealColors, radius, spacing } from '../theme';
 import AppText from './AppText';
+import { DealBadge } from './Badge';
 import ContactActionBar from './ContactActionBar';
 import ContactLockSheet from './ContactLockSheet';
 import Icon from './Icon';
@@ -91,10 +92,12 @@ export default function PropertyPreviewCard({
             <AppText variant="label" numberOfLines={2}>
               {property.title}
             </AppText>
-            <AppText variant="caption" color={colors.textMuted}>
-              {t(`propertyType.${property.type}`)} ·{' '}
-              {t(`dealType.${property.deal_type}`)}
-            </AppText>
+            <View style={styles.kindRow}>
+              <AppText variant="caption" color={colors.textMuted}>
+                {t(`propertyType.${property.type}`)}
+              </AppText>
+              <DealBadge deal={property.deal_type} />
+            </View>
             <AppText variant="caption" color={colors.accentText}>
               {property.agency_name ? '🏛️ ' : ''}
               {seller}
@@ -181,6 +184,7 @@ const styles = StyleSheet.create({
   // Leaves room for the close button on the far edge.
   info: { flex: 1, gap: 2, paddingEnd: spacing.xl },
   priceRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  kindRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   badge: {
     backgroundColor: colors.accentBright,
     borderRadius: radius.pill,

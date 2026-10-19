@@ -28,17 +28,15 @@ export function propertyPlace(
 }
 
 /**
- * What kind of property a listing is, in words: "خانه" or, when the owner also said which unit it is, "خانه، حویلی".
+ * What kind of property a listing is, in words: "آپارتمان" or, when the owner also said which unit it is, "آپارتمان، واحد ۳".
  * Takes the translate function so the cards, the details page and the saved list all word it the same way.
  */
 export function propertyKind(
-  property: Pick<Property, 'type' | 'unit_type'>,
+  property: Pick<Property, 'type' | 'unit'>,
   t: TFunction,
 ): string {
   const type = t(`propertyType.${property.type}`);
-  return property.unit_type
-    ? `${type}، ${t(`unitType.${property.unit_type}`)}`
-    : type;
+  return property.unit ? `${type}، ${property.unit}` : type;
 }
 
 interface Fact {

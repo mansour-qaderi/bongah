@@ -6,7 +6,6 @@ import {
   NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
-import { isUnitOf, type PropertyType, type PropertyUnitType } from '@bongah/shared-types';
 import { findActiveSubscription } from '../agencies/subscription.js';
 import { Prisma, PropertyStatus, Role } from '../generated/prisma/client.js';
 import { PrismaService } from '../prisma/prisma.service.js';
@@ -40,8 +39,8 @@ export class PropertyService {
       user: { bannedAt: null },
       province: query.province,
       district: query.district,
-      type: query.type,
-      unitType: query.unit_type,
+      // One kind (`type`, older apps) or any of several (`types`); the schema refuses both together.
+      type: query.types ? { in: query.types } : query.type,
       dealType: query.deal_type,
       // true: listings with an exact pin (the map); false: those without; omitted: all.
       ...(query.has_location === undefined ? {} : { lat: query.has_location ? { not: null } : null }),
@@ -167,7 +166,7 @@ export class PropertyService {
         district,
         neighborhood,
         address,
-        unit_type,
+        unit,
         ...rest
       } = input;
       const created = await tx.property.create({
@@ -179,7 +178,7 @@ export class PropertyService {
           address: address ?? '',
           userId,
           agencyId,
-          unitType: unit_type ?? null,
+          unit: unit || null,
           dealType: deal_type,
           areaSqm: area_sqm,
           bedrooms: bedrooms ?? null,
@@ -203,13 +202,11 @@ export class PropertyService {
    */
   async update(userId: string, id: string, input: UpdatePropertyDto): Promise<PropertyDto> {
     const now = new Date();
-    const { deal_type, area_sqm, unit_type, ...rest } = input;
+    const { deal_type, area_sqm, unit, ...rest } = input;
 
     const row = await this.prisma.$transaction(async (tx) => {
-      const locked = await tx.$queryRaw<
-        { user_id: string; removed_by_admin_at: Date | null; type: PropertyType; unit_type: PropertyUnitType | null }[]
-      >`SELECT user_id, removed_by_admin_at, type::text AS type, unit_type::text AS unit_type
-        FROM properties WHERE id = ${id}::uuid FOR UPDATE`;
+      const locked = await tx.$queryRaw<{ user_id: string; removed_by_admin_at: Date | null }[]>`
+        SELECT user_id, removed_by_admin_at FROM properties WHERE id = ${id}::uuid FOR UPDATE`;
       if (locked.length === 0) throw new NotFoundException('Property not found.');
       const actorRole = await this.assertCanModify(tx, userId, locked[0].user_id);
       // A listing an admin took down stays down: only an admin can touch it (restore it, say).
@@ -220,27 +217,12 @@ export class PropertyService {
         });
       }
 
-      // The unit has to belong to the type the listing ends up with. A unit sent now is checked against the type
-      // sent now or, failing that, the stored one; a stored unit that the new type does not have is cleared.
-      const typeAfter = rest.type ?? locked[0].type;
-      let unitAfter: PropertyUnitType | null | undefined;
-      if (unit_type !== undefined) {
-        if (unit_type !== null && !isUnitOf(typeAfter, unit_type)) {
-          throw new BadRequestException({
-            message: 'This unit does not belong to the property type.',
-            code: 'UNIT_NOT_OF_TYPE',
-          });
-        }
-        unitAfter = unit_type;
-      } else if (locked[0].unit_type && !isUnitOf(typeAfter, locked[0].unit_type)) {
-        unitAfter = null;
-      }
-
       return tx.property.update({
         where: { id },
         data: {
           ...rest,
-          ...(unitAfter !== undefined ? { unitType: unitAfter } : {}),
+          // A blank unit clears it, like null does.
+          ...(unit !== undefined ? { unit: unit || null } : {}),
           ...(deal_type !== undefined ? { dealType: deal_type } : {}),
           ...(area_sqm !== undefined ? { areaSqm: area_sqm } : {}),
         },

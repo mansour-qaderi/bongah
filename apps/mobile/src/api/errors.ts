@@ -6,6 +6,8 @@ import { ApiError } from './client';
 interface Options {
   /** What a 401 means on this screen. Default: the session ended. On the OTP screen: wrong code. */
   unauthorized?: 'sessionExpired' | 'invalidCode';
+  /** The request was asking the server to send a verification code: a 429 then has its own, more specific sentence. */
+  sendingCode?: boolean;
 }
 
 /**
@@ -71,10 +73,10 @@ export function errorMessage(
       return t('errors.forbidden');
     case 404:
       return t('errors.notFound');
-    case 429:
-      return t('errors.rateLimited', {
-        seconds: formatNumber(Math.ceil(error.body.retry_after ?? 60), 0),
-      });
+    case 429: {
+      const seconds = formatNumber(Math.ceil(error.body.retry_after ?? 60), 0);
+      return t(options.sendingCode ? 'errors.otpRateLimited' : 'errors.rateLimited', { seconds });
+    }
     case 502:
       return t('errors.paymentProvider');
     case 503:

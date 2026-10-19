@@ -421,11 +421,14 @@ describe('BottomSheet and the keyboard', () => {
 // ───────────────────────── 8. chips never cut their label ─────────────────────────
 
 describe('Chip', () => {
-  it('keeps a long label on one line and never lets it shrink, so "دکان و دفتر" is not cut', async () => {
+  it('keeps a long label on one line and never lets it shrink, so it is not cut', async () => {
     const tree = await show(
-      <Chip compact label={prs.propertyType.OFFICE_SHOP} onPress={jest.fn()} />,
+      <Chip
+        compact
+        label={prs.propertyType.HOUSE_HAWILI}
+        onPress={jest.fn()}
+      />,
     );
-    expect(prs.propertyType.OFFICE_SHOP).toBe('دکان و دفتر');
     const label = tree.root.findAllByType(AppText)[0];
     expect(label.props.numberOfLines).toBe(1);
     expect(styleOf(label).flexShrink).toBe(0);

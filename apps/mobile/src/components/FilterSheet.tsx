@@ -5,11 +5,9 @@ import {
   CURRENCIES,
   DEAL_TYPES,
   PROPERTY_TYPES,
-  PROPERTY_UNITS,
   type Currency,
   type DealType,
   type PropertyType,
-  type PropertyUnitType,
 } from '@bongah/shared-types';
 import type { PropertyFilters } from '../api/endpoints';
 import {
@@ -48,14 +46,6 @@ function readPrice(text: string): number | undefined | null {
   return n === null || n > MAX_PRICE_INPUT ? null : Math.round(n * 100) / 100;
 }
 
-/** The amount typed so far, written as money ("۱,۲۰۰,۰۰۰ ؋"), or nothing while the box is empty or unreadable. */
-function priceHelper(text: string, currency: Currency): string | undefined {
-  const amount = readPrice(text);
-  return typeof amount === 'number'
-    ? formatCurrency(amount, currency)
-    : undefined;
-}
-
 export default function FilterSheet({
   visible,
   value,
@@ -67,8 +57,7 @@ export default function FilterSheet({
 
   const [province, setProvince] = useState<Province | null>(null);
   const [district, setDistrict] = useState('');
-  const [type, setType] = useState<PropertyType | undefined>();
-  const [unit, setUnit] = useState<PropertyUnitType | undefined>();
+  const [types, setTypes] = useState<PropertyType[]>([]);
   const [deal, setDeal] = useState<DealType | undefined>();
   const [currency, setCurrency] = useState<Currency>('AFGHANI');
   const [minText, setMinText] = useState('');
@@ -81,8 +70,7 @@ export default function FilterSheet({
     if (!visible) return;
     setProvince(findProvince(value.province) ?? null);
     setDistrict(value.district ?? '');
-    setType(value.type);
-    setUnit(value.unit_type);
+    setTypes(value.types ?? []);
     setDeal(value.deal_type);
     setCurrency(value.currency ?? 'AFGHANI');
     setMinText(
@@ -93,6 +81,12 @@ export default function FilterSheet({
     );
     setError(false);
   }, [visible, value]);
+
+  /** Adds the type to the chosen ones, or takes it out again: any number of types can be on at once. */
+  const toggleType = (p: PropertyType) =>
+    setTypes(current =>
+      current.includes(p) ? current.filter(x => x !== p) : [...current, p],
+    );
 
   const apply = () => {
     const min = readPrice(minText);
@@ -109,9 +103,7 @@ export default function FilterSheet({
     onApply({
       province: province ? provinceValue(province) : undefined,
       district: district.trim() || undefined,
-      type,
-      // A unit only means something within its type.
-      unit_type: type ? unit : undefined,
+      types: types.length > 0 ? types : undefined,
       deal_type: deal,
       min_price: min,
       max_price: max,
@@ -122,8 +114,7 @@ export default function FilterSheet({
   const clear = () => {
     setProvince(null);
     setDistrict('');
-    setType(undefined);
-    setUnit(undefined);
+    setTypes([]);
     setDeal(undefined);
     setMinText('');
     setMaxText('');
@@ -206,50 +197,19 @@ export default function FilterSheet({
               <Chip
                 compact
                 label={t('home.allTypes')}
-                selected={!type}
-                onPress={() => {
-                  setType(undefined);
-                  setUnit(undefined);
-                }}
+                selected={types.length === 0}
+                onPress={() => setTypes([])}
               />
               {PROPERTY_TYPES.map(p => (
                 <Chip
                   compact
                   key={p}
                   label={t(`propertyType.${p}`)}
-                  selected={type === p}
-                  onPress={() => {
-                    setType(p);
-                    // A unit belongs to one type: changing the type drops one that no longer fits.
-                    if (unit && !PROPERTY_UNITS[p].includes(unit))
-                      setUnit(undefined);
-                  }}
+                  selected={types.includes(p)}
+                  onPress={() => toggleType(p)}
                 />
               ))}
             </View>
-
-            {type ? (
-              <>
-                <AppText variant="label">{t('home.unit')}</AppText>
-                <View style={styles.wrap} testID="unit-chips">
-                  <Chip
-                    compact
-                    label={t('common.all')}
-                    selected={!unit}
-                    onPress={() => setUnit(undefined)}
-                  />
-                  {PROPERTY_UNITS[type].map(u => (
-                    <Chip
-                      compact
-                      key={u}
-                      label={t(`unitType.${u}`)}
-                      selected={unit === u}
-                      onPress={() => setUnit(u)}
-                    />
-                  ))}
-                </View>
-              </>
-            ) : null}
 
             <AppText variant="label">{t('home.dealType')}</AppText>
             <View style={styles.wrap}>
@@ -313,7 +273,7 @@ export default function FilterSheet({
                   keyboardType="decimal-pad"
                   ltr
                   placeholder={example(examples.min)}
-                  helper={priceHelper(minText, currency)}
+                  thousands
                   style={styles.field}
                 />
               </View>
@@ -325,7 +285,7 @@ export default function FilterSheet({
                   keyboardType="decimal-pad"
                   ltr
                   placeholder={example(examples.max)}
-                  helper={priceHelper(maxText, currency)}
+                  thousands
                   style={styles.field}
                 />
               </View>

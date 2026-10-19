@@ -18,12 +18,12 @@ import { useAuth } from '../../auth/AuthContext';
 import { useContactActions } from '../../contact/useContactActions';
 import AppText from '../../components/AppText';
 import Button from '../../components/Button';
-import Badge, { badgeTones, dealTone } from '../../components/Badge';
+import Badge, { badgeTones, DealBadge } from '../../components/Badge';
 import BookmarkButton from '../../components/BookmarkButton';
 import ContactActionBar from '../../components/ContactActionBar';
 import ContactLockSheet from '../../components/ContactLockSheet';
 import Icon from '../../components/Icon';
-import JeribInfoButton from '../../components/JeribInfo';
+import { JeribConversion } from '../../components/JeribInfo';
 import Price from '../../components/Price';
 import PromotionSheet from '../../components/PromotionSheet';
 import PropertyFacts, {
@@ -40,7 +40,7 @@ import { colors, spacing, surfaces } from '../../theme';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'PropertyDetails'>;
 
-export default function PropertyDetailsScreen({ route }: Props) {
+export default function PropertyDetailsScreen({ route, navigation }: Props) {
   const { t } = useTranslation();
   const { user, status } = useAuth();
   const { id } = route.params;
@@ -72,11 +72,17 @@ export default function PropertyDetailsScreen({ route }: Props) {
       />
     );
   }
-  return <PropertyBody property={query.data} />;
+  return <PropertyBody property={query.data} navigation={navigation} />;
 }
 
 /** The loaded listing, its contact details and the Call / WhatsApp / Chat bar pinned below. */
-function PropertyBody({ property }: { property: Property }) {
+function PropertyBody({
+  property,
+  navigation,
+}: {
+  property: Property;
+  navigation: Props['navigation'];
+}) {
   const { t } = useTranslation();
   const format = useFormat();
   const { user } = useAuth();
@@ -121,10 +127,7 @@ function PropertyBody({ property }: { property: Property }) {
           <View style={styles.row}>
             <View style={styles.badges}>
               <Badge label={propertyKind(property, t)} tone="neutral" />
-              <Badge
-                label={t(`dealType.${property.deal_type}`)}
-                tone={dealTone(property.deal_type)}
-              />
+              <DealBadge deal={property.deal_type} />
               {property.is_featured ? (
                 <Badge
                   label={t('property.featured')}
@@ -163,24 +166,38 @@ function PropertyBody({ property }: { property: Property }) {
               color={colors.primary}
             />
           </View>
+          {isOwner ? (
+            <View testID="edit-listing">
+              <Button
+                title={t('property.editListing')}
+                onPress={() =>
+                  navigation.navigate('AddProperty', {
+                    propertyId: property.id,
+                  })
+                }
+              />
+            </View>
+          ) : null}
         </View>
 
         <View style={[styles.section, styles.card]}>
           <AppText variant="heading">{t('property.specs')}</AppText>
-          {/* The same icon grid as the Home list and My Listings; the jerib help sits beside the area. */}
+          {/* The same icon grid as the Home list and My Listings. */}
           <PropertyFacts
             property={property}
             withType
             layout="grid"
             divider={false}
-            areaAccessory={<JeribInfoButton areaSqm={property.area_sqm} />}
           />
-          {property.type === 'GARDEN_VILLA' ? (
+          {property.type === 'GARDEN' || property.type === 'VILLA' ? (
             <AppText variant="caption" color={colors.primaryDark}>
               {t('property.gardenVillaNote')}
             </AppText>
           ) : null}
         </View>
+
+        {/* What a jerib is and what this area comes to in jerib: folded away, one tap to read. */}
+        <JeribConversion areaSqm={property.area_sqm} style={styles.fold} />
 
         <View style={[styles.section, styles.card]}>
           <AppText variant="heading">{t('property.description')}</AppText>
@@ -297,5 +314,6 @@ const styles = StyleSheet.create({
     paddingBottom: spacing.xl,
     gap: spacing.lg,
   },
+  fold: { marginHorizontal: spacing.lg, marginTop: spacing.md },
   phone: { fontSize: 18 },
 });

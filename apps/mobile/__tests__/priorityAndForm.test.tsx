@@ -61,10 +61,13 @@ describe('property types', () => {
     expect([...PROPERTY_TYPES]).toEqual([
       'HOUSE_HAWILI',
       'APARTMENT',
-      'OFFICE_SHOP',
+      'SHOP',
+      'OFFICE',
       'LAND',
-      'GARDEN_VILLA',
-      'GARAGE_OTHER',
+      'GARDEN',
+      'VILLA',
+      'GARAGE',
+      'OTHER',
     ]);
   });
 
@@ -72,10 +75,13 @@ describe('property types', () => {
     expect(PROPERTY_TYPES.map(t => prs.propertyType[t])).toEqual([
       'خانه',
       'آپارتمان',
-      'دکان و دفتر',
+      'دکان',
+      'دفتر',
       'زمین',
-      'باغ و ویلا',
-      'گاراج و غیره',
+      'باغ',
+      'ویلا',
+      'گاراج',
+      'غیره',
     ]);
   });
 });

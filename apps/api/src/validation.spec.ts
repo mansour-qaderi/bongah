@@ -64,12 +64,18 @@ describe('createPropertySchema', () => {
   });
 
   it('accepts every property type in create, update and list filters', () => {
-    for (const type of ['HOUSE_HAWILI', 'APARTMENT', 'OFFICE_SHOP', 'LAND', 'GARDEN_VILLA', 'GARAGE_OTHER']) {
+    for (const type of ['HOUSE_HAWILI', 'APARTMENT', 'SHOP', 'OFFICE', 'LAND', 'GARDEN', 'VILLA', 'GARAGE', 'OTHER']) {
       expect(createPropertySchema.safeParse({ ...valid, type }).success).toBe(true);
       expect(updatePropertySchema.safeParse({ type }).success).toBe(true);
       expect(listPropertiesQuerySchema.safeParse({ type }).success).toBe(true);
     }
-    expect(createPropertySchema.safeParse({ ...valid, type: 'garden_villa' }).success).toBe(false);
+    expect(createPropertySchema.safeParse({ ...valid, type: 'garden' }).success).toBe(false);
+  });
+
+  it.each(['OFFICE_SHOP', 'GARDEN_VILLA', 'GARAGE_OTHER'])('no longer knows the combined type %s', (type) => {
+    expect(createPropertySchema.safeParse({ ...valid, type }).success).toBe(false);
+    expect(listPropertiesQuerySchema.safeParse({ type }).success).toBe(false);
+    expect(listPropertiesQuerySchema.safeParse({ types: `LAND,${type}` }).success).toBe(false);
   });
 
   it('treats the map pin as optional but never half a pin', () => {
@@ -151,6 +157,30 @@ describe('listPropertiesQuerySchema', () => {
   });
 });
 
+describe('listPropertiesQuerySchema: several types', () => {
+  it('reads a comma-separated list, once each and in the order given', () => {
+    expect(listPropertiesQuerySchema.parse({ types: 'HOUSE_HAWILI,APARTMENT' })).toMatchObject({
+      types: ['HOUSE_HAWILI', 'APARTMENT'],
+    });
+    expect(listPropertiesQuerySchema.parse({ types: 'LAND,LAND, APARTMENT' })).toMatchObject({
+      types: ['LAND', 'APARTMENT'],
+    });
+    expect(listPropertiesQuerySchema.parse({ types: 'LAND' })).toMatchObject({ types: ['LAND'] });
+  });
+  it('still accepts the single `type` of older apps', () => {
+    expect(listPropertiesQuerySchema.parse({ type: 'LAND' })).toMatchObject({ type: 'LAND' });
+  });
+  it.each([
+    ['an empty list', { types: '' }],
+    ['a trailing comma', { types: 'LAND,' }],
+    ['an unknown type', { types: 'LAND,CASTLE' }],
+    ['both type and types', { type: 'LAND', types: 'LAND' }],
+    ['a list given twice', { types: ['LAND', 'APARTMENT'] }],
+  ])('rejects %s', (_name, query) => {
+    expect(listPropertiesQuerySchema.safeParse(query).success).toBe(false);
+  });
+});
+
 describe('listPropertiesQuerySchema: map area', () => {
   const area = { min_lat: '34.25', max_lat: '34.875', min_lng: '68.9375', max_lng: '69.4375' };
   it('reads the four edges as numbers, and an area alone is fine', () => {
@@ -212,27 +242,24 @@ describe('registration and payment schemas', () => {
 });
 
 describe('the unit of a property', () => {
-  it('createPropertySchema takes none, null, or a unit of the chosen type', () => {
+  it('is optional free text: none, null, blank, or a few words', () => {
     expect(createPropertySchema.safeParse(valid).success).toBe(true);
-    expect(createPropertySchema.safeParse({ ...valid, unit_type: null }).success).toBe(true);
-    expect(createPropertySchema.safeParse({ ...valid, unit_type: 'STUDIO' }).success).toBe(true);
-    expect(createPropertySchema.safeParse({ ...valid, type: 'HOUSE_HAWILI', unit_type: 'DUPLEX' }).success).toBe(true);
+    expect(createPropertySchema.safeParse({ ...valid, unit: null }).success).toBe(true);
+    expect(createPropertySchema.safeParse({ ...valid, unit: '' }).success).toBe(true);
+    expect(createPropertySchema.parse({ ...valid, unit: '  واحد   ۳ ' }).unit).toBe('واحد ۳');
+    expect(updatePropertySchema.safeParse({ unit: null }).success).toBe(true);
+    expect(updatePropertySchema.safeParse({ unit: 'طبقه دوم' }).success).toBe(true);
   });
-  it('createPropertySchema refuses a unit of another type, and an unknown unit', () => {
-    const wrong = createPropertySchema.safeParse({ ...valid, unit_type: 'DUPLEX' });
-    expect(wrong.success).toBe(false);
-    expect(fields(wrong)).toContain('unit_type');
-    expect(createPropertySchema.safeParse({ ...valid, unit_type: 'PALACE' }).success).toBe(false);
+  it('is at most 40 characters, and is text', () => {
+    expect(createPropertySchema.safeParse({ ...valid, unit: 'x'.repeat(40) }).success).toBe(true);
+    expect(createPropertySchema.safeParse({ ...valid, unit: 'x'.repeat(41) }).success).toBe(false);
+    expect(createPropertySchema.safeParse({ ...valid, unit: 3 }).success).toBe(false);
   });
-  it('updatePropertySchema checks the pair only when both are sent', () => {
-    expect(updatePropertySchema.safeParse({ unit_type: 'DUPLEX' }).success).toBe(true);
-    expect(updatePropertySchema.safeParse({ unit_type: null }).success).toBe(true);
-    expect(updatePropertySchema.safeParse({ type: 'APARTMENT', unit_type: 'FLAT' }).success).toBe(true);
-    expect(updatePropertySchema.safeParse({ type: 'APARTMENT', unit_type: 'DUPLEX' }).success).toBe(false);
-  });
-  it('listPropertiesQuerySchema takes a unit only with a type that has it', () => {
-    expect(listPropertiesQuerySchema.safeParse({ type: 'HOUSE_HAWILI', unit_type: 'DUPLEX' }).success).toBe(true);
-    expect(listPropertiesQuerySchema.safeParse({ type: 'APARTMENT', unit_type: 'DUPLEX' }).success).toBe(false);
+  it('is not a filter, and the old unit_type is gone from every schema', () => {
+    expect(listPropertiesQuerySchema.safeParse({ unit: 'a' }).success).toBe(false);
+    expect(listPropertiesQuerySchema.safeParse({ type: 'LAND', unit_type: 'DUPLEX' }).success).toBe(false);
+    expect(createPropertySchema.safeParse({ ...valid, unit_type: 'STUDIO' }).success).toBe(false);
+    expect(updatePropertySchema.safeParse({ unit_type: 'STUDIO' }).success).toBe(false);
   });
 });
 

@@ -9,7 +9,7 @@ copy the numbers into the files below.
 | `logo.svg` | 100 × 100, transparent | The full mark with its ground ring (docs, web, store graphics). |
 | `app-icon.svg` | 1024 × 1024, opaque white | iOS app icon master, Play Store icon, Android legacy icons. No ring. |
 | `app-icon-android-foreground.svg` | 108 × 108 (dp), transparent | Android adaptive icon, foreground layer. The mark sits inside the 66 dp safe circle. |
-| `app-icon-android-background.svg` | 108 × 108 (dp) | Android adaptive icon, background layer (plain white). Easier to use as the colour `#FFFFFF`. |
+| `app-icon-android-background.svg` | 108 × 108 (dp) | Not used any more: the adaptive icon's background layer is fully transparent (`#00000000`), so there is no plate or disc behind the mark. Kept for reference. |
 | `app-icon-android-monochrome.svg` | 108 × 108 (dp), transparent | Android 13+ themed icon: one colour, the system tints it; the pin's hole is see-through. |
 
 Colours: emerald `#047857` (the theme's `colors.primary`) on the right half and the chimney, deep emerald `#065F46`
@@ -24,7 +24,7 @@ The PNGs below were produced from these SVGs and are in the project:
 - Android (`android/app/src/main/res`): `mipmap-{m,h,xh,xxh,xxxh}dpi/ic_launcher.png`, `ic_launcher_round.png`,
   `ic_launcher_foreground.png`, `ic_launcher_monochrome.png`; `mipmap-anydpi-v26/ic_launcher.xml` and
   `ic_launcher_round.xml` (adaptive icon, with the monochrome layer for Android 13 themed icons);
-  `values/ic_launcher_background.xml` (`#FFFFFF`). `minSdk` is 24, so Android 7.x gets the plain PNGs and Android 8+ the
+  `values/ic_launcher_background.xml` (`#00000000`: transparent, so the launcher shows no white disc behind the mark; the pin's centre is a white dot drawn in the foreground layer). `minSdk` is 24, so Android 7.x gets the plain PNGs and Android 8+ the
   adaptive icon.
 - iOS (`ios/BongahMobile/Images.xcassets/AppIcon.appiconset`): every iPhone and iPad size plus the 1024 marketing icon,
   all opaque RGB, with `Contents.json` pointing at them (the project targets iPhone and iPad).
@@ -78,7 +78,7 @@ Inkscape works too (`inkscape app-icon.svg -w 1024 -h 1024 -o AppIcon-1024.png`)
    ```xml
    <?xml version="1.0" encoding="utf-8"?>
    <resources>
-     <color name="ic_launcher_background">#FFFFFF</color>
+     <color name="ic_launcher_background">#00000000</color>
    </resources>
    ```
 

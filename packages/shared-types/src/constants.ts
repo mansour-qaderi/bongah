@@ -4,53 +4,26 @@
 // prs = Dari (Afghan Persian), ps = Pashto. Both are written right-to-left.
 export const LANGUAGES = ['prs', 'ps'] as const;
 export const ROLES = ['USER', 'AGENCY', 'ADMIN'] as const;
-/** In the order the apps list them (pickers, filters): house first, then apartment, shop/office, land, garden, other. */
+/**
+ * The kinds of property, one each, in the order the apps list them (pickers, filters): house, apartment, shop,
+ * office, land, garden, villa, garage, other. Enum values here MUST match the Prisma enum `PropertyType` exactly.
+ */
 export const PROPERTY_TYPES = [
   'HOUSE_HAWILI',
   'APARTMENT',
-  'OFFICE_SHOP',
-  'LAND',
-  'GARDEN_VILLA',
-  'GARAGE_OTHER',
-] as const;
-/**
- * The kind of unit a listing is, within its property type ("واحد"): a courtyard house or a duplex among houses, a
- * studio or a penthouse among apartments, and so on. Optional on a listing. Enum values here MUST match the Prisma
- * enum `PropertyUnit` exactly, and each value belongs to ONE property type (see PROPERTY_UNITS), so a value alone says
- * which type it is for.
- */
-export const PROPERTY_UNIT_TYPES = [
-  'HAWILI',
-  'DUPLEX',
-  'VILLA_HOUSE',
-  'TOWNHOUSE',
-  'FLAT',
-  'STUDIO',
-  'PENTHOUSE',
   'SHOP',
   'OFFICE',
-  'SHOWROOM',
-  'RESIDENTIAL_PLOT',
-  'COMMERCIAL_PLOT',
-  'FARMLAND',
+  'LAND',
   'GARDEN',
   'VILLA',
   'GARAGE',
-  'WAREHOUSE',
-  'OTHER_UNIT',
+  'OTHER',
 ] as const;
-/** Which units each property type offers, in the order the pickers list them. */
-export const PROPERTY_UNITS: Record<(typeof PROPERTY_TYPES)[number], readonly (typeof PROPERTY_UNIT_TYPES)[number][]> = {
-  HOUSE_HAWILI: ['HAWILI', 'DUPLEX', 'VILLA_HOUSE', 'TOWNHOUSE'],
-  APARTMENT: ['FLAT', 'STUDIO', 'PENTHOUSE'],
-  OFFICE_SHOP: ['SHOP', 'OFFICE', 'SHOWROOM'],
-  LAND: ['RESIDENTIAL_PLOT', 'COMMERCIAL_PLOT', 'FARMLAND'],
-  GARDEN_VILLA: ['GARDEN', 'VILLA'],
-  GARAGE_OTHER: ['GARAGE', 'WAREHOUSE', 'OTHER_UNIT'],
-};
-/** Whether `unit` is one of the units a listing of `type` may have. */
-export const isUnitOf = (type: (typeof PROPERTY_TYPES)[number], unit: string): boolean =>
-  (PROPERTY_UNITS[type] as readonly string[]).includes(unit);
+/**
+ * Longest "unit" a listing may carry (واحد): free text such as "واحد ۳" or "طبقه دوم". It says which unit of a
+ * building is for sale or rent; it has no fixed list.
+ */
+export const PROPERTY_UNIT_MAX_LENGTH = 40;
 export const DEAL_TYPES = ['SALE', 'RENT', 'MORTGAGE_GROWI'] as const;
 export const CURRENCIES = ['AFGHANI', 'USD'] as const;
 export const PROPERTY_STATUSES = ['ACTIVE', 'SOLD', 'ARCHIVED'] as const;
@@ -122,7 +95,6 @@ export const PROPERTY_MAX_IMAGES = 20;
 export type Language = (typeof LANGUAGES)[number];
 export type Role = (typeof ROLES)[number];
 export type PropertyType = (typeof PROPERTY_TYPES)[number];
-export type PropertyUnitType = (typeof PROPERTY_UNIT_TYPES)[number];
 export type DealType = (typeof DEAL_TYPES)[number];
 export type Currency = (typeof CURRENCIES)[number];
 export type PropertyStatus = (typeof PROPERTY_STATUSES)[number];

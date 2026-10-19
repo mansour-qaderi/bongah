@@ -13,12 +13,11 @@ import {
   CURRENCIES,
   DEAL_TYPES,
   PROPERTY_TYPES,
-  PROPERTY_UNITS,
+  PROPERTY_UNIT_MAX_LENGTH,
   type Currency,
   type DealType,
   type Property,
   type PropertyType,
-  type PropertyUnitType,
 } from '@bongah/shared-types';
 import {
   createPropertySchema,
@@ -47,12 +46,7 @@ import {
   provinceValue,
   type Province,
 } from '../../constants/provinces';
-import {
-  formatCurrency,
-  formatNumber,
-  jeribToSqm,
-  parseNumberInput,
-} from '../../i18n/format';
+import { formatNumber, jeribToSqm, parseNumberInput } from '../../i18n/format';
 import { useFormat } from '../../i18n/useFormat';
 import {
   AFGHANISTAN_CAMERA,
@@ -81,9 +75,9 @@ export const LOOKUP_DELAY_MS = 700;
 export const ADDRESS_SYNC_DELAY_MS = 1000;
 const roundTo2 = (n: number) => Math.round(n * 100) / 100;
 
-/** Land and garages have no rooms to count. */
-const hasRoomsFor = (type: PropertyType) =>
-  type !== 'LAND' && type !== 'GARAGE_OTHER';
+/** Land, gardens, garages and "other" have no rooms to count. */
+const NO_ROOMS: readonly PropertyType[] = ['LAND', 'GARDEN', 'GARAGE', 'OTHER'];
+const hasRoomsFor = (type: PropertyType) => !NO_ROOMS.includes(type);
 
 /** The place a pin found, written the way a person would say it: wide to narrow, one line. */
 const addressFrom = (place: {
@@ -124,7 +118,8 @@ export default function AddPropertyScreen({ navigation, route }: Props) {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [type, setType] = useState<PropertyType>(PROPERTY_TYPES[0]);
-  const [unit, setUnit] = useState<PropertyUnitType | null>(null);
+  // Which unit of a building ("واحد ۳"), as the owner writes it.
+  const [unit, setUnit] = useState('');
   const [deal, setDeal] = useState<DealType>('SALE');
   const [priceText, setPriceText] = useState('');
   const [currency, setCurrency] = useState<Currency>('AFGHANI');
@@ -224,7 +219,7 @@ export default function AddPropertyScreen({ navigation, route }: Props) {
     setTitle(property.title);
     setDescription(property.description);
     setType(property.type);
-    setUnit(property.unit_type ?? null);
+    setUnit(property.unit ?? '');
     setDeal(property.deal_type);
     setPriceText(String(property.price));
     setCurrency(property.currency);
@@ -309,10 +304,8 @@ export default function AddPropertyScreen({ navigation, route }: Props) {
   const pinned = coordinate !== null;
   const hasRooms = hasRoomsFor(type);
 
-  // What has been typed, written back as money / an area, so a mistyped zero is seen before it is sent.
-  const typedPrice = parseNumberInput(priceText);
-  const moneyHelper =
-    typedPrice === null ? undefined : formatCurrency(typedPrice, currency);
+  // The area typed so far, written back with its unit, so a mistyped zero is seen before it is sent. (The price
+  // needs no such line: its field already shows the amount grouped in thousands.)
   const typedArea = parseNumberInput(areaText);
   const areaHelper =
     typedArea === null
@@ -403,7 +396,7 @@ export default function AddPropertyScreen({ navigation, route }: Props) {
       title,
       description,
       type,
-      unit_type: unit,
+      unit: unit.trim() || null,
       deal_type: deal,
       price: price === null ? undefined : roundTo2(price),
       currency,
@@ -516,32 +509,23 @@ export default function AddPropertyScreen({ navigation, route }: Props) {
               key={p}
               label={t(`propertyType.${p}`)}
               selected={type === p}
-              onPress={() => {
-                setType(p);
-                // A unit belongs to one type: changing the type drops one that no longer fits.
-                if (unit && !PROPERTY_UNITS[p].includes(unit)) setUnit(null);
-              }}
+              onPress={() => setType(p)}
             />
           ))}
         </View>
 
-        <AppText variant="label" color={colors.textSecondary}>
-          {`${t('add.unit')} (${t('common.optional')})`}
-        </AppText>
-        <AppText variant="caption" color={colors.textMuted} style={styles.help}>
-          {t('add.unitHelp')}
-        </AppText>
-        <View style={styles.wrap} testID="unit-chips">
-          {PROPERTY_UNITS[type].map(u => (
-            <Chip
-              compact
-              key={u}
-              label={t(`unitType.${u}`)}
-              selected={unit === u}
-              onPress={() => setUnit(unit === u ? null : u)}
-            />
-          ))}
-        </View>
+        <TextField
+          label={`${t('add.unit')} (${t('common.optional')})`}
+          value={unit}
+          onChangeText={v => {
+            setUnit(v);
+            clearError('unit');
+          }}
+          placeholder={t('add.unitPlaceholder')}
+          helper={t('add.unitHelp')}
+          maxLength={PROPERTY_UNIT_MAX_LENGTH}
+          error={errors.unit}
+        />
 
         <AppText variant="label" color={colors.textSecondary}>
           {t('add.deal')}
@@ -569,7 +553,7 @@ export default function AddPropertyScreen({ navigation, route }: Props) {
           }}
           keyboardType="decimal-pad"
           placeholder={example(currency === 'USD' ? 25_000 : 2_500_000)}
-          helper={moneyHelper}
+          thousands
           error={errors.price}
         />
         <View style={styles.toggle}>

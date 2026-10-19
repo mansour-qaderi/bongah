@@ -24,23 +24,24 @@ import { useAuth } from '../../auth/AuthContext';
 import AppText from '../../components/AppText';
 import Banner from '../../components/Banner';
 import Button from '../../components/Button';
-import PromotionSheet from '../../components/PromotionSheet';
 import { Chip, ChipRow } from '../../components/Chip';
+import PromotionSheet from '../../components/PromotionSheet';
 import Fab from '../../components/Fab';
 import ListingCard, { type ListingAction } from '../../components/ListingCard';
 import { Screen } from '../../components/Screen';
 import { EmptyView, ErrorView, LoadingView } from '../../components/States';
 import { formatNumber } from '../../i18n/format';
 import { markDeleted, useDeletedListings } from '../../listings/deleted';
+import { useShareListing } from '../../share/listingShare';
 import type { RootStackParamList, TabParamList } from '../../navigation/types';
 import { colors, spacing } from '../../theme';
-import ListingsSummary from './ListingsSummary';
 
 type Props = CompositeScreenProps<
   BottomTabScreenProps<TabParamList, 'MyListings'>,
   NativeStackScreenProps<RootStackParamList>
 >;
 
+/** The tabs above the list: everything, or only the listings in one status. */
 type StatusFilter = 'ALL' | PropertyStatus;
 const STATUS_FILTERS: StatusFilter[] = ['ALL', 'ACTIVE', 'SOLD', 'ARCHIVED'];
 
@@ -75,6 +76,7 @@ export default function MyListingsScreen({ navigation }: Props) {
   const properties = flattenPages(query.data).filter(
     property => !deleted.includes(property.id),
   );
+  const share = useShareListing();
   const [promoting, setPromoting] = useState<Property | null>(null);
   const [filter, setFilter] = useState<StatusFilter>('ALL');
 
@@ -115,24 +117,39 @@ export default function MyListingsScreen({ navigation }: Props) {
     ]);
 
   /**
-   * An active listing can be promoted, marked traded, switched off, edited or deleted; one that is not active
-   * (traded or switched off) can be switched back on, edited or deleted. While one action runs, that button shows
-   * a spinner and the listing's other buttons wait, so two changes can never race.
+   * Every listing shows two buttons, Edit and Share, and a "more" button whose sheet holds the rest. An active
+   * listing can be promoted, marked traded, switched off or deleted; one that is not active (traded or switched
+   * off) can be switched back on or deleted. While one action runs, the "more" button shows a spinner and the
+   * listing's other buttons wait, so two changes can never race.
    */
-  const actionsFor = (property: Property): ListingAction[] => {
+  const actionsFor = (
+    property: Property,
+  ): { actions: ListingAction[]; menu: ListingAction[] } => {
     const busy = change.isPending && change.variables?.id === property.id;
     const state = (kind: Change['kind']) => ({
       loading: busy && change.variables?.kind === kind,
       disabled: busy,
     });
-    const edit: ListingAction = {
-      label: t('my.edit'),
-      disabled: busy,
-      onPress: () =>
-        navigation.navigate('AddProperty', { propertyId: property.id }),
-    };
+    const primary: ListingAction[] = [
+      {
+        label: t('my.edit'),
+        icon: 'edit',
+        disabled: busy,
+        onPress: () =>
+          navigation.navigate('AddProperty', { propertyId: property.id }),
+      },
+      {
+        label: t('property.share'),
+        icon: 'share',
+        disabled: busy,
+        onPress: () => {
+          share(property);
+        },
+      },
+    ];
     const remove: ListingAction = {
       label: t('common.delete'),
+      icon: 'trash',
       tone: 'danger',
       ...state('delete'),
       onPress: () =>
@@ -145,51 +162,59 @@ export default function MyListingsScreen({ navigation }: Props) {
         ),
     };
     if (property.status === 'ACTIVE') {
-      return [
-        {
-          label: t('my.promote'),
-          tone: 'brand',
-          disabled: busy,
-          onPress: () => setPromoting(property),
-        },
-        {
-          label: t('my.markSold'),
-          ...state('sold'),
-          onPress: () =>
-            confirm(
-              property,
-              'sold',
-              t('my.markSoldConfirm'),
-              t('my.markSold'),
-              false,
-            ),
-        },
-        {
-          label: t('my.archive'),
-          ...state('deactivate'),
-          onPress: () =>
-            confirm(
-              property,
-              'deactivate',
-              t('my.archiveConfirm'),
-              t('my.archive'),
-              false,
-            ),
-        },
-        edit,
-        remove,
-      ];
+      return {
+        actions: primary,
+        menu: [
+          {
+            label: t('my.promote'),
+            icon: 'arrowUp',
+            tone: 'brand',
+            disabled: busy,
+            onPress: () => setPromoting(property),
+          },
+          {
+            label: t('my.markSold'),
+            icon: 'check',
+            ...state('sold'),
+            onPress: () =>
+              confirm(
+                property,
+                'sold',
+                t('my.markSoldConfirm'),
+                t('my.markSold'),
+                false,
+              ),
+          },
+          {
+            label: t('my.archive'),
+            icon: 'toggleOff',
+            ...state('deactivate'),
+            onPress: () =>
+              confirm(
+                property,
+                'deactivate',
+                t('my.archiveConfirm'),
+                t('my.archive'),
+                false,
+              ),
+          },
+          remove,
+        ],
+      };
     }
-    return [
-      {
-        label: t('my.activate'),
-        tone: 'brand',
-        ...state('activate'),
-        onPress: () => change.mutate({ id: property.id, kind: 'activate' }),
-      },
-      edit,
-      remove,
-    ];
+    return {
+      actions: primary,
+      menu: [
+        {
+          label: t('my.activate'),
+          icon: 'toggleOn',
+          tone: 'brand',
+          ...state('activate'),
+          onPress: () => change.mutate({ id: property.id, kind: 'activate' }),
+        },
+        remove,
+      ],
+    };
   };
 
   const counts: Record<StatusFilter, number> = {
@@ -224,57 +249,67 @@ export default function MyListingsScreen({ navigation }: Props) {
     );
   else
     body = (
-      <FlatList
-        data={shown}
-        keyExtractor={p => p.id}
-        contentContainerStyle={styles.list}
-        ListHeaderComponent={
-          <View style={styles.header}>
-            <ListingsSummary properties={properties} />
-            <AppText
-              variant="label"
-              color={colors.textMuted}
-              style={styles.count}
-            >
-              {t('my.count', { count: formatNumber(properties.length, 0) })}
-            </AppText>
-            <ChipRow style={styles.filters}>
-              {STATUS_FILTERS.map(value => (
-                <Chip
-                  key={value}
-                  label={
-                    value === 'ALL' ? t('my.filterAll') : t(`status.${value}`)
+      <View style={styles.flex}>
+        {/* The tabs sit above the list, not inside it, so they stay put while the cards scroll. */}
+        <View style={styles.header}>
+          <AppText
+            variant="label"
+            color={colors.textMuted}
+            style={styles.count}
+          >
+            {t('my.count', { count: formatNumber(shown.length, 0) })}
+          </AppText>
+          <ChipRow style={styles.filters}>
+            {STATUS_FILTERS.map(value => (
+              <Chip
+                key={value}
+                label={
+                  value === 'ALL' ? t('my.filterAll') : t(`status.${value}`)
+                }
+                count={counts[value]}
+                selected={filter === value}
+                onPress={() => setFilter(value)}
+              />
+            ))}
+          </ChipRow>
+        </View>
+        {shown.length === 0 ? (
+          <EmptyView message={t('my.emptyFilter')} />
+        ) : (
+          <FlatList
+            // A new list for each tab: nothing of the last tab's rows (or its scroll position) is carried over.
+            key={filter}
+            data={shown}
+            keyExtractor={p => p.id}
+            contentContainerStyle={styles.list}
+            renderItem={({ item }) => {
+              const { actions, menu } = actionsFor(item);
+              return (
+                <ListingCard
+                  property={item}
+                  actions={actions}
+                  menu={menu}
+                  onPress={() =>
+                    navigation.navigate('PropertyDetails', { id: item.id })
                   }
-                  count={counts[value]}
-                  selected={filter === value}
-                  onPress={() => setFilter(value)}
                 />
-              ))}
-            </ChipRow>
-          </View>
-        }
-        renderItem={({ item }) => (
-          <ListingCard
-            property={item}
-            actions={actionsFor(item)}
-            onPress={() =>
-              navigation.navigate('PropertyDetails', { id: item.id })
+              );
+            }}
+            onEndReached={() => {
+              if (query.hasNextPage && !query.isFetchingNextPage)
+                query.fetchNextPage();
+            }}
+            onEndReachedThreshold={0.6}
+            refreshing={query.isRefetching && !query.isFetchingNextPage}
+            onRefresh={() => query.refetch()}
+            ListFooterComponent={
+              query.isFetchingNextPage ? (
+                <ActivityIndicator color={colors.primary} />
+              ) : undefined
             }
           />
         )}
-        onEndReached={() => {
-          if (query.hasNextPage && !query.isFetchingNextPage)
-            query.fetchNextPage();
-        }}
-        onEndReachedThreshold={0.6}
-        refreshing={query.isRefetching && !query.isFetchingNextPage}
-        onRefresh={() => query.refetch()}
-        ListFooterComponent={
-          query.isFetchingNextPage ? (
-            <ActivityIndicator color={colors.primary} />
-          ) : undefined
-        }
-      />
+      </View>
     );
 
   return (
@@ -300,9 +335,9 @@ const styles = StyleSheet.create({
   banner: { padding: spacing.lg, paddingBottom: 0 },
   // Room under the last card for the floating button.
   list: { paddingBottom: 104 },
-  header: { paddingTop: spacing.md, gap: spacing.xs },
+  flex: { flex: 1 },
+  header: { paddingTop: spacing.md },
   count: { paddingHorizontal: spacing.lg },
-  // The chips sit in a row of their own, with room around them to breathe.
   filters: { paddingHorizontal: spacing.lg, paddingVertical: spacing.md },
   hint: { textAlign: 'center' },
 });

@@ -5,19 +5,13 @@ import { Platform } from 'react-native';
  *
  * In development the API runs on the developer's computer: the Android emulator reaches it at
  * 10.0.2.2, the iOS simulator at localhost. A physical phone needs the computer's LAN address
- * instead — set DEV_API_HOST below. Production must be HTTPS.
+ * instead — set DEV_API_HOST below. Release builds (`__DEV__` false) use PRODUCTION_API_URL, which must be
+ * HTTPS and have no trailing slash. It is the API's Render web service; change it here if the service is
+ * renamed or moved behind a custom domain.
  */
-const DEV_API_HOST: string | null = '192.168.0.104';
-const DEV_API_PORT = 3000;
-const PRODUCTION_API_URL = 'https://api.bongah.af';
+const PRODUCTION_API_URL = 'https://bongah.onrender.com';
 
-function devApiUrl(): string {
-  const host =
-    DEV_API_HOST ?? (Platform.OS === 'android' ? '10.0.2.2' : 'localhost');
-  return `http://${host}:${DEV_API_PORT}`;
-}
-
-export const API_BASE_URL = __DEV__ ? devApiUrl() : PRODUCTION_API_URL;
+export const API_BASE_URL = PRODUCTION_API_URL;
 
 /**
  * Base map: OpenStreetMap raster tiles drawn by MapLibre. No account, no API key, no Google.

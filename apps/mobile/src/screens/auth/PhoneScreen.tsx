@@ -62,7 +62,7 @@ export default function PhoneScreen({ navigation }: Props) {
         ...(referralCode ? { referralCode } : {}),
       });
     } catch (error) {
-      setFailure(errorMessage(error, t));
+      setFailure(errorMessage(error, t, { sendingCode: true }));
     } finally {
       setLoading(false);
     }

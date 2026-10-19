@@ -14,7 +14,6 @@ import type {
   PricingKey,
   PropertyStatus,
   PropertyType,
-  PropertyUnitType,
   QuoteCategory,
   RewardReason,
   RewardType,
@@ -88,8 +87,8 @@ export interface Property {
   title: string;
   description: string;
   type: PropertyType;
-  /** The kind of unit within the type (a duplex, a studio…). Null when the owner did not say; absent from an older API. */
-  unit_type?: PropertyUnitType | null;
+  /** Which unit of a building it is ("واحد ۳"), as the owner wrote it. Null when the owner did not say. */
+  unit?: string | null;
   deal_type: DealType;
   /** Up to 2 decimals. Safe as a JSON number (the column holds at most 14 digits). */
   price: number;

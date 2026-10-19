@@ -17,9 +17,12 @@ export const PROPERTY_ICONS: Record<PropertyType, string> = {
   APARTMENT: '🏢',
   HOUSE_HAWILI: '🏠',
   LAND: '🏞️',
-  OFFICE_SHOP: '🏬',
-  GARDEN_VILLA: '🏡',
-  GARAGE_OTHER: '🚗',
+  SHOP: '🏪',
+  OFFICE: '🏬',
+  GARDEN: '🌳',
+  VILLA: '🏡',
+  GARAGE: '🚗',
+  OTHER: '📦',
 };
 
 /** The line icon for each kind of property: what the marker shows, so the type reads before the price does. */
@@ -27,9 +30,12 @@ export const PROPERTY_LINE_ICONS: Record<PropertyType, IconName> = {
   APARTMENT: 'apartment',
   HOUSE_HAWILI: 'house',
   LAND: 'land',
-  OFFICE_SHOP: 'shop',
-  GARDEN_VILLA: 'villa',
-  GARAGE_OTHER: 'garage',
+  SHOP: 'shop',
+  OFFICE: 'office',
+  GARDEN: 'garden',
+  VILLA: 'villa',
+  GARAGE: 'garage',
+  OTHER: 'more',
 };
 
 /** Who is selling, for a marker: the agency's name, or "owner" for a private seller. */

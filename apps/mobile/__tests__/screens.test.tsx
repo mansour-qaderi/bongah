@@ -131,13 +131,22 @@ describe('AddPropertyScreen', () => {
     expect(tree.root.findAllByType(TextInput)).toHaveLength(0);
   });
 
-  it('lists every property type the API accepts, including garden villa', async () => {
+  it('lists every property type the API accepts, each as its own chip', async () => {
     mockAuth = { status: 'signedIn', user };
     const tree = await render(withQuery(<AddPropertyScreen {...addProps()} />));
     const text = allText(tree.root);
     for (const label of Object.values(prs.propertyType))
       expect(text).toContain(label);
-    expect(Object.keys(prs.propertyType)).toContain('GARDEN_VILLA');
+    expect(Object.keys(prs.propertyType)).toEqual(
+      expect.arrayContaining([
+        'SHOP',
+        'OFFICE',
+        'GARDEN',
+        'VILLA',
+        'GARAGE',
+        'OTHER',
+      ]),
+    );
   });
 
   it('groups the form into four titled cards, in the order a listing is described', async () => {

@@ -29,7 +29,6 @@ import type {
   Property,
   PropertyImageUploaded,
   PropertyType,
-  PropertyUnitType,
   RedeemLadderTokenResponse,
   ReferralSummary,
   SendOtpResponse,
@@ -132,9 +131,11 @@ export const removePushDevice = (token: string) =>
 export interface PropertyFilters {
   province?: string;
   district?: string;
-  type?: PropertyType;
-  /** The unit within the type (a duplex, a studio…); only meaningful together with `type`. */
-  unit_type?: PropertyUnitType;
+  /**
+   * Any of these kinds of property (a house or an apartment). Sent as one comma-separated `types` parameter; the
+   * API's older single `type` is no longer sent by the app.
+   */
+  types?: PropertyType[];
   deal_type?: DealType;
   min_price?: number;
   max_price?: number;
@@ -164,6 +165,7 @@ export const listProperties = (
   request<Paginated<Property>>('GET', '/properties', {
     query: {
       ...filters,
+      types: filters.types?.length ? filters.types.join(',') : undefined,
       min_lat: degrees(filters.min_lat),
       max_lat: degrees(filters.max_lat),
       min_lng: degrees(filters.min_lng),

@@ -39,7 +39,7 @@ const property = (overrides: Partial<Property> = {}): Property => ({
   title: 'خانه سه خوابه در شهر نو',
   description: '',
   type: 'HOUSE_HAWILI',
-  unit_type: null,
+  unit: null,
   deal_type: 'SALE',
   price: 1200000,
   currency: 'AFGHANI',

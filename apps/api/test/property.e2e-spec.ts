@@ -60,9 +60,9 @@ describe.skipIf(!hasDb)('Properties (e2e)', () => {
       expect(res.body.laddered_at).toBe(res.body.created_at);
     });
 
-    it('accepts every property type, including GARDEN_VILLA and GARAGE_OTHER, and returns it unchanged', async () => {
+    it('accepts every property type, each as its own kind, and returns it unchanged', async () => {
       const admin = await ctx.user(Role.ADMIN); // no monthly cap, so one user can try every type
-      for (const type of ['HOUSE_HAWILI', 'APARTMENT', 'OFFICE_SHOP', 'LAND', 'GARDEN_VILLA', 'GARAGE_OTHER']) {
+      for (const type of ['HOUSE_HAWILI', 'APARTMENT', 'SHOP', 'OFFICE', 'LAND', 'GARDEN', 'VILLA', 'GARAGE', 'OTHER']) {
         const res = await ctx.post('/properties', propertyBody({ type }), admin.token).expect(201);
         expect(res.body.type).toBe(type);
         const stored = await ctx.prisma.property.findUniqueOrThrow({ where: { id: res.body.id } });
@@ -273,22 +273,37 @@ describe.skipIf(!hasDb)('Properties (e2e)', () => {
       expect(await ids('max_price=600&currency=AFGHANI')).toBe(1);
     });
 
-    it('filters by GARAGE_OTHER', async () => {
+    it('filters by several types at once (types=A,B), and still by the single older `type`', async () => {
       const owner = await ctx.user();
       const province = uniqueProvince();
-      await seed(owner, { province, type: 'GARAGE_OTHER' });
+      await seed(owner, { province, type: 'APARTMENT' });
+      await seed(owner, { province, type: 'HOUSE_HAWILI' });
       await seed(owner, { province, type: 'LAND' });
-      const res = await ctx.get(`/properties?province=${province}&type=GARAGE_OTHER`).expect(200);
-      expect(res.body.data.map((p: { type: string }) => p.type)).toEqual(['GARAGE_OTHER']);
+      const kinds = async (qs: string) =>
+        (await ctx.get(`/properties?province=${province}&${qs}`).expect(200)).body.data
+          .map((p: { type: string }) => p.type)
+          .sort();
+      expect(await kinds('types=APARTMENT,HOUSE_HAWILI')).toEqual(['APARTMENT', 'HOUSE_HAWILI']);
+      expect(await kinds('types=LAND')).toEqual(['LAND']);
+      expect(await kinds('type=LAND')).toEqual(['LAND']);
+      await ctx.get(`/properties?province=${province}&types=APARTMENT,CASTLE`).expect(400);
+      await ctx.get(`/properties?province=${province}&type=LAND&types=LAND`).expect(400);
     });
 
-    it('filters by GARDEN_VILLA', async () => {
+    it('filters by GARAGE, and by each of the types that used to be paired', async () => {
       const owner = await ctx.user();
       const province = uniqueProvince();
-      await seed(owner, { province, type: 'GARDEN_VILLA' });
+      const kinds = ['SHOP', 'OFFICE', 'GARDEN', 'VILLA', 'GARAGE', 'OTHER'];
+      for (const type of kinds) await seed(owner, { province, type });
       await seed(owner, { province, type: 'LAND' });
-      const res = await ctx.get(`/properties?province=${province}&type=GARDEN_VILLA`).expect(200);
-      expect(res.body.data.map((p: { type: string }) => p.type)).toEqual(['GARDEN_VILLA']);
+      for (const type of kinds) {
+        const res = await ctx.get(`/properties?province=${province}&type=${type}`).expect(200);
+        expect(res.body.data.map((p: { type: string }) => p.type)).toEqual([type]);
+      }
+      // The old combined names are gone.
+      await ctx.get(`/properties?province=${province}&type=OFFICE_SHOP`).expect(400);
+      await ctx.get(`/properties?province=${province}&type=GARDEN_VILLA`).expect(400);
+      await ctx.get(`/properties?province=${province}&type=GARAGE_OTHER`).expect(400);
     });
 
     it('treats Arabic and Persian spellings of a place as the same place', async () => {
@@ -449,11 +464,11 @@ describe.skipIf(!hasDb)('Properties (e2e)', () => {
       expect(res.body.laddered_at).toBe(created.laddered_at);
     });
 
-    it('lets the owner change a listing to GARDEN_VILLA', async () => {
+    it('lets the owner change a listing to VILLA', async () => {
       const owner = await ctx.user();
       const target = await seed(owner);
-      const res = await ctx.patch(`/properties/${target.id}`, { type: 'GARDEN_VILLA' }, owner.token).expect(200);
-      expect(res.body.type).toBe('GARDEN_VILLA');
+      const res = await ctx.patch(`/properties/${target.id}`, { type: 'VILLA' }, owner.token).expect(200);
+      expect(res.body.type).toBe('VILLA');
     });
 
     it('lets the owner mark a listing sold, which removes it from search', async () => {
@@ -496,76 +511,47 @@ describe.skipIf(!hasDb)('Properties (e2e)', () => {
   });
 
   describe('the unit of a property', () => {
-    it('is stored and returned when it belongs to the type, and is null when none is given', async () => {
+    it('is stored and returned as the owner wrote it, and is null when none is given', async () => {
       const admin = await ctx.user(Role.ADMIN);
       const plain = await ctx.post('/properties', propertyBody(), admin.token).expect(201);
-      expect(plain.body.unit_type).toBeNull();
+      expect(plain.body.unit).toBeNull();
+      expect(plain.body).not.toHaveProperty('unit_type');
 
-      const duplex = await ctx.post('/properties', propertyBody({ type: 'HOUSE_HAWILI', unit_type: 'DUPLEX' }), admin.token).expect(201);
-      expect(duplex.body).toMatchObject({ type: 'HOUSE_HAWILI', unit_type: 'DUPLEX' });
-      const stored = await ctx.prisma.property.findUniqueOrThrow({ where: { id: duplex.body.id } });
-      expect(stored.unitType).toBe('DUPLEX');
-      expect((await ctx.get(`/properties/${duplex.body.id}`).expect(200)).body.unit_type).toBe('DUPLEX');
+      const third = await ctx.post('/properties', propertyBody({ unit: '  واحد   ۳ ' }), admin.token).expect(201);
+      expect(third.body.unit).toBe('واحد ۳');
+      const stored = await ctx.prisma.property.findUniqueOrThrow({ where: { id: third.body.id } });
+      expect(stored.unit).toBe('واحد ۳');
+      expect((await ctx.get(`/properties/${third.body.id}`).expect(200)).body.unit).toBe('واحد ۳');
     });
 
-    it('refuses a unit that belongs to another type, and an unknown one', async () => {
+    it('stores a blank unit as null, and refuses one that is too long or the old unit_type', async () => {
       const admin = await ctx.user(Role.ADMIN);
-      await ctx.post('/properties', propertyBody({ type: 'APARTMENT', unit_type: 'DUPLEX' }), admin.token).expect(400);
-      await ctx.post('/properties', propertyBody({ unit_type: 'PALACE' }), admin.token).expect(400);
-    });
-
-    it('filters the public search by unit, only together with its type', async () => {
-      const owner = await ctx.user();
-      const province = uniqueProvince();
-      await seed(owner, { province, type: 'HOUSE_HAWILI', unitType: 'DUPLEX' });
-      await seed(owner, { province, type: 'HOUSE_HAWILI', unitType: 'HAWILI' });
-      await seed(owner, { province, type: 'HOUSE_HAWILI' });
-      const count = async (qs: string) =>
-        (await ctx.get(`/properties?province=${encodeURIComponent(province)}&${qs}`).expect(200)).body.data.length;
-      expect(await count('type=HOUSE_HAWILI')).toBe(3);
-      expect(await count('type=HOUSE_HAWILI&unit_type=DUPLEX')).toBe(1);
-      expect(await count('type=HOUSE_HAWILI&unit_type=HAWILI')).toBe(1);
-      await ctx.get(`/properties?province=${encodeURIComponent(province)}&type=APARTMENT&unit_type=DUPLEX`).expect(400);
+      const blank = await ctx.post('/properties', propertyBody({ unit: '   ' }), admin.token).expect(201);
+      expect(blank.body.unit).toBeNull();
+      await ctx.post('/properties', propertyBody({ unit: 'x'.repeat(41) }), admin.token).expect(400);
+      await ctx.post('/properties', propertyBody({ unit_type: 'DUPLEX' }), admin.token).expect(400);
     });
 
     it('lets the owner set, change and clear it', async () => {
       const owner = await ctx.user();
-      const target = await seed(owner, { type: 'HOUSE_HAWILI' });
-      const set = await ctx.patch(`/properties/${target.id}`, { unit_type: 'DUPLEX' }, owner.token).expect(200);
-      expect(set.body.unit_type).toBe('DUPLEX');
-      const changed = await ctx.patch(`/properties/${target.id}`, { unit_type: 'VILLA_HOUSE' }, owner.token).expect(200);
-      expect(changed.body.unit_type).toBe('VILLA_HOUSE');
-      const cleared = await ctx.patch(`/properties/${target.id}`, { unit_type: null }, owner.token).expect(200);
-      expect(cleared.body.unit_type).toBeNull();
-    });
-
-    it('checks a unit sent alone against the stored type', async () => {
-      const owner = await ctx.user();
       const target = await seed(owner, { type: 'APARTMENT' });
-      await ctx.patch(`/properties/${target.id}`, { unit_type: 'DUPLEX' }, owner.token).expect(400);
-      await ctx.patch(`/properties/${target.id}`, { unit_type: 'STUDIO' }, owner.token).expect(200);
+      const set = await ctx.patch(`/properties/${target.id}`, { unit: 'واحد ۲' }, owner.token).expect(200);
+      expect(set.body.unit).toBe('واحد ۲');
+      const changed = await ctx.patch(`/properties/${target.id}`, { unit: 'طبقه سوم' }, owner.token).expect(200);
+      expect(changed.body.unit).toBe('طبقه سوم');
+      const cleared = await ctx.patch(`/properties/${target.id}`, { unit: null }, owner.token).expect(200);
+      expect(cleared.body.unit).toBeNull();
+      const again = await ctx.patch(`/properties/${target.id}`, { unit: 'واحد ۲' }, owner.token).expect(200);
+      const blank = await ctx.patch(`/properties/${target.id}`, { unit: '' }, owner.token).expect(200);
+      expect(again.body.unit).toBe('واحد ۲');
+      expect(blank.body.unit).toBeNull();
     });
 
-    it('clears a stored unit when the type is changed to one that does not have it', async () => {
+    it('is kept when something else is edited, including the type', async () => {
       const owner = await ctx.user();
-      const target = await seed(owner, { type: 'HOUSE_HAWILI', unitType: 'DUPLEX' });
-      const res = await ctx.patch(`/properties/${target.id}`, { type: 'APARTMENT' }, owner.token).expect(200);
-      expect(res.body).toMatchObject({ type: 'APARTMENT', unit_type: null });
-    });
-
-    it('keeps a stored unit when the type is sent again unchanged, or changes to one that has it', async () => {
-      const owner = await ctx.user();
-      const target = await seed(owner, { type: 'HOUSE_HAWILI', unitType: 'DUPLEX' });
-      const res = await ctx.patch(`/properties/${target.id}`, { type: 'HOUSE_HAWILI', title: 'Same type' }, owner.token).expect(200);
-      expect(res.body.unit_type).toBe('DUPLEX');
-    });
-
-    it('takes a new type and a matching unit in one edit', async () => {
-      const owner = await ctx.user();
-      const target = await seed(owner, { type: 'HOUSE_HAWILI', unitType: 'DUPLEX' });
-      const res = await ctx.patch(`/properties/${target.id}`, { type: 'APARTMENT', unit_type: 'PENTHOUSE' }, owner.token).expect(200);
-      expect(res.body).toMatchObject({ type: 'APARTMENT', unit_type: 'PENTHOUSE' });
-      await ctx.patch(`/properties/${target.id}`, { type: 'LAND', unit_type: 'PENTHOUSE' }, owner.token).expect(400);
+      const target = await seed(owner, { type: 'APARTMENT', unit: 'واحد ۵' });
+      const res = await ctx.patch(`/properties/${target.id}`, { type: 'OFFICE', title: 'Now an office' }, owner.token).expect(200);
+      expect(res.body).toMatchObject({ type: 'OFFICE', unit: 'واحد ۵' });
     });
   });
 

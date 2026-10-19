@@ -1,5 +1,6 @@
 import React from 'react';
 import { StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
+import { useTranslation } from 'react-i18next';
 import type { DealType } from '@bongah/shared-types';
 import { colors, dealColors, radius, spacing } from '../theme';
 import AppText from './AppText';
@@ -39,8 +40,8 @@ export type BadgeToneName = keyof typeof badgeTones;
 
 /**
  * What a deal looks like: `solid` is the filled pill (emerald sale, blue rent, gold growi) for sitting on a
- * picture; `outline` is white with a 1 px edge and a dot in the deal's colour, for a row where a solid green
- * badge would be confused with a "live" status.
+ * picture; `outline` is white with a 1 px edge, for a row where a solid green badge would be confused with a
+ * "live" status.
  */
 export function dealTone(
   deal: DealType,
@@ -55,11 +56,34 @@ interface Props {
   label: string;
   /** A named tone, or a custom one. */
   tone?: BadgeToneName | BadgeTone;
-  /** A small filled dot before the label: for a status ("active") rather than a category. */
+  /** A small filled dot before the label: a status ("active") or the kind of deal. */
   dot?: boolean;
   /** Overrides the dot's colour (the deal's own colour on an outline badge). */
   dotColor?: string;
   style?: StyleProp<ViewStyle>;
+}
+
+/**
+ * The tag for a kind of deal (for sale, rent, mortgage): a solid rounded pill in the deal's colour with a small
+ * dot, in the pill's own ink, before the word. Every card that names the deal (list cards, My Listings, the details
+ * page, map cards) uses this one component, so the tag looks the same everywhere.
+ */
+export function DealBadge({
+  deal,
+  style,
+}: {
+  deal: DealType;
+  style?: StyleProp<ViewStyle>;
+}) {
+  const { t } = useTranslation();
+  return (
+    <Badge
+      dot
+      label={t(`dealType.${deal}`)}
+      tone={dealTone(deal)}
+      style={style}
+    />
+  );
 }
 
 /** A small rounded label: a transaction type, a status, a plan. */

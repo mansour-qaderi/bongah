@@ -29,19 +29,25 @@ enum Role {
   @@map("role")
 }
 
+/// One kind each (a shop and an office are two types, a garden and a villa are two, a garage and "other" are two).
+/// Must match PROPERTY_TYPES in @bongah/shared-types.
 enum PropertyType {
   APARTMENT
   HOUSE_HAWILI
   LAND
-  OFFICE_SHOP
-  GARDEN_VILLA
-  GARAGE_OTHER
+  SHOP
+  OFFICE
+  GARDEN
+  VILLA
+  GARAGE
+  OTHER
 
   @@map("property_type")
 }
 
-/// The kind of unit within a property type (a duplex or a courtyard house within HOUSE_HAWILI, a studio within
-/// APARTMENT…). Optional on a listing. Which units belong to which type lives in @bongah/shared-types (PROPERTY_UNITS).
+/// LEGACY: the old list of unit sub-types (a duplex within a house, a studio within an apartment…). Nothing reads or
+/// writes it any more: a listing's unit is now free text (`properties.unit`). Kept so no data is lost; a later
+/// migration can drop it together with `properties.unit_type`.
 enum PropertyUnit {
   HAWILI
   DUPLEX
@@ -390,7 +396,9 @@ model Property {
   title         String
   description   String
   type          PropertyType
-  /// Optional sub-type of `type` (see PropertyUnit). Cleared when the type changes to one that does not have it.
+  /// Which unit of a building ("واحد ۳"), free text the owner writes. Null when not given.
+  unit          String?        @db.VarChar(40)
+  /// LEGACY, unused (see PropertyUnit).
   unitType      PropertyUnit?  @map("unit_type")
   dealType      DealType       @map("deal_type")
   price         Decimal        @db.Decimal(14, 2)

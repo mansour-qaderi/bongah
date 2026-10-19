@@ -7,7 +7,7 @@ import { PROPERTY_LINE_ICONS } from '../map/markers';
 import { useShareListing } from '../share/listingShare';
 import { colors, spacing, surfaces } from '../theme';
 import AppText from './AppText';
-import Badge, { badgeTones, dealTone } from './Badge';
+import Badge, { badgeTones, DealBadge } from './Badge';
 import BookmarkButton from './BookmarkButton';
 import Icon from './Icon';
 import Price from './Price';
@@ -67,11 +67,7 @@ export default function PropertyCard({ property, onPress }: Props) {
             </View>
           )}
           <View style={styles.badges} pointerEvents="none">
-            <Badge
-              dot
-              label={t(`dealType.${property.deal_type}`)}
-              tone={dealTone(property.deal_type)}
-            />
+            <DealBadge deal={property.deal_type} />
             {property.is_featured ? (
               <Badge label={t('property.featured')} tone={badgeTones.warning} />
             ) : null}

@@ -125,6 +125,97 @@ describe('TextField digits', () => {
     expect(allText(tree.root)).not.toContain('۱٬۲۰۰٬۰۰۰ ؋');
   });
 
+  describe('on a digits-only keyboard (no Latin digit is ever on screen)', () => {
+    const flat = (node: ReactTestRenderer.ReactTestInstance) =>
+      StyleSheet.flatten(node.props.style) as Record<string, unknown>;
+    const overlay = (tree: ReactTestRenderer.ReactTestRenderer) =>
+      tree.root.findAll(node => node.props.testID === 'digits-overlay');
+
+    it("hides the input's own text and draws the Persian text over it", async () => {
+      const tree = await field({
+        value: '1200000',
+        keyboardType: 'number-pad',
+      });
+      expect(flat(input(tree)).color).toBe('transparent');
+      const drawn = overlay(tree).filter(node => typeof node.type === 'string');
+      expect(drawn.length).toBeGreaterThan(0);
+      expect(drawn[0].props.children).toBe('۱۲۰۰۰۰۰');
+    });
+
+    it('draws the grouped amount, and lays it out like the input does', async () => {
+      const tree = await field({
+        value: '1300000',
+        keyboardType: 'decimal-pad',
+        thousands: true,
+      });
+      const drawn = overlay(tree).filter(
+        node => typeof node.type === 'string',
+      )[0];
+      expect(drawn.props.children).toBe('۱,۳۰۰,۰۰۰');
+      const typed = flat(input(tree));
+      const over = flat(drawn);
+      for (const key of ['fontFamily', 'fontSize', 'textAlign'] as const) {
+        expect(over[key]).toBe(typed[key]);
+      }
+    });
+
+    it('shows the overlay in a left-to-right field too, aligned the same way as the input', async () => {
+      const tree = await field({
+        value: '0701234567',
+        keyboardType: 'phone-pad',
+        ltr: true,
+      });
+      const drawn = overlay(tree).filter(
+        node => typeof node.type === 'string',
+      )[0];
+      expect(flat(input(tree)).textAlign).toBe('left');
+      expect(flat(drawn).textAlign).toBe('left');
+      expect(flat(drawn).writingDirection).toBe('ltr');
+    });
+
+    it('follows what the screen hands back, never what the keyboard typed', async () => {
+      function Typed() {
+        const [value, setValue] = React.useState('');
+        return (
+          <TextField
+            label="x"
+            keyboardType="number-pad"
+            value={value}
+            onChangeText={setValue}
+          />
+        );
+      }
+      const tree = await render(<Typed />);
+      await act(async () => input(tree).props.onChangeText('7'));
+      const drawn = overlay(tree).filter(
+        node => typeof node.type === 'string',
+      )[0];
+      expect(drawn.props.children).toBe('۷');
+      expect(drawn.props.children).not.toMatch(/[0-9]/);
+    });
+
+    it('draws nothing while the field is empty (the placeholder shows)', async () => {
+      const tree = await field({ value: '', keyboardType: 'number-pad' });
+      expect(overlay(tree)).toHaveLength(0);
+    });
+
+    it('is not used for text fields, multi-line fields, or digits kept as typed', async () => {
+      for (const props of [
+        { value: '12' },
+        { value: '12', keyboardType: 'number-pad' as const, multiline: true },
+        {
+          value: '12',
+          keyboardType: 'number-pad' as const,
+          digits: 'keep' as const,
+        },
+      ]) {
+        const tree = await field(props);
+        expect(overlay(tree)).toHaveLength(0);
+        expect(flat(input(tree)).color).not.toBe('transparent');
+      }
+    });
+  });
+
   describe('while it is being typed in', () => {
     /** A parent that keeps the value in state, like every screen does. */
     function Controlled({ seen }: { seen: string[] }) {
@@ -147,36 +238,36 @@ describe('TextField digits', () => {
     const shown = (tree: ReactTestRenderer.ReactTestRenderer) =>
       input(tree).props.value as string;
 
-    it('shows exactly what the keyboard produced, never a converted copy, so nothing jumps', async () => {
+    it('shows Western digits as Persian ones the moment they are typed, and hands the screen plain 0-9', async () => {
       const seen: string[] = [];
       const tree = await render(<Controlled seen={seen} />);
       await act(async () => input(tree).props.onFocus({}));
       for (const text of ['1', '12', '120', '1200']) {
         await typeInto(tree, text);
-        expect(shown(tree)).toBe(text); // Western digits stay Western while typing
       }
+      expect(shown(tree)).toBe('۱۲۰۰');
       expect(seen).toEqual(['1', '12', '120', '1200']);
     });
 
-    it('does the same for a Persian or Arabic keyboard, and still hands the screen plain 0-9', async () => {
+    it('does the same for a Persian or Arabic keyboard', async () => {
       const seen: string[] = [];
       const tree = await render(<Controlled seen={seen} />);
       await act(async () => input(tree).props.onFocus({}));
       await typeInto(tree, '۱۲');
       expect(shown(tree)).toBe('۱۲');
       await typeInto(tree, '۱۲٣');
-      expect(shown(tree)).toBe('۱۲٣');
+      expect(shown(tree)).toBe('۱۲۳');
       expect(seen).toEqual(['12', '123']);
     });
 
-    it('turns the digits Persian when the person leaves the field, and back to plain ones on return', async () => {
+    it('keeps showing Persian digits when the person leaves the field and comes back', async () => {
       const tree = await render(<Controlled seen={[]} />);
       await act(async () => input(tree).props.onFocus({}));
       await typeInto(tree, '1200');
       await act(async () => input(tree).props.onBlur({}));
       expect(shown(tree)).toBe('۱۲۰۰');
       await act(async () => input(tree).props.onFocus({}));
-      expect(shown(tree)).toBe('1200');
+      expect(shown(tree)).toBe('۱۲۰۰');
     });
 
     it('lets the screen change the text under it (a slider, a clear button) without fuss', async () => {
@@ -189,7 +280,86 @@ describe('TextField digits', () => {
           <TextField label="x" value="5000" onChangeText={() => {}} />,
         );
       });
-      expect(shown(tree)).toBe('5000');
+      expect(shown(tree)).toBe('۵۰۰۰');
+    });
+
+    describe('an amount (thousands)', () => {
+      function Amount({ seen }: { seen: string[] }) {
+        const [value, setValue] = React.useState('');
+        return (
+          <TextField
+            label="قیمت"
+            thousands
+            value={value}
+            onChangeText={v => {
+              seen.push(v);
+              setValue(v);
+            }}
+          />
+        );
+      }
+
+      it('groups the digits in thousands inside the field as they are typed, and hands the screen plain digits', async () => {
+        const seen: string[] = [];
+        const tree = await render(<Amount seen={seen} />);
+        await act(async () => input(tree).props.onFocus({}));
+        let typed = '';
+        for (const digit of '1300000') {
+          // The keyboard adds one character to the text the field is showing.
+          typed = shown(tree) + digit;
+          await typeInto(tree, typed);
+        }
+        expect(shown(tree)).toBe('۱,۳۰۰,۰۰۰');
+        expect(seen[seen.length - 1]).toBe('1300000');
+        expect(seen.some(v => v.includes(',') || /[۰-۹]/.test(v))).toBe(false);
+      });
+
+      it('shows a stored amount grouped, with Persian digits', async () => {
+        const tree = await render(
+          <TextField
+            label="x"
+            thousands
+            value="2500000"
+            onChangeText={() => {}}
+          />,
+        );
+        expect(shown(tree)).toBe('۲,۵۰۰,۰۰۰');
+      });
+
+      it('keeps a decimal point, grouping only the whole part', async () => {
+        const tree = await render(
+          <TextField
+            label="x"
+            thousands
+            value="1234567.5"
+            onChangeText={() => {}}
+          />,
+        );
+        expect(shown(tree)).toBe('۱,۲۳۴,۵۶۷٫۵');
+      });
+
+      it('puts the caret back beside the same digit when grouping changes the text in front of it', async () => {
+        const tree = await render(
+          <TextField
+            label="x"
+            thousands
+            value="123456"
+            onChangeText={() => {}}
+          />,
+        );
+        expect(shown(tree)).toBe('۱۲۳,۴۵۶');
+        await act(async () => input(tree).props.onFocus({}));
+        // The caret is after the first digit...
+        await act(async () =>
+          input(tree).props.onSelectionChange({
+            nativeEvent: { selection: { start: 1, end: 1 } },
+          }),
+        );
+        // ...and a 9 is typed there. The number regroups as ۱,۹۲۳,۴۵۶: a comma has appeared in front of
+        // the caret's digit, so the caret has to move one place along to stay after the 9.
+        await act(async () => input(tree).props.onChangeText('۱۹۲۳,۴۵۶'));
+        expect(input(tree).props.selection).toEqual({ start: 3, end: 3 });
+      });
     });
 
     it('passes focus and blur on to the screen', async () => {

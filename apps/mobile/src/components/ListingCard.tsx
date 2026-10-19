@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   ActivityIndicator,
   Image,
@@ -12,9 +12,10 @@ import { formatDate } from '../i18n/format';
 import { useFormat } from '../i18n/useFormat';
 import { PROPERTY_LINE_ICONS } from '../map/markers';
 import { colors, radius, spacing, surfaces } from '../theme';
+import ActionMenuSheet from './ActionMenuSheet';
 import AppText from './AppText';
-import Badge, { badgeTones, dealTone } from './Badge';
-import Icon from './Icon';
+import Badge, { badgeTones, DealBadge } from './Badge';
+import Icon, { type IconName } from './Icon';
 import Price from './Price';
 import PropertyFacts, { propertyKind, propertyPlace } from './PropertyFacts';
 
@@ -31,6 +32,8 @@ const STATUS_DOT: Record<PropertyStatus, string> = {
 
 export interface ListingAction {
   label: string;
+  /** A small line icon before the label, so the action reads at a glance. */
+  icon?: IconName;
   onPress: () => void;
   /** 'brand' is the useful thing to do next (promote), 'danger' is the one to be careful with (archive). */
   tone?: 'brand' | 'neutral' | 'danger';
@@ -42,7 +45,10 @@ export interface ListingAction {
 interface Props {
   property: Property;
   onPress: () => void;
+  /** The buttons shown on the card: the few things done most often. */
   actions?: ListingAction[];
+  /** The rest, behind a "more" button that opens a menu sheet, so the card stays quiet. */
+  menu?: ListingAction[];
 }
 
 const THUMB = 104;
@@ -52,12 +58,21 @@ const THUMB = 104;
  * the title, a row of badges right under it (the kind of property, the deal as a solid pill, and whether it is live as
  * a quiet white pill) and then the price and the place; across the card's width, the kind, area, bedrooms and bathrooms
  * as the same icon grid every listing card uses; under a divider, the things they can do with it (the screen decides
- * which): promote (solid emerald), the others white with an edge, and delete with a red one. Nothing is drawn over the picture. The top part opens the listing; the buttons act on it. A listing with no picture gets a grey tile with the
- * kind's line icon.
+ * which): the main ones as white buttons with an edge, and a "more" button that opens a sheet with the rest.
+ * Nothing is drawn over the picture. The top part opens the listing; the buttons act on it. A listing with no
+ * picture gets a grey tile with the kind's line icon.
  */
-export default function ListingCard({ property, onPress, actions }: Props) {
+export default function ListingCard({
+  property,
+  onPress,
+  actions,
+  menu,
+}: Props) {
   const { t } = useTranslation();
   const format = useFormat();
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuBusy = menu?.some(action => action.loading) ?? false;
+  const menuLocked = menu?.some(action => action.disabled) ?? false;
   const image = property.images[0];
   const place = propertyPlace(property, format.province);
 
@@ -87,10 +102,7 @@ export default function ListingCard({ property, onPress, actions }: Props) {
           </AppText>
           <View style={styles.badges} testID="listing-badges">
             <Badge label={propertyKind(property, t)} tone="neutral" />
-            <Badge
-              label={t(`dealType.${property.deal_type}`)}
-              tone={dealTone(property.deal_type)}
-            />
+            <DealBadge deal={property.deal_type} />
             <Badge
               dot
               dotColor={STATUS_DOT[property.status]}
@@ -137,12 +149,49 @@ export default function ListingCard({ property, onPress, actions }: Props) {
         </AppText>
       ) : null}
 
-      {actions && actions.length > 0 ? (
+      {(actions && actions.length > 0) || (menu && menu.length > 0) ? (
         <View style={styles.actions}>
-          {actions.map(action => (
+          {actions?.map(action => (
             <ActionButton key={action.label} {...action} />
           ))}
+          {menu && menu.length > 0 ? (
+            <Pressable
+              testID="listing-more"
+              accessibilityRole="button"
+              accessibilityLabel={t('my.moreActions')}
+              accessibilityState={{ busy: menuBusy, disabled: menuLocked }}
+              disabled={menuBusy || menuLocked}
+              onPress={() => setMenuOpen(true)}
+              style={({ pressed }) => [
+                styles.more,
+                {
+                  opacity: menuBusy
+                    ? 0.75
+                    : menuLocked
+                    ? 0.5
+                    : pressed
+                    ? 0.75
+                    : 1,
+                },
+              ]}
+            >
+              {menuBusy ? (
+                <ActivityIndicator size="small" color={colors.text} />
+              ) : (
+                <Icon name="more" size={22} color={colors.text} />
+              )}
+            </Pressable>
+          ) : null}
         </View>
+      ) : null}
+
+      {menu && menu.length > 0 ? (
+        <ActionMenuSheet
+          visible={menuOpen}
+          title={property.title}
+          actions={menu}
+          onClose={() => setMenuOpen(false)}
+        />
       ) : null}
     </View>
   );
@@ -161,6 +210,7 @@ const TONES = {
 
 function ActionButton({
   label,
+  icon,
   onPress,
   tone = 'neutral',
   loading = false,
@@ -186,9 +236,12 @@ function ActionButton({
       {loading ? (
         <ActivityIndicator size="small" color={fg} />
       ) : (
-        <AppText variant="label" color={fg}>
-          {label}
-        </AppText>
+        <View style={styles.actionContent}>
+          {icon ? <Icon name={icon} size={18} color={fg} weight={1.9} /> : null}
+          <AppText variant="label" color={fg} numberOfLines={1}>
+            {label}
+          </AppText>
+        </View>
       )}
     </Pressable>
   );
@@ -215,18 +268,34 @@ const styles = StyleSheet.create({
   place: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
   placeText: { flexShrink: 1 },
   badges: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
-  // Up to five buttons: three to a row, and the second row shares its width.
+  // Two buttons that share the width, and the "more" button at the end.
   actions: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
+    alignItems: 'center',
     gap: spacing.sm,
     paddingTop: spacing.md,
     borderTopWidth: 1,
     borderTopColor: colors.border,
   },
+  more: {
+    width: 48,
+    minHeight: 40,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  actionContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.xs + 2,
+  },
   action: {
     flexGrow: 1,
-    flexBasis: '30%',
+    flexBasis: 0,
     minHeight: 40,
     borderRadius: radius.md,
     borderWidth: 1,

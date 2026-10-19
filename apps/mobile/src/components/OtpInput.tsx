@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { StyleSheet, TextInput, View } from 'react-native';
 import { toAsciiDigits } from '@bongah/validation';
+import { toPersianDigits } from '../i18n/format';
 import { colors, fonts, radius, spacing } from '../theme';
 import AppText from './AppText';
 import { useKeyboardFocus } from './KeyboardAware';
@@ -76,7 +77,7 @@ export default function OtpInput({
               ]}
             >
               {digit ? (
-                <AppText style={styles.digit}>{digit}</AppText>
+                <AppText style={styles.digit}>{toPersianDigits(digit)}</AppText>
               ) : current ? (
                 <View style={styles.caret} />
               ) : null}

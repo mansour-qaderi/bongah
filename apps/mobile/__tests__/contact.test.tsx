@@ -553,34 +553,62 @@ describe('PropertyDetailsScreen: layout and the jerib helper', () => {
     );
   });
 
-  it('keeps the jerib conversion out of the figures, behind an info icon next to "جریب"', async () => {
+  const toggle = (root: ReactTestRenderer.ReactTestInstance) =>
+    byId(root, 'jerib-conversion-toggle').find(
+      n => typeof n.props.onPress === 'function',
+    )!;
+
+  it('keeps the jerib conversion out of the area row, folded away in a card of its own', async () => {
     const tree = await open();
     const text = allText(tree.root);
-    // The raw conversion line ("حدود … جریب") is not in the page any more.
+    // No info icon beside the area, and no conversion line in the page until the card is opened.
+    expect(byId(tree.root, 'jerib-info')).toHaveLength(0);
+    expect(text).toContain('۵۰۰ متر مربع');
     expect(text).not.toContain('حدود');
     expect(text).not.toContain('۰٫۲۵');
-    expect(byId(tree.root, 'jerib-info').length).toBeGreaterThan(0);
-    expect(text).toContain(prs.unit.jerib);
-    expect(byId(tree.root, 'jerib-info-card')).toHaveLength(0);
+    expect(byId(tree.root, 'jerib-conversion').length).toBeGreaterThan(0);
+    expect(text).toContain(prs.property.areaConversion);
+    expect(byId(tree.root, 'jerib-conversion-body')).toHaveLength(0);
   });
 
-  it('explains the jerib in a popup, with this listing worked out, and closes it', async () => {
+  it('opens the conversion card with this listing worked out, and folds it again', async () => {
     const tree = await open();
-    await act(async () => {
-      byId(tree.root, 'jerib-info')
-        .find(n => typeof n.props.onPress === 'function')!
-        .props.onPress();
-    });
+    await act(async () => toggle(tree.root).props.onPress());
     const text = allText(tree.root);
-    expect(byId(tree.root, 'jerib-info-card').length).toBeGreaterThan(0);
-    expect(text).toContain(prs.property.jeribInfoTitle);
+    expect(byId(tree.root, 'jerib-conversion-body').length).toBeGreaterThan(0);
     expect(text).toContain(prs.property.jeribInfoIntro);
     expect(text).toContain(prs.property.jeribInfoOne); // 1 jerib = 2,000 m²
     expect(text).toContain(prs.property.jeribInfoHectare);
     // 500 m² is a quarter of a jerib.
     expect(text).toContain('۵۰۰ متر مربع، یعنی حدود ۰٫۲۵ جریب');
-    await press(tree.root, prs.common.ok);
-    await settle();
-    expect(byId(tree.root, 'jerib-info-card')).toHaveLength(0);
+    await act(async () => toggle(tree.root).props.onPress());
+    expect(byId(tree.root, 'jerib-conversion-body')).toHaveLength(0);
+  });
+
+  describe('the owner', () => {
+    const asOwner = async () => {
+      mockAuth = { status: 'signedIn', user: { ...viewer, id: 'seller' } };
+      mockApi(fetchMock, {
+        [`GET /properties/${L}`]: { body: listing('seller') },
+      });
+      const tree = await render(screen());
+      await settle();
+      return tree;
+    };
+
+    it('gets an "edit listing" button that opens the listing in the form', async () => {
+      const tree = await asOwner();
+      expect(byId(tree.root, 'edit-listing').length).toBeGreaterThan(0);
+      await press(tree.root, prs.property.editListing);
+      expect(mockNavigation.navigate).toHaveBeenCalledWith('AddProperty', {
+        propertyId: L,
+      });
+    });
+
+    it('is the only one to see it', async () => {
+      const tree = await open();
+      expect(byId(tree.root, 'edit-listing')).toHaveLength(0);
+      expect(allText(tree.root)).not.toContain(prs.property.editListing);
+    });
   });
 });

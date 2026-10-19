@@ -330,9 +330,12 @@ describe('Home map: markers', () => {
       'APARTMENT',
       'HOUSE_HAWILI',
       'LAND',
-      'OFFICE_SHOP',
-      'GARDEN_VILLA',
-      'GARAGE_OTHER',
+      'SHOP',
+      'OFFICE',
+      'GARDEN',
+      'VILLA',
+      'GARAGE',
+      'OTHER',
     ];
     serve(
       kinds.map((type, i) =>
@@ -957,6 +960,21 @@ describe('Home map: where I am', () => {
 describe('Home map: moving around', () => {
   const propertyCalls = () =>
     callsTo(fetchMock).filter(c => c.path === '/properties');
+
+  it('sends several property types as one comma-separated `types` parameter, and never the old `type`', async () => {
+    serve([listing()]);
+    const tree = await render(home());
+    await settle();
+    await act(async () => {
+      tree.root
+        .findByType(FilterSheet)
+        .props.onApply({ types: ['HOUSE_HAWILI', 'APARTMENT'] });
+    });
+    await settle();
+    const last = propertyCalls().pop()!;
+    expect(last.query.types).toBe('HOUSE_HAWILI,APARTMENT');
+    expect(last.query).not.toHaveProperty('type');
+  });
 
   it('asks only for the area on screen, 50 at a time, and never for a province or "has location"', async () => {
     serve([listing()]);
@@ -1884,7 +1902,7 @@ describe('Home map: overlay controls', () => {
     await act(async () => {
       tree.root
         .findByType(FilterSheet)
-        .props.onApply({ type: 'LAND', min_price: 100 });
+        .props.onApply({ types: ['LAND'], min_price: 100 });
     });
     await settle();
     const button = tree.root.findAll(

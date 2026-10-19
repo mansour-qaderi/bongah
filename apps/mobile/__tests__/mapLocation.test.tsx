@@ -480,10 +480,13 @@ describe('AddPropertyScreen: the form itself', () => {
     const order = [
       prs.propertyType.HOUSE_HAWILI,
       prs.propertyType.APARTMENT,
-      prs.propertyType.OFFICE_SHOP,
+      prs.propertyType.SHOP,
+      prs.propertyType.OFFICE,
       prs.propertyType.LAND,
-      prs.propertyType.GARDEN_VILLA,
-      prs.propertyType.GARAGE_OTHER,
+      prs.propertyType.GARDEN,
+      prs.propertyType.VILLA,
+      prs.propertyType.GARAGE,
+      prs.propertyType.OTHER,
     ].map(label => text.indexOf(label));
     expect(order.every(index => index >= 0)).toBe(true);
     expect([...order].sort((a, b) => a - b)).toEqual(order);
@@ -596,17 +599,28 @@ describe('AddPropertyScreen: a sliding sheet with friendly hints', () => {
     expect(sheetOf(tree.root).length).toBeGreaterThan(0);
   });
 
-  it('calls the chip "دکان و دفتر" in full', async () => {
+  it('gives the shop, office, garden, villa, garage and other each a chip of its own, not a grouped one', async () => {
     const { tree } = await open();
-    expect(prs.propertyType.OFFICE_SHOP).toBe('دکان و دفتر');
-    const chip = tree.root.findAll(
-      n =>
-        n.props.accessibilityRole === 'button' &&
-        typeof n.props.onPress === 'function' &&
-        allText(n).trim() === 'دکان و دفتر',
+    for (const kind of [
+      'SHOP',
+      'OFFICE',
+      'GARDEN',
+      'VILLA',
+      'GARAGE',
+      'OTHER',
+    ] as const) {
+      const chip = tree.root.findAll(
+        n =>
+          n.props.accessibilityRole === 'button' &&
+          typeof n.props.onPress === 'function' &&
+          allText(n).trim() === prs.propertyType[kind],
+      );
+      expect(chip.length).toBeGreaterThan(0);
+    }
+    // No label joins two kinds into one chip any more.
+    expect(allText(tree.root)).not.toMatch(
+      /دکان و دفتر|باغ و ویلا|گاراج و غیره/,
     );
-    expect(chip.length).toBeGreaterThan(0);
-    expect(allText(tree.root)).not.toMatch(/دکان(?! و دفتر)/);
   });
 
   it('changes the title hint with the kind of property chosen', async () => {
@@ -618,10 +632,13 @@ describe('AddPropertyScreen: a sliding sheet with friendly hints', () => {
     const seen = new Set<string>();
     for (const kind of [
       'APARTMENT',
-      'OFFICE_SHOP',
+      'SHOP',
+      'OFFICE',
       'LAND',
-      'GARDEN_VILLA',
-      'GARAGE_OTHER',
+      'GARDEN',
+      'VILLA',
+      'GARAGE',
+      'OTHER',
       'HOUSE_HAWILI',
     ] as const) {
       await press(tree.root, prs.propertyType[kind]);
@@ -629,7 +646,7 @@ describe('AddPropertyScreen: a sliding sheet with friendly hints', () => {
       expect(hint).toBe(prs.add.titleExamples[kind]);
       seen.add(hint);
     }
-    expect(seen.size).toBe(6); // each kind has its own
+    expect(seen.size).toBe(9); // each kind has its own
   });
 
   it('gives every box a friendly hint, with an example figure rather than a bare zero', async () => {
@@ -876,79 +893,49 @@ describe('AddPropertyScreen: the unit of the property', () => {
     await settle();
     return tree;
   };
-  const chips = (root: ReactTestRenderer.ReactTestInstance) =>
-    root.findAll(
-      n => n.props.testID === 'unit-chips' && typeof n.type === 'string',
-    )[0];
-  const selectedIn = (node: ReactTestRenderer.ReactTestInstance) =>
-    node
-      .findAll(
-        n =>
-          typeof n.props.onPress === 'function' &&
-          n.props.accessibilityState?.selected === true,
-      )
-      .map(n => allText(n).trim());
+  const unitLabel = optional(prs.add.unit);
 
-  it('offers the units of the chosen type under the type chips, none chosen to start with', async () => {
+  it('is one optional free-text box, with no sub-category chips', async () => {
     const tree = await open();
-    const row = chips(tree.root);
-    expect(row).toBeDefined();
-    const text = allText(row);
-    for (const unit of [
-      'HAWILI',
-      'DUPLEX',
-      'VILLA_HOUSE',
-      'TOWNHOUSE',
-    ] as const) {
-      expect(text).toContain(prs.unitType[unit]);
-    }
-    expect(text).not.toContain(prs.unitType.STUDIO);
-    expect(selectedIn(row)).toEqual([]);
-    expect(allText(tree.root)).toContain(prs.add.unit);
+    const box = inputLabelled(tree.root, unitLabel);
+    expect(box.props.value ?? '').toBe('');
+    expect(box.props.placeholder).toBe(prs.add.unitPlaceholder);
+    // The old chips (حویلی, دوپلکس, تاون‌هاوس…) are gone.
+    expect(
+      tree.root.findAll(n => n.props.testID === 'unit-chips'),
+    ).toHaveLength(0);
+    const text = allText(tree.root);
+    for (const old of ['دوپلکس', 'تاون‌هاوس']) expect(text).not.toContain(old);
   });
 
-  it('follows the type: apartments have flats and studios, land has plots', async () => {
-    const tree = await open();
-    await press(tree.root, prs.propertyType.APARTMENT);
-    expect(allText(chips(tree.root))).toContain(prs.unitType.STUDIO);
-    expect(allText(chips(tree.root))).not.toContain(prs.unitType.DUPLEX);
-    await press(tree.root, prs.propertyType.LAND);
-    expect(allText(chips(tree.root))).toContain(prs.unitType.FARMLAND);
-  });
-
-  it('sends the chosen unit with the listing', async () => {
+  it('sends what was written, trimmed', async () => {
     const tree = await open();
     await fillForm(tree.root);
-    await press(chips(tree.root), prs.unitType.DUPLEX);
-    expect(selectedIn(chips(tree.root))).toEqual([prs.unitType.DUPLEX]);
+    await type(tree.root, unitLabel, '  واحد ۳ ');
     await press(tree.root, prs.add.submit);
     await settle();
+    // Like every box in the form, it hands the screen plain 0-9; the screens that show it draw them as ۰-۹.
     expect(posted()?.body).toMatchObject({
       type: 'HOUSE_HAWILI',
-      unit_type: 'DUPLEX',
+      unit: 'واحد 3',
     });
+    expect(posted()?.body).not.toHaveProperty('unit_type');
   });
 
-  it('lets a second tap take the unit off again, and sends none', async () => {
+  it('sends no unit (null) when the box is left empty or blank', async () => {
     const tree = await open();
     await fillForm(tree.root);
-    await press(chips(tree.root), prs.unitType.DUPLEX);
-    await press(chips(tree.root), prs.unitType.DUPLEX);
-    expect(selectedIn(chips(tree.root))).toEqual([]);
+    await type(tree.root, unitLabel, '   ');
     await press(tree.root, prs.add.submit);
     await settle();
-    expect(posted()?.body.unit_type ?? null).toBeNull();
+    expect(posted()?.body.unit ?? null).toBeNull();
   });
 
-  it('drops a unit that does not belong to the type it was changed to', async () => {
+  it('keeps what was written when the type is changed', async () => {
     const tree = await open();
-    await fillForm(tree.root);
-    await press(chips(tree.root), prs.unitType.DUPLEX);
+    await type(tree.root, unitLabel, 'واحد ۳');
     await press(tree.root, prs.propertyType.APARTMENT);
-    expect(selectedIn(chips(tree.root))).toEqual([]);
-    await press(tree.root, prs.add.submit);
-    await settle();
-    expect(posted()?.body.unit_type ?? null).toBeNull();
+    expect(inputLabelled(tree.root, unitLabel).props.value).toBe('واحد ۳');
   });
 });
 

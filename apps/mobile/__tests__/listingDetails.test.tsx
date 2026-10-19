@@ -165,19 +165,28 @@ describe('propertyPlace', () => {
 });
 
 describe('the new line icons', () => {
-  it.each(['bed', 'bath', 'area', 'coin'] as const)(
-    'draws %s inside the 24-unit grid',
-    name => {
-      const shapes = ICON_SHAPES[name];
-      expect(shapes.length).toBeGreaterThan(0);
-      for (const shape of shapes) {
-        expect(shape.x).toBeGreaterThanOrEqual(0);
-        expect(shape.y).toBeGreaterThanOrEqual(0);
-        expect(shape.x + shape.w).toBeLessThanOrEqual(ICON_GRID);
-        expect(shape.y + shape.h).toBeLessThanOrEqual(ICON_GRID);
-      }
-    },
-  );
+  it.each([
+    'bed',
+    'bath',
+    'area',
+    'coin',
+    'edit',
+    'check',
+    'trash',
+    'toggleOn',
+    'toggleOff',
+    'arrowUp',
+    'garden',
+  ] as const)('draws %s inside the 24-unit grid', name => {
+    const shapes = ICON_SHAPES[name];
+    expect(shapes.length).toBeGreaterThan(0);
+    for (const shape of shapes) {
+      expect(shape.x).toBeGreaterThanOrEqual(0);
+      expect(shape.y).toBeGreaterThanOrEqual(0);
+      expect(shape.x + shape.w).toBeLessThanOrEqual(ICON_GRID);
+      expect(shape.y + shape.h).toBeLessThanOrEqual(ICON_GRID);
+    }
+  });
 });
 
 describe('the share link', () => {

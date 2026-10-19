@@ -82,12 +82,32 @@ const roof = (cx: number, top: number, span: number): Shape => {
   };
 };
 
+/**
+ * Turns a shape by `deg` degrees (clockwise) around the point (cx, cy) of the grid, so a drawing made upright
+ * (a pencil) can be tilted as a whole. A shape rotates about its own centre, so the centre is moved round the
+ * pivot and the shape is rotated by the same angle.
+ */
+const turn = (shape: Shape, deg: number, cx: number, cy: number): Shape => {
+  const rad = (deg * Math.PI) / 180;
+  const dx = shape.x + shape.w / 2 - cx;
+  const dy = shape.y + shape.h / 2 - cy;
+  const centreX = cx + dx * Math.cos(rad) - dy * Math.sin(rad);
+  const centreY = cy + dx * Math.sin(rad) + dy * Math.cos(rad);
+  return {
+    ...shape,
+    x: Math.round((centreX - shape.w / 2) * 100) / 100,
+    y: Math.round((centreY - shape.h / 2) * 100) / 100,
+    rotate: (shape.rotate ?? 0) + deg,
+  };
+};
+
 export type IconName =
   // Kinds of property
   | 'land'
   | 'apartment'
   | 'house'
   | 'villa'
+  | 'garden'
   | 'shop'
   | 'garage'
   | 'office'
@@ -115,6 +135,16 @@ export type IconName =
   | 'logout'
   | 'chevronRight'
   | 'chevronLeft'
+  | 'chevronDown'
+  // Three dots in a row: "more actions"
+  | 'more'
+  // What an owner does to a listing
+  | 'edit'
+  | 'check'
+  | 'trash'
+  | 'toggleOn'
+  | 'toggleOff'
+  | 'arrowUp'
   // Details of a listing
   | 'bed'
   | 'bath'
@@ -145,7 +175,9 @@ export const ICON_SHAPES: Record<IconName, Shape[]> = {
     roof(12, 3, 18),
     frame(10, 14.5, 4, 6.5, 1),
   ],
-  // A garden villa: a smaller house beside a tree.
+  // A garden: a tree with a round crown, on a line of ground.
+  garden: [ring(12, 9, 12), bar(11.1, 14.5, 1.8, 6), bar(6.5, 20.4, 11, 1.6)],
+  // A villa: a smaller house beside a tree.
   villa: [
     frame(3, 12, 11, 9, 1.5, [0, 1, 1, 1]),
     roof(8.5, 5, 13),
@@ -329,6 +361,69 @@ export const ICON_SHAPES: Record<IconName, Shape[]> = {
       stroke: [0, 0, 1, 1],
       rotate: 45,
     },
+  ],
+  // "v": the two lower edges of a turned square meet at its bottom corner (an expandable section).
+  chevronDown: [
+    {
+      x: 8.8,
+      y: 6.55,
+      w: 6.4,
+      h: 6.4,
+      r: 0.6,
+      stroke: [0, 1, 1, 0],
+      rotate: 45,
+    },
+  ],
+  more: [dot(5, 12, 3.2), dot(12, 12, 3.2), dot(19, 12, 3.2)],
+  // A pencil lying at 45 degrees: a body, a pointed tip (the lower edges of a turned square) and a line to write on.
+  edit: [
+    ...[
+      {
+        x: 9.6,
+        y: 2.5,
+        w: 4.8,
+        h: 12.5,
+        r: [1.4, 1.4, 0, 0],
+        stroke: [1, 1, 0, 1],
+      },
+      {
+        x: 10.3,
+        y: 13.3,
+        w: 3.4,
+        h: 3.4,
+        r: 0.3,
+        stroke: [0, 1, 1, 0],
+        rotate: 45,
+      },
+    ].map((shape): Shape => turn(shape as Shape, 45, 12, 10.5)),
+    bar(4.5, 19.6, 15, 1.7),
+  ],
+  // A tick: a short stroke down to the right and a long one up to the right.
+  check: [
+    { x: 4.05, y: 13.85, w: 6.4, h: 1.8, r: 0.9, fill: 'color', rotate: 45 },
+    { x: 7.55, y: 11.35, w: 13.4, h: 1.8, r: 0.9, fill: 'color', rotate: -45 },
+  ],
+  // A bin: a lid with a handle over a tub with two slots.
+  trash: [
+    bar(4, 6.2, 16, 1.7),
+    frame(9, 3, 6, 3.2, 1.2, [1, 1, 0, 1]),
+    frame(6, 8.6, 12, 12.4, 2.4, [0, 1, 1, 1]),
+    bar(10.1, 11.8, 1.5, 6.2),
+    bar(12.4, 11.8, 1.5, 6.2),
+  ],
+  // A switch: off is an outlined track with the knob on the left, on is a solid track with a white knob on the
+  // right (a listing switched off / on).
+  toggleOff: [frame(2, 6.5, 20, 11, 5.5), dot(8, 12, 5)],
+  toggleOn: [
+    { x: 2, y: 6.5, w: 20, h: 11, r: 5.5, fill: 'color' },
+    { x: 13.5, y: 9.5, w: 5, h: 5, r: 2.5, fill: 'bg' },
+  ],
+  // An arrow pointing up from a base line: lifting a listing higher.
+  arrowUp: [
+    bar(11.1, 3.4, 1.8, 14),
+    { x: 7.8, y: 4.9, w: 5.2, h: 1.8, r: 0.9, fill: 'color', rotate: -45 },
+    { x: 11, y: 4.9, w: 5.2, h: 1.8, r: 0.9, fill: 'color', rotate: 45 },
+    bar(5.5, 20, 13, 1.8),
   ],
   // A bed seen from the side: headboard, mattress, a pillow and a foot post.
   bed: [

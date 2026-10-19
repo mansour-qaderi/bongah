@@ -86,7 +86,7 @@ export default function OtpScreen({ navigation, route }: Props) {
       setDevOtp(response.dev_otp);
       setCode('');
     } catch (error) {
-      setFailure(errorMessage(error, t));
+      setFailure(errorMessage(error, t, { sendingCode: true }));
     } finally {
       setResending(false);
     }
