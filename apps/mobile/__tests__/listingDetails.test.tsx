@@ -10,7 +10,12 @@ import PropertyFacts, { propertyPlace } from '../src/components/PropertyFacts';
 import ListingCard from '../src/components/ListingCard';
 import PropertyCard from '../src/components/PropertyCard';
 import { ICON_GRID, ICON_SHAPES } from '../src/components/iconShapes';
-import { listingLink, parseListingId } from '../src/share/listingLink';
+import {
+  listingDeepLink,
+  listingLink,
+  parseListingId,
+  parseListingPath,
+} from '../src/share/listingLink';
 import { colors, fonts, typography } from '../src/theme';
 
 declare const __dirname: string;
@@ -176,19 +181,41 @@ describe('the new line icons', () => {
 });
 
 describe('the share link', () => {
-  it('is bongah://listing/{id}, and reads back to the same id', () => {
-    expect(listingLink('abc-123')).toBe('bongah://listing/abc-123');
+  it('is https://bongah.app/listing/{id}, and reads back to the same id', () => {
+    expect(listingLink('abc-123')).toBe('https://bongah.app/listing/abc-123');
     expect(parseListingId(listingLink('abc-123'))).toBe('abc-123');
     expect(parseListingId(listingLink('a b/c'))).toBe('a b/c');
   });
+  it("has the app's own form, bongah://listing/{id}, which reads back too", () => {
+    expect(listingDeepLink('abc-123')).toBe('bongah://listing/abc-123');
+    expect(parseListingId(listingDeepLink('abc-123'))).toBe('abc-123');
+    expect(parseListingId(listingDeepLink('a b/c'))).toBe('a b/c');
+  });
+  it('still reads the bongah:// links that earlier versions shared, and the www address', () => {
+    expect(parseListingId('bongah://listing/42')).toBe('42');
+    expect(parseListingId('https://www.bongah.app/listing/42')).toBe('42');
+    expect(parseListingId('https://bongah.app/listing/42/')).toBe('42');
+  });
   it('refuses anything that is not one of our listing links', () => {
     expect(parseListingId('https://example.com/listing/1')).toBeNull();
+    expect(parseListingId('https://bongah.app.evil.com/listing/1')).toBeNull();
+    expect(parseListingId('http://bongah.app/listing/1')).toBeNull();
     expect(parseListingId('bongah://listing/')).toBeNull();
+    expect(parseListingId('https://bongah.app/listing/')).toBeNull();
     expect(parseListingId('bongah://listing/1/extra')).toBeNull();
     expect(parseListingId('bongah://chat/1')).toBeNull();
+    expect(parseListingId('https://bongah.app/invite/ABCD2345')).toBeNull();
   });
   it('ignores a query string or fragment after the id', () => {
     expect(parseListingId('bongah://listing/42?ref=wa#x')).toBe('42');
+    expect(parseListingId('https://bongah.app/listing/42?ref=wa#x')).toBe('42');
+  });
+  it('reads the id from a bare path, as the navigation hands it over', () => {
+    expect(parseListingPath('listing/42')).toBe('42');
+    expect(parseListingPath('/listing/42?x=1')).toBe('42');
+    expect(parseListingPath('listing')).toBeNull();
+    expect(parseListingPath('chat/42')).toBeNull();
+    expect(parseListingPath('listing/%E0%A4%A')).toBeNull(); // not valid percent-encoding
   });
 });
 

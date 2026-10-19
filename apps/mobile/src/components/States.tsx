@@ -34,13 +34,21 @@ export function ErrorView({
 export function EmptyView({
   message,
   children,
+  illustration,
 }: {
   message: string;
   children?: React.ReactNode;
+  /** A picture above the message (see EmptyIllustration). */
+  illustration?: React.ReactNode;
 }) {
   return (
     <View style={styles.center}>
-      <AppText color={colors.textMuted} style={styles.text}>
+      {illustration}
+      <AppText
+        variant={illustration ? 'heading' : 'body'}
+        color={illustration ? colors.text : colors.textMuted}
+        style={styles.text}
+      >
         {message}
       </AppText>
       {children}

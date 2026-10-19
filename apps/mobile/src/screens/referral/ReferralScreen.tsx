@@ -1,11 +1,5 @@
 import React, { useState } from 'react';
-import {
-  RefreshControl,
-  ScrollView,
-  Share,
-  StyleSheet,
-  View,
-} from 'react-native';
+import { RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useTranslation } from 'react-i18next';
 import type {
@@ -23,6 +17,8 @@ import { Screen } from '../../components/Screen';
 import { EmptyView, ErrorView, LoadingView } from '../../components/States';
 import { formatDate, formatNumber } from '../../i18n/format';
 import type { RootStackParamList } from '../../navigation/types';
+import { referralLink, shareReferral } from '../../share/referralLink';
+import { useCopy } from '../../share/useCopy';
 import { colors, radius, spacing, surfaces } from '../../theme';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Referral'>;
@@ -118,21 +114,13 @@ export default function ReferralScreen({ navigation }: Props) {
 function CodeCard({ data }: { data: ReferralSummary }) {
   const { t } = useTranslation();
   const [shareFailed, setShareFailed] = useState(false);
+  const { copy, copied, failed } = useCopy();
+  const link = referralLink(data);
 
   const share = async () => {
     setShareFailed(false);
-    const message = data.share_url
-      ? t('referral.shareMessageWithLink', {
-          url: data.share_url,
-          code: data.referral_code,
-        })
-      : t('referral.shareMessage', { code: data.referral_code });
-    try {
-      // The user closing the sheet is a normal outcome, not an error; only a failure to open it is.
-      await Share.share({ message });
-    } catch {
-      setShareFailed(true);
-    }
+    // Closing the sheet is a normal outcome, not an error; only a failure to open it is.
+    setShareFailed(!(await shareReferral(data, t)));
   };
 
   return (
@@ -148,10 +136,39 @@ function CodeCard({ data }: { data: ReferralSummary }) {
       >
         {data.referral_code}
       </AppText>
-      {shareFailed ? (
-        <Banner kind="error" message={t('referral.shareFailed')} />
+      <AppText
+        selectable
+        latinDigits
+        numberOfLines={1}
+        ellipsizeMode="middle"
+        accessibilityLabel={`${t('referral.linkLabel')}: ${link}`}
+        style={styles.link}
+      >
+        {link}
+      </AppText>
+      {shareFailed || failed ? (
+        <Banner
+          kind="error"
+          message={
+            failed ? t('referral.copyFailed') : t('referral.shareFailed')
+          }
+        />
       ) : null}
-      <Button title={t('referral.share')} onPress={share} />
+      <View style={styles.codeButtons}>
+        <Button
+          title={copied ? t('referral.copied') : t('referral.copy')}
+          variant="secondary"
+          onPress={() => {
+            copy(link);
+          }}
+          style={styles.codeButton}
+        />
+        <Button
+          title={t('referral.share')}
+          onPress={share}
+          style={styles.codeButton}
+        />
+      </View>
     </View>
   );
 }
@@ -267,6 +284,14 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     color: colors.primaryDark,
   },
+  link: {
+    writingDirection: 'ltr',
+    textAlign: 'left',
+    color: colors.textSecondary,
+    alignSelf: 'stretch',
+  },
+  codeButtons: { flexDirection: 'row', gap: spacing.sm, alignSelf: 'stretch' },
+  codeButton: { flex: 1 },
   grid: { flexDirection: 'row', gap: spacing.md },
   tile: {
     ...surfaces.tile,

@@ -334,7 +334,7 @@ describe('PropertyCard (the Home list)', () => {
     expect(share).toHaveBeenCalledTimes(1);
     const [content, options] = share.mock.calls[0];
     // A one-line summary (title, price, place), the invitation, and the listing's link (its unique id).
-    expect(content.message).toContain('bongah://listing/p1');
+    expect(content.message).toContain('https://bongah.app/listing/p1');
     expect(content.message).toContain('🏠 خانه سه اتاقه در شهر زرنج');
     expect(content.message).toContain('💰 ۱,۲۰۰,۰۰۰ ؋');
     expect(content.message).toContain('📍');

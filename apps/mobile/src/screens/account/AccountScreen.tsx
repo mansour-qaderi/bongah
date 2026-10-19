@@ -31,6 +31,7 @@ import { useFormat } from '../../i18n/useFormat';
 import type { RootStackParamList, TabParamList } from '../../navigation/types';
 import { colors, radius, spacing, surfaces } from '../../theme';
 import MorningMessagesCard from './MorningMessagesCard';
+import ReferralBanner from './ReferralBanner';
 
 type Props = CompositeScreenProps<
   BottomTabScreenProps<TabParamList, 'Account'>,
@@ -294,14 +295,7 @@ export default function AccountScreen({ navigation }: Props) {
       </View>
 
       {user ? (
-        <MenuGroup title={t('account.groupAccount')}>
-          <MenuRow
-            icon="gift"
-            label={t('account.invite')}
-            hint={t('account.inviteHint')}
-            onPress={() => navigation.navigate('Referral')}
-          />
-        </MenuGroup>
+        <ReferralBanner onOpen={() => navigation.navigate('Referral')} />
       ) : null}
 
       <MenuGroup title={t('account.settings')} testID="settings-group">

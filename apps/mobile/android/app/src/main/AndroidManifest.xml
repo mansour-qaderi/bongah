@@ -22,6 +22,25 @@
             <action android:name="android.intent.action.MAIN" />
             <category android:name="android.intent.category.LAUNCHER" />
         </intent-filter>
+        <!-- Shared listing links: bongah://listing/{id} (the app's own scheme, always works). -->
+        <intent-filter>
+            <action android:name="android.intent.action.VIEW" />
+            <category android:name="android.intent.category.DEFAULT" />
+            <category android:name="android.intent.category.BROWSABLE" />
+            <data android:scheme="bongah" android:host="listing" />
+        </intent-filter>
+        <!--
+          https://bongah.app/listing/{id}. autoVerify makes Android open these in the app without asking, but only
+          once https://bongah.app/.well-known/assetlinks.json lists this app's package and signing key; until then
+          the link opens in the browser.
+        -->
+        <intent-filter android:autoVerify="true">
+            <action android:name="android.intent.action.VIEW" />
+            <category android:name="android.intent.category.DEFAULT" />
+            <category android:name="android.intent.category.BROWSABLE" />
+            <data android:scheme="https" android:host="bongah.app" android:pathPrefix="/listing" />
+            <data android:scheme="https" android:host="www.bongah.app" android:pathPrefix="/listing" />
+        </intent-filter>
       </activity>
     </application>
 </manifest>
