@@ -104,10 +104,15 @@ __tests__/                   unit + render tests      test-utils/  helpers, Mock
 
 ## Referrals and rewards
 
-- **Invite friends** (Account tab, signed in) opens `ReferralScreen`: the user's code (select it to
-  copy), a Share button (native share sheet), how many friends joined, and the free ladders earned.
-  Data comes from `GET /referrals/me` (never cached). The share text includes a link only when the
-  server has `REFERRAL_LINK_TEMPLATE` set; otherwise it carries the code alone.
+- **Invite friends**: the Account tab (signed in) has a gold banner, "دعوت از دوستان و دریافت نردبان
+  رایگان", with the person's own invitation link and two buttons: copy (system clipboard) and send
+  (native share sheet). Tapping its top opens `ReferralScreen`: the code, the same link with the same
+  two buttons, how many friends joined, and the free ladders earned. Data comes from
+  `GET /referrals/me` (never cached). The link is the server's `share_url` when `REFERRAL_LINK_TEMPLATE`
+  is set, otherwise `https://bongah.app/invite/{code}` built from the code (`share/referralLink.ts`, one
+  place for the banner and the screen). The message always carries the code too. **Nothing opens
+  `/invite/...` links yet** (no landing page, no sign-up deep link), so set the server template to
+  match once there is one.
 - **Sign-up** has an optional invite-code field on `PhoneScreen`. The code is checked for shape
   with the shared `normalizeReferralCode` and travels to `OtpScreen`, which sends it with the SMS
   code. If the server says the code does not exist (`INVALID_REFERRAL_CODE`, SMS code not used up),
@@ -115,6 +120,34 @@ __tests__/                   unit + render tests      test-utils/  helpers, Mock
   `ProfileSetup`; both people get one free ladder.
 - **Using a free ladder**: `PromotionSheet` shows "use free ladder" (Ladder selected, at least one
   token) and calls `POST /rewards/ladder-tokens/redeem`. Paying still works the same way.
+
+## Saved listings, My listings and share links
+
+- **Saved** (`screens/saved`, reached from the Account tab): the bookmarked listings as the same
+  `PropertyCard` as Home, newest save first; one tap on a card's ribbon removes it. The ids live on the
+  phone (`favorites/store.ts`). With none, it shows an illustration and "هیچ آگهی نشان نشده است". A saved
+  listing that has since been sold carries the "معامله شد" badge.
+- **My listings** (`screens/my`): a summary on top (live and closed deals: how many, and what their
+  *sale* listings add up to, per currency; rents and pledges are not added and AFN and USD are never
+  mixed), the status chips, and per listing: live → promote, **معامله شد** (traded), **غیرفعال کردن**
+  (off), edit, delete; traded or off → **فعال کردن** (on), edit, delete. Status changes are
+  `PATCH /properties/:id {status}` (SOLD / ARCHIVED / ACTIVE); each asks first except switching on.
+  **Delete** is `DELETE /properties/:id`, which only archives, so the server still returns the listing
+  as "inactive". `listings/deleted.ts` keeps the deleted ids on the phone to hide them; on another phone
+  they show up as inactive until the API has a real deleted state.
+- **Share links**: a listing is shared as `https://bongah.app/listing/{id}` (`share/listingLink.ts`);
+  `bongah://listing/{id}` (`listingDeepLink`) and earlier shares are understood too. React Navigation's
+  `linking` (`navigation/linking.ts`, passed to `NavigationContainer` in `App.tsx`) opens the listing,
+  with the map screen under it, both when a link starts the app and when one arrives while it is open.
+  A launch from a link skips the opening animation.
+- **To finish the web address (outside the app)**: serve `https://bongah.app/.well-known/assetlinks.json`
+  (Android: package name + signing-key SHA-256; the manifest already has the `autoVerify` filter) and
+  `https://bongah.app/.well-known/apple-app-site-association` (iOS), and add the
+  `applinks:bongah.app` Associated Domains entitlement in Xcode. Until then the web address opens in
+  the browser and only `bongah://...` opens the app. `AppDelegate.swift`, `Info.plist` (URL scheme) and
+  `AndroidManifest.xml` (intent filters) are already set up. A native rebuild is needed.
+- **Copy to clipboard** uses `@react-native-clipboard/clipboard`: run `pnpm install`, then
+  `bundle exec pod install` in `ios/`, and rebuild.
 
 ## Contact and chat
 

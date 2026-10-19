@@ -91,7 +91,7 @@ describe('the share message', () => {
       [
         '🏠 خانه سه خوابه در شهر نو | 💰 ۱,۲۰۰,۰۰۰ ؋ | 📍 نیمروز، زرنج',
         'مشاهده کامل مشخصات در اپلیکیشن بنگاه:',
-        'bongah://listing/p1',
+        'https://bongah.app/listing/p1',
       ].join('\n'),
     );
   });

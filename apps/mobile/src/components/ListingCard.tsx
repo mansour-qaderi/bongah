@@ -35,6 +35,8 @@ export interface ListingAction {
   /** 'brand' is the useful thing to do next (promote), 'danger' is the one to be careful with (archive). */
   tone?: 'brand' | 'neutral' | 'danger';
   loading?: boolean;
+  /** Not pressable right now, for example while another action on the same listing is running. */
+  disabled?: boolean;
 }
 
 interface Props {
@@ -49,8 +51,8 @@ const THUMB = 104;
  * One of the person's own listings, as a flat horizontal card (white, 1 px border, no shadow): the picture beside
  * the title, a row of badges right under it (the kind of property, the deal as a solid pill, and whether it is live as
  * a quiet white pill) and then the price and the place; across the card's width, the kind, area, bedrooms and bathrooms
- * as the same icon grid every listing card uses; under a divider, the few things they can do with it: promote
- * (solid emerald), edit (white with an edge) and deactivate (white with a red edge). Nothing is drawn over the picture. The top part opens the listing; the buttons act on it. A listing with no picture gets a grey tile with the
+ * as the same icon grid every listing card uses; under a divider, the things they can do with it (the screen decides
+ * which): promote (solid emerald), the others white with an edge, and delete with a red one. Nothing is drawn over the picture. The top part opens the listing; the buttons act on it. A listing with no picture gets a grey tile with the
  * kind's line icon.
  */
 export default function ListingCard({ property, onPress, actions }: Props) {
@@ -162,20 +164,22 @@ function ActionButton({
   onPress,
   tone = 'neutral',
   loading = false,
+  disabled = false,
 }: ListingAction) {
   const { bg, border, fg } = TONES[tone];
+  const inactive = loading || disabled;
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityState={{ busy: loading, disabled: loading }}
-      disabled={loading}
+      accessibilityState={{ busy: loading, disabled: inactive }}
+      disabled={inactive}
       onPress={onPress}
       style={({ pressed }) => [
         styles.action,
         {
           backgroundColor: bg,
           borderColor: border,
-          opacity: pressed || loading ? 0.75 : 1,
+          opacity: loading ? 0.75 : disabled ? 0.5 : pressed ? 0.75 : 1,
         },
       ]}
     >
@@ -211,15 +215,18 @@ const styles = StyleSheet.create({
   place: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
   placeText: { flexShrink: 1 },
   badges: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
+  // Up to five buttons: three to a row, and the second row shares its width.
   actions: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: spacing.sm,
     paddingTop: spacing.md,
     borderTopWidth: 1,
     borderTopColor: colors.border,
   },
   action: {
-    flex: 1,
+    flexGrow: 1,
+    flexBasis: '30%',
     minHeight: 40,
     borderRadius: radius.md,
     borderWidth: 1,

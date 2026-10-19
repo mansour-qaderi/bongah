@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Logger, Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtModule } from '@nestjs/jwt';
 import { ThrottlerModule } from '@nestjs/throttler';
@@ -38,8 +38,15 @@ import { SmsGateway } from './sms/sms-gateway.js';
         const provider = config.get<string>('SMS_PROVIDER', 'mock');
         if (provider === 'mock') {
           if (config.get<string>('NODE_ENV') === 'production') {
-            throw new Error(
-              'SMS_PROVIDER=mock is not allowed in production: OTP codes would never reach users.',
+            // Allowed for testing deployments (e.g. a Render staging service), but only as a
+            // deliberate choice: the default being "mock" must never switch it on by accident.
+            if (config.get<string>('SMS_PROVIDER') !== 'mock') {
+              throw new Error(
+                'In production SMS_PROVIDER must be set explicitly ("mock" for testing, or a real provider).',
+              );
+            }
+            new Logger('AuthModule').warn(
+              'SMS_PROVIDER=mock in production: OTP codes are only written to the server log and never sent by SMS. Use for testing only.',
             );
           }
           return new MockSmsGateway();

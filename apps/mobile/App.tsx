@@ -9,6 +9,7 @@ import { ChatProvider } from './src/chat/ChatProvider';
 import { LoadingView } from './src/components/States';
 import { initI18n } from './src/i18n';
 import { isRtlActive } from './src/i18n/rtl';
+import { linking } from './src/navigation/linking';
 import RootNavigator from './src/navigation/RootNavigator';
 import PushRegistrar from './src/push/PushRegistrar';
 import { colors } from './src/theme';
@@ -59,7 +60,12 @@ export default function App() {
           <AuthProvider>
             <ChatProvider>
               <PushRegistrar />
-              <NavigationContainer theme={navigationTheme}>
+              {/* `linking`: shared listing links open the listing (see navigation/linking.ts). */}
+              <NavigationContainer
+                theme={navigationTheme}
+                linking={linking}
+                fallback={<LoadingView />}
+              >
                 <RootNavigator />
               </NavigationContainer>
             </ChatProvider>

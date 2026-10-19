@@ -75,6 +75,10 @@ export default function PropertyCard({ property, onPress }: Props) {
             {property.is_featured ? (
               <Badge label={t('property.featured')} tone={badgeTones.warning} />
             ) : null}
+            {/* Only a saved listing can be shown after its deal (the lists hold live ones): say so. */}
+            {property.status === 'SOLD' ? (
+              <Badge label={t('status.SOLD')} tone={badgeTones.dark} />
+            ) : null}
           </View>
         </View>
 

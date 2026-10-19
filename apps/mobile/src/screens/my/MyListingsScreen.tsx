@@ -12,7 +12,7 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useMutation } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import type { Property, PropertyStatus } from '@bongah/shared-types';
-import { archiveProperty } from '../../api/endpoints';
+import { archiveProperty, updateProperty } from '../../api/endpoints';
 import { errorMessage } from '../../api/errors';
 import {
   flattenPages,
@@ -31,8 +31,10 @@ import ListingCard, { type ListingAction } from '../../components/ListingCard';
 import { Screen } from '../../components/Screen';
 import { EmptyView, ErrorView, LoadingView } from '../../components/States';
 import { formatNumber } from '../../i18n/format';
+import { markDeleted, useDeletedListings } from '../../listings/deleted';
 import type { RootStackParamList, TabParamList } from '../../navigation/types';
 import { colors, spacing } from '../../theme';
+import ListingsSummary from './ListingsSummary';
 
 type Props = CompositeScreenProps<
   BottomTabScreenProps<TabParamList, 'MyListings'>,
@@ -42,18 +44,47 @@ type Props = CompositeScreenProps<
 type StatusFilter = 'ALL' | PropertyStatus;
 const STATUS_FILTERS: StatusFilter[] = ['ALL', 'ACTIVE', 'SOLD', 'ARCHIVED'];
 
+/**
+ * The things an owner does to a listing. `sold` / `activate` / `deactivate` change its status (PATCH): "traded"
+ * ("معامله شد"), and the on/off switch between active and inactive, which is the API's ARCHIVED. `delete` is
+ * DELETE, which also leaves the listing archived on the server; see listings/deleted.ts for what that means here.
+ */
+type Change = {
+  id: string;
+  kind: 'sold' | 'activate' | 'deactivate' | 'delete';
+};
+
+const changeListing = ({ id, kind }: Change): Promise<unknown> => {
+  switch (kind) {
+    case 'sold':
+      return updateProperty(id, { status: 'SOLD' });
+    case 'activate':
+      return updateProperty(id, { status: 'ACTIVE' });
+    case 'deactivate':
+      return updateProperty(id, { status: 'ARCHIVED' });
+    case 'delete':
+      return archiveProperty(id);
+  }
+};
+
 export default function MyListingsScreen({ navigation }: Props) {
   const { t } = useTranslation();
   const { status } = useAuth();
   const query = useMyProperties(status === 'signedIn');
-  const properties = flattenPages(query.data);
+  const deleted = useDeletedListings();
+  const properties = flattenPages(query.data).filter(
+    property => !deleted.includes(property.id),
+  );
   const [promoting, setPromoting] = useState<Property | null>(null);
   const [filter, setFilter] = useState<StatusFilter>('ALL');
 
-  const archive = useMutation({
-    mutationFn: archiveProperty,
-    onSuccess: () =>
-      queryClient.invalidateQueries({ queryKey: queryKeys.properties }),
+  const change = useMutation({
+    mutationFn: changeListing,
+    onSuccess: async (_result, { id, kind }) => {
+      // Only once the server has accepted the delete does the listing leave this screen.
+      if (kind === 'delete') await markDeleted(id);
+      await queryClient.invalidateQueries({ queryKey: queryKeys.properties });
+    },
   });
 
   if (status !== 'signedIn') {
@@ -67,37 +98,99 @@ export default function MyListingsScreen({ navigation }: Props) {
     );
   }
 
-  const confirmArchive = (property: Property) =>
-    Alert.alert(property.title, t('my.archiveConfirm'), [
+  const confirm = (
+    property: Property,
+    kind: Change['kind'],
+    message: string,
+    confirmLabel: string,
+    destructive: boolean,
+  ) =>
+    Alert.alert(property.title, message, [
       { text: t('common.cancel'), style: 'cancel' },
       {
-        text: t('my.archive'),
-        style: 'destructive',
-        onPress: () => archive.mutate(property.id),
+        text: confirmLabel,
+        style: destructive ? 'destructive' : 'default',
+        onPress: () => change.mutate({ id: property.id, kind }),
       },
     ]);
 
-  const actionsFor = (property: Property): ListingAction[] =>
-    property.status === 'ACTIVE'
-      ? [
-          {
-            label: t('my.promote'),
-            tone: 'brand',
-            onPress: () => setPromoting(property),
-          },
-          {
-            label: t('my.edit'),
-            onPress: () =>
-              navigation.navigate('AddProperty', { propertyId: property.id }),
-          },
-          {
-            label: t('my.archive'),
-            tone: 'danger',
-            loading: archive.isPending && archive.variables === property.id,
-            onPress: () => confirmArchive(property),
-          },
-        ]
-      : [];
+  /**
+   * An active listing can be promoted, marked traded, switched off, edited or deleted; one that is not active
+   * (traded or switched off) can be switched back on, edited or deleted. While one action runs, that button shows
+   * a spinner and the listing's other buttons wait, so two changes can never race.
+   */
+  const actionsFor = (property: Property): ListingAction[] => {
+    const busy = change.isPending && change.variables?.id === property.id;
+    const state = (kind: Change['kind']) => ({
+      loading: busy && change.variables?.kind === kind,
+      disabled: busy,
+    });
+    const edit: ListingAction = {
+      label: t('my.edit'),
+      disabled: busy,
+      onPress: () =>
+        navigation.navigate('AddProperty', { propertyId: property.id }),
+    };
+    const remove: ListingAction = {
+      label: t('common.delete'),
+      tone: 'danger',
+      ...state('delete'),
+      onPress: () =>
+        confirm(
+          property,
+          'delete',
+          t('my.deleteConfirm'),
+          t('common.delete'),
+          true,
+        ),
+    };
+    if (property.status === 'ACTIVE') {
+      return [
+        {
+          label: t('my.promote'),
+          tone: 'brand',
+          disabled: busy,
+          onPress: () => setPromoting(property),
+        },
+        {
+          label: t('my.markSold'),
+          ...state('sold'),
+          onPress: () =>
+            confirm(
+              property,
+              'sold',
+              t('my.markSoldConfirm'),
+              t('my.markSold'),
+              false,
+            ),
+        },
+        {
+          label: t('my.archive'),
+          ...state('deactivate'),
+          onPress: () =>
+            confirm(
+              property,
+              'deactivate',
+              t('my.archiveConfirm'),
+              t('my.archive'),
+              false,
+            ),
+        },
+        edit,
+        remove,
+      ];
+    }
+    return [
+      {
+        label: t('my.activate'),
+        tone: 'brand',
+        ...state('activate'),
+        onPress: () => change.mutate({ id: property.id, kind: 'activate' }),
+      },
+      edit,
+      remove,
+    ];
+  };
 
   const counts: Record<StatusFilter, number> = {
     ALL: properties.length,
@@ -137,6 +230,7 @@ export default function MyListingsScreen({ navigation }: Props) {
         contentContainerStyle={styles.list}
         ListHeaderComponent={
           <View style={styles.header}>
+            <ListingsSummary properties={properties} />
             <AppText
               variant="label"
               color={colors.textMuted}
@@ -185,9 +279,9 @@ export default function MyListingsScreen({ navigation }: Props) {
 
   return (
     <Screen edges={['left', 'right']}>
-      {archive.isError ? (
+      {change.isError ? (
         <View style={styles.banner}>
-          <Banner kind="error" message={errorMessage(archive.error, t)} />
+          <Banner kind="error" message={errorMessage(change.error, t)} />
         </View>
       ) : null}
       {body}

@@ -16,6 +16,16 @@ jest.mock('@react-native-async-storage/async-storage', () => {
   return { createAsyncStorage: () => storage };
 });
 
+// The clipboard is native. `virtual` lets this stand-in work before the package has been installed.
+jest.mock(
+  '@react-native-clipboard/clipboard',
+  () => ({
+    __esModule: true,
+    default: { setString: jest.fn(), getString: jest.fn(async () => '') },
+  }),
+  { virtual: true },
+);
+
 jest.mock('react-native-keychain', () => ({
   getGenericPassword: jest.fn(async () => false),
   setGenericPassword: jest.fn(async () => ({})),

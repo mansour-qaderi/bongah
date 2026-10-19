@@ -1,6 +1,7 @@
 import React from 'react';
 import ReactTestRenderer from 'react-test-renderer';
 import { Share, TextInput } from 'react-native';
+import Clipboard from '@react-native-clipboard/clipboard';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { initI18n } from '../src/i18n';
 import { formatDate, formatNumber, toPersianDigits } from '../src/i18n/format';
@@ -28,6 +29,7 @@ jest.mock('../src/navigation/useRequireAuth', () => ({
 
 // Imported after the mocks so the screens pick them up.
 import PromotionSheet from '../src/components/PromotionSheet';
+import { COPIED_MS } from '../src/share/useCopy';
 import AccountScreen from '../src/screens/account/AccountScreen';
 import OtpScreen from '../src/screens/auth/OtpScreen';
 import PhoneScreen from '../src/screens/auth/PhoneScreen';
@@ -139,6 +141,7 @@ beforeEach(() => {
     .spyOn(Share, 'share')
     .mockResolvedValue({ action: Share.sharedAction, activityType: undefined });
   shareSpy.mockClear(); // spyOn returns the same spy again, with the previous test's calls
+  (Clipboard.setString as jest.Mock).mockClear();
 });
 
 const render = async (element: React.ReactElement) => {
@@ -239,7 +242,7 @@ describe('ReferralScreen', () => {
     );
   });
 
-  it('shares the code alone when the server has no invite link', async () => {
+  it('builds the invite link from the code when the server has none', async () => {
     mockApi(fetchMock, {
       'GET /referrals/me': { body: summary({ share_url: null }) },
     });
@@ -248,8 +251,34 @@ describe('ReferralScreen', () => {
 
     await press(tree.root, prs.referral.share);
     expect(shareSpy.mock.calls[0][0].message).toBe(
-      prs.referral.shareMessage.replace('{{code}}', 'ABCD2345'),
+      prs.referral.shareMessageWithLink
+        .replace('{{url}}', 'https://bongah.app/invite/ABCD2345')
+        .replace('{{code}}', 'ABCD2345'),
     );
+  });
+
+  it('shows the invite link and copies it to the clipboard, saying so', async () => {
+    mockApi(fetchMock, { 'GET /referrals/me': { body: summary() } });
+    const tree = await render(screenElement(ReferralScreen));
+    await settle();
+
+    const link = 'https://bongah.example/invite/ABCD2345';
+    expect(allText(tree.root)).toContain(link);
+    await press(tree.root, prs.referral.copy);
+    expect(Clipboard.setString).toHaveBeenCalledWith(link);
+    expect(allText(tree.root)).toContain(prs.referral.copied);
+  });
+
+  it('says so when the clipboard refuses', async () => {
+    mockApi(fetchMock, { 'GET /referrals/me': { body: summary() } });
+    (Clipboard.setString as jest.Mock).mockImplementationOnce(() => {
+      throw new Error('no clipboard');
+    });
+    const tree = await render(screenElement(ReferralScreen));
+    await settle();
+    await press(tree.root, prs.referral.copy);
+    expect(allText(tree.root)).toContain(prs.referral.copyFailed);
+    expect(allText(tree.root)).not.toContain(prs.referral.copied);
   });
 
   it('says so when the share sheet cannot open, and does not when the person just closes it', async () => {
@@ -343,6 +372,81 @@ describe('AccountScreen invite button', () => {
     const tree = await render(screenElement(AccountScreen, nav));
     await press(tree.root, prs.account.invite);
     expect(nav.navigate).toHaveBeenCalledWith('Referral');
+  });
+
+  it('is a banner with the invitation words, the link, and copy and send buttons', async () => {
+    mockApi(fetchMock, { 'GET /referrals/me': { body: summary() } });
+    const tree = await render(screenElement(AccountScreen));
+    await settle();
+    const text = allText(tree.root);
+    expect(prs.account.invite).toBe('دعوت از دوستان و دریافت نردبان رایگان');
+    expect(text).toContain(prs.account.invite);
+    expect(text).toContain('https://bongah.example/invite/ABCD2345');
+    expect(text).toContain(prs.referral.copy);
+    expect(text).toContain(prs.referral.share);
+  });
+
+  it('copies the link from the banner, and the button says "copied"', async () => {
+    mockApi(fetchMock, { 'GET /referrals/me': { body: summary() } });
+    const tree = await render(screenElement(AccountScreen));
+    await settle();
+    await press(tree.root, prs.referral.copy);
+    expect(Clipboard.setString).toHaveBeenCalledWith(
+      'https://bongah.example/invite/ABCD2345',
+    );
+    expect(allText(tree.root)).toContain(prs.referral.copied);
+  });
+
+  it('puts "copy" back on the button after a moment', async () => {
+    jest.useFakeTimers();
+    try {
+      mockApi(fetchMock, { 'GET /referrals/me': { body: summary() } });
+      const tree = await render(screenElement(AccountScreen));
+      for (let i = 0; i < 4; i += 1) {
+        await act(async () => {
+          await jest.advanceTimersByTimeAsync(0);
+        });
+      }
+      await press(tree.root, prs.referral.copy);
+      expect(allText(tree.root)).toContain(prs.referral.copied);
+      await act(async () => {
+        await jest.advanceTimersByTimeAsync(COPIED_MS + 10);
+      });
+      expect(allText(tree.root)).not.toContain(prs.referral.copied);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('sends the invitation through the share sheet: the sentence, the link and the code', async () => {
+    mockApi(fetchMock, { 'GET /referrals/me': { body: summary() } });
+    const tree = await render(screenElement(AccountScreen));
+    await settle();
+    await press(tree.root, prs.referral.share);
+    expect(shareSpy).toHaveBeenCalledTimes(1);
+    expect(shareSpy.mock.calls[0][0].message).toBe(
+      prs.referral.shareMessageWithLink
+        .replace('{{url}}', 'https://bongah.example/invite/ABCD2345')
+        .replace('{{code}}', 'ABCD2345'),
+    );
+  });
+
+  it('uses a link built from the code when the server sends none', async () => {
+    mockApi(fetchMock, {
+      'GET /referrals/me': { body: summary({ share_url: null }) },
+    });
+    const tree = await render(screenElement(AccountScreen));
+    await settle();
+    expect(allText(tree.root)).toContain('https://bongah.app/invite/ABCD2345');
+  });
+
+  it('shows only the top of the banner while the code cannot be loaded', async () => {
+    mockApi(fetchMock, {});
+    const tree = await render(screenElement(AccountScreen));
+    await settle();
+    const text = allText(tree.root);
+    expect(text).toContain(prs.account.invite);
+    expect(text).not.toContain(prs.referral.copy);
   });
 
   it('is not shown to a signed-out visitor', async () => {

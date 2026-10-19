@@ -18,6 +18,10 @@ import {
 } from '../test-utils';
 
 const fetchMock = jest.fn();
+// The Account tab also shows the invite banner, which asks for the referral summary. These tests are about the
+// morning-messages switch, so that request is left out of what they count.
+const switchCalls = () =>
+  callsTo(fetchMock).filter(call => call.path !== '/referrals/me');
 
 // A signed-in session whose user can be replaced, like the real AuthProvider's.
 jest.mock('../src/auth/AuthContext', () => {
@@ -402,7 +406,7 @@ describe('the morning messages switch (Account screen)', () => {
     const tree = await mountIn(screen());
     await flip(tree.root, false);
 
-    expect(callsTo(fetchMock)).toEqual([
+    expect(switchCalls()).toEqual([
       { method: 'PATCH', path: '/users/me/preferences', query: {}, body: { enable_daily_motivation: false } },
     ]);
     expect(tree.root.findByType(Switch).props.value).toBe(false);
@@ -422,7 +426,7 @@ describe('the morning messages switch (Account screen)', () => {
 
     expect(tree.root.findByType(Switch).props.value).toBe(true);
     expect(messaging.requestPermission).toHaveBeenCalledTimes(1);
-    expect(callsTo(fetchMock).map(c => `${c.method} ${c.path}`)).toEqual([
+    expect(switchCalls().map(c => `${c.method} ${c.path}`)).toEqual([
       'PATCH /users/me/preferences',
       'PUT /notifications/devices',
     ]);
@@ -458,7 +462,12 @@ describe('the morning messages switch (Account screen)', () => {
 
   it('ignores a second tap while the first is still being saved', async () => {
     let finish!: (value: unknown) => void;
-    fetchMock.mockImplementation(() => new Promise(resolve => (finish = resolve)));
+    fetchMock.mockImplementation((url: string) =>
+      // The invite banner's own request is not the one being held back.
+      new URL(url).pathname === '/referrals/me'
+        ? new Promise(() => {})
+        : new Promise(resolve => (finish = resolve)),
+    );
     const tree = await mountIn(screen());
     await ReactTestRenderer.act(async () => {
       tree.root.findByType(Switch).props.onValueChange(false);
@@ -467,7 +476,7 @@ describe('the morning messages switch (Account screen)', () => {
       tree.root.findByType(Switch).props.onValueChange(true);
     });
     expect(tree.root.findByType(Switch).props.disabled).toBe(true);
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(switchCalls()).toHaveLength(1);
     await ReactTestRenderer.act(async () => {
       finish(jsonResponse(200, { ...baseUser, enable_daily_motivation: false }));
     });

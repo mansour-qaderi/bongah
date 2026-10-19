@@ -10,6 +10,7 @@ import { errorMessage } from '../../api/errors';
 import { queryKeys } from '../../api/hooks';
 import AppText from '../../components/AppText';
 import Button from '../../components/Button';
+import EmptyIllustration from '../../components/EmptyIllustration';
 import PropertyCard from '../../components/PropertyCard';
 import { Screen } from '../../components/Screen';
 import { EmptyView } from '../../components/States';
@@ -31,7 +32,8 @@ type Entry =
  * "ذخیره‌شده‌ها": every listing the person bookmarked, newest save first, drawn with the same card as the Home list.
  * The ids live on the phone (see favorites/store), so each listing is fetched by its id. One that was removed since
  * (404) stays as a short note with a button to forget it, and one that could not be loaded offers a retry, so a single
- * bad listing never hides the others. Un-saving from a card takes it off the list at once.
+ * bad listing never hides the others. Un-saving from a card takes it off the list at once (one tap on its ribbon).
+ * With nothing saved, the screen shows a picture and "هیچ آگهی نشان نشده است".
  */
 export default function SavedListingsScreen({ navigation }: Props) {
   const { t } = useTranslation();
@@ -69,7 +71,10 @@ export default function SavedListingsScreen({ navigation }: Props) {
   if (ordered.length === 0) {
     return (
       <Screen edges={['left', 'right']}>
-        <EmptyView message={t('saved.empty')}>
+        <EmptyView
+          message={t('saved.empty')}
+          illustration={<EmptyIllustration />}
+        >
           <AppText
             variant="caption"
             color={colors.textMuted}
