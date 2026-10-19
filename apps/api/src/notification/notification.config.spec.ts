@@ -14,9 +14,18 @@ describe('readNotificationSettings', () => {
     expect(read({ PUSH_PROVIDER: ' ', SCHEDULER_ENABLED: '' }).provider).toBe('mock');
   });
 
-  it('refuses the mock provider in production, and defaults production to FCM (which then needs credentials)', () => {
-    expect(() => read({ NODE_ENV: 'production', PUSH_PROVIDER: 'mock' })).toThrow(/not allowed in production/);
-    expect(() => read({ NODE_ENV: 'production' })).toThrow(/FCM_SERVICE_ACCOUNT_JSON must be set/);
+  it('allows an explicit mock provider in production', () => {
+    expect(read({ NODE_ENV: 'production', PUSH_PROVIDER: 'mock' })).toMatchObject({ provider: 'mock', fcm: null });
+  });
+
+  it('falls back to the mock provider when fcm is asked for (or is the production default) but the key is missing', () => {
+    for (const env of [{ NODE_ENV: 'production' }, { NODE_ENV: 'production', PUSH_PROVIDER: 'fcm', FCM_SERVICE_ACCOUNT_JSON: '  ' }, { PUSH_PROVIDER: 'fcm' }]) {
+      expect(read(env)).toEqual({ provider: 'mock', fcm: null, schedulerEnabled: true });
+    }
+  });
+
+  it('does not hide a key that is present but broken', () => {
+    expect(() => read({ NODE_ENV: 'production', PUSH_PROVIDER: 'fcm', FCM_SERVICE_ACCOUNT_JSON: 'hello world' })).toThrow(/neither valid JSON nor base64/);
   });
 
   it('lets production switch pushes off explicitly, without credentials', () => {

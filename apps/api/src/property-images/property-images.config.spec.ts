@@ -47,11 +47,17 @@ describe('readPropertyImageSettings', () => {
     expect(() => read(env)).toThrow();
   });
 
-  it('insists on a storage folder and a public address in production', () => {
-    expect(() => read({ NODE_ENV: 'production', PUBLIC_API_URL: 'https://api.bongah.example' })).toThrow(/UPLOAD_DIR/);
-    expect(() => read({ NODE_ENV: 'production', UPLOAD_DIR: '/data' })).toThrow(/PUBLIC_API_URL/);
-    expect(read({ NODE_ENV: 'production', UPLOAD_DIR: '/data', PUBLIC_API_URL: 'https://api.bongah.example' }).publicBaseUrl).toBe(
-      'https://api.bongah.example',
+  it('keeps booting in production without a storage folder or public address, falling back to the temp folder and the host address', () => {
+    expect(read({ NODE_ENV: 'production', PUBLIC_API_URL: 'https://api.bongah.example' }).uploadDir).toContain('bongah-uploads');
+    expect(read({ NODE_ENV: 'production', UPLOAD_DIR: '/data', RENDER_EXTERNAL_URL: 'https://bongah-api.onrender.com/' }).publicBaseUrl).toBe(
+      'https://bongah-api.onrender.com',
     );
+    expect(read({ NODE_ENV: 'production', UPLOAD_DIR: '/data', PORT: '10000' }).publicBaseUrl).toBe('http://localhost:10000');
+  });
+
+  it('prefers the configured folder and public address in production', () => {
+    expect(
+      read({ NODE_ENV: 'production', UPLOAD_DIR: '/data', PUBLIC_API_URL: 'https://api.bongah.example', RENDER_EXTERNAL_URL: 'https://other.example' }),
+    ).toMatchObject({ uploadDir: '/data', publicBaseUrl: 'https://api.bongah.example' });
   });
 });
