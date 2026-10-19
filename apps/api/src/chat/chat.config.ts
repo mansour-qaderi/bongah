@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -45,8 +46,9 @@ export function readChatSettings(config: ConfigService): ChatSettings {
   const production = config.get<string>('NODE_ENV') === 'production';
   const configuredDir = config.get<string>('UPLOAD_DIR')?.trim();
   if (!configuredDir && production) {
-    throw new Error(
-      'UPLOAD_DIR must be set in production (and the local-disk picture store replaced by object storage before running more than one server).',
+    new Logger('ChatConfig').warn(
+      `UPLOAD_DIR is not set: storing chat pictures in ${join(tmpdir(), 'bongah-uploads')}. On most hosts (Render included) ` +
+        'that disk is wiped on every deploy and restart, so sent pictures will be lost. Mount a disk and set UPLOAD_DIR, or use object storage.',
     );
   }
 

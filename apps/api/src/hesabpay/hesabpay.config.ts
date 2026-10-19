@@ -1,3 +1,5 @@
+import { randomBytes } from 'node:crypto';
+import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { CURRENCIES, SUBSCRIPTION_PACKAGES } from '@bongah/shared-types';
 import type { Currency, SubscriptionPackage } from '../generated/prisma/client.js';
@@ -5,7 +7,7 @@ import type { Currency, SubscriptionPackage } from '../generated/prisma/client.j
 export const HESABPAY_SETTINGS = Symbol('HESABPAY_SETTINGS');
 
 export interface HesabPaySettings {
-  /** "mock" never contacts HesabPay and is refused in production. */
+  /** "mock" never contacts HesabPay and charges nobody. In production it is only used when chosen on purpose, or as the fallback for a missing HESABPAY_API_KEY (with a warning). */
   mode: 'mock' | 'live';
   baseUrl: string;
   apiKey: string;
@@ -47,17 +49,25 @@ const PRICE_PATTERN = /^\d{1,12}(\.\d{1,2})?$/;
 /** Reads and validates all payment settings once, so bad config fails at startup, not at the first payment. */
 export function readHesabPaySettings(config: ConfigService): HesabPaySettings {
   const production = config.get<string>('NODE_ENV') === 'production';
-  const mode = config.get<string>('HESABPAY_MODE') ?? (production ? 'live' : 'mock');
-  if (mode !== 'mock' && mode !== 'live') {
+  const logger = new Logger('HesabPayConfig');
+  const requested = config.get<string>('HESABPAY_MODE')?.trim() || (production ? 'live' : 'mock');
+  if (requested !== 'mock' && requested !== 'live') {
     throw new Error('HESABPAY_MODE must be "mock" or "live".');
-  }
-  if (mode === 'mock' && production) {
-    throw new Error(
-      'HESABPAY_MODE=mock is not allowed in production: payments would never be charged.',
-    );
   }
 
   const text = (name: string): string => config.get<string>(name)?.trim() ?? '';
+  let mode: HesabPaySettings['mode'] = requested;
+  if (mode === 'live' && !text('HESABPAY_API_KEY')) {
+    // Staging/testing deployments (e.g. on Render) often have no HesabPay account yet. Only a MISSING key falls
+    // back; with a key present, missing prices still fail the startup because they decide what real money is charged.
+    logger.warn(
+      'HESABPAY_API_KEY is not set: falling back to the mock payment gateway. Nobody will be charged and no real ' +
+        'payment can be completed. Set HESABPAY_API_KEY (and the prices) to take real payments.',
+    );
+    mode = 'mock';
+  } else if (mode === 'mock' && production) {
+    logger.warn('HESABPAY_MODE=mock in production: payments are simulated and nobody is charged. Use for testing only.');
+  }
   const required = (name: string): string => {
     const value = text(name);
     if (!value) throw new Error(`${name} must be set.`);
@@ -66,9 +76,16 @@ export function readHesabPaySettings(config: ConfigService): HesabPaySettings {
 
   const apiKey = mode === 'live' ? required('HESABPAY_API_KEY') : text('HESABPAY_API_KEY');
   // Mock webhooks are signed with this secret, so it must be unguessable even in dev.
-  const webhookSecret = text('HESABPAY_WEBHOOK_SECRET');
+  let webhookSecret = text('HESABPAY_WEBHOOK_SECRET');
   if (mode === 'mock' && webhookSecret.length < 16) {
-    throw new Error('HESABPAY_WEBHOOK_SECRET must be at least 16 characters in mock mode.');
+    if (!production) throw new Error('HESABPAY_WEBHOOK_SECRET must be at least 16 characters in mock mode.');
+    // Never fall back to a guessable secret: anyone who could sign a mock webhook could mark payments as paid.
+    // A random one closes the webhook until a real secret is set (it changes on every restart).
+    webhookSecret = randomBytes(32).toString('hex');
+    logger.warn(
+      'HESABPAY_WEBHOOK_SECRET is missing or shorter than 16 characters: using a random one for this run, so mock ' +
+        'webhooks cannot be signed from outside. Set it to a secret of 16+ characters to test the webhook.',
+    );
   }
 
   const currency = (text('HESABPAY_CURRENCY') || 'AFGHANI') as Currency;

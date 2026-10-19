@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -57,13 +58,22 @@ export function readPropertyImageSettings(config: ConfigService): PropertyImageS
   const production = config.get<string>('NODE_ENV') === 'production';
   const uploadDir = config.get<string>('UPLOAD_DIR')?.trim();
   const configuredUrl = config.get<string>('PUBLIC_API_URL')?.trim();
+  const logger = new Logger('PropertyImageConfig');
   if (production && !uploadDir) {
-    throw new Error('UPLOAD_DIR must be set in production (and the local-disk picture store replaced by object storage before running more than one server).');
+    logger.warn(
+      `UPLOAD_DIR is not set: storing listing photos in ${join(tmpdir(), 'bongah-uploads')}. On most hosts (Render included) ` +
+        'that disk is wiped on every deploy and restart, so uploaded photos will be lost. Mount a disk and set UPLOAD_DIR, or use object storage.',
+    );
   }
+  // Render sets RENDER_EXTERNAL_URL on web services, which is exactly the address the API is reached at.
+  const fallbackUrl = (config.get<string>('RENDER_EXTERNAL_URL')?.trim() || `http://localhost:${config.get<string>('PORT') ?? '3000'}`).replace(/\/+$/, '');
   if (production && !configuredUrl) {
-    throw new Error('PUBLIC_API_URL must be set in production: it is the address listing photo links are built from.');
+    logger.warn(
+      `PUBLIC_API_URL is not set: building listing photo links from ${fallbackUrl}. Set PUBLIC_API_URL to the real public address ` +
+        'before real users upload photos, because links already stored in listings keep the old address.',
+    );
   }
-  const publicBaseUrl = (configuredUrl || `http://localhost:${config.get<string>('PORT') ?? '3000'}`).replace(/\/+$/, '');
+  const publicBaseUrl = (configuredUrl || fallbackUrl).replace(/\/+$/, '');
   if (!/^https?:\/\/[^\s/]+/.test(publicBaseUrl)) {
     throw new Error('PUBLIC_API_URL must be an http(s) address, e.g. https://api.bongah.example.');
   }

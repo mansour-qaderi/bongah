@@ -1,4 +1,5 @@
 import { createPrivateKey } from 'node:crypto';
+import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
 export const NOTIFICATION_SETTINGS = Symbol('NOTIFICATION_SETTINGS');
@@ -15,7 +16,8 @@ export interface FcmCredentials {
 
 export interface NotificationSettings {
   /**
-   * "mock" records pushes in memory and never contacts Google (refused in production).
+   * "mock" records pushes in memory and never contacts Google (in production it logs a warning; "fcm" without
+   * FCM_SERVICE_ACCOUNT_JSON falls back to it, also with a warning).
    * "fcm" sends through Firebase Cloud Messaging.
    * "off" keeps the endpoints but never sends: the morning run does nothing.
    */
@@ -28,12 +30,28 @@ export interface NotificationSettings {
 /** Reads and validates the push settings once, so a typo fails at startup rather than at 08:00. */
 export function readNotificationSettings(config: ConfigService): NotificationSettings {
   const production = config.get<string>('NODE_ENV') === 'production';
-  const provider = config.get<string>('PUSH_PROVIDER')?.trim() || (production ? 'fcm' : 'mock');
-  if (provider !== 'mock' && provider !== 'fcm' && provider !== 'off') {
+  const requested = config.get<string>('PUSH_PROVIDER')?.trim() || (production ? 'fcm' : 'mock');
+  if (requested !== 'mock' && requested !== 'fcm' && requested !== 'off') {
     throw new Error('PUSH_PROVIDER must be "mock", "fcm" or "off".');
   }
-  if (provider === 'mock' && production) {
-    throw new Error('PUSH_PROVIDER=mock is not allowed in production: no push would ever reach a phone. Use "fcm", or "off" to switch pushes off.');
+  let provider: NotificationSettings['provider'] = requested;
+  let fcm: FcmCredentials | null = null;
+  if (provider === 'fcm') {
+    const raw = config.get<string>('FCM_SERVICE_ACCOUNT_JSON');
+    if (raw?.trim()) {
+      fcm = parseServiceAccount(raw);
+    } else {
+      // Staging/testing deployments (e.g. on Render) often have no Firebase project yet. Only a MISSING key
+      // falls back; a key that is present but malformed still fails the startup in parseServiceAccount.
+      new Logger('NotificationConfig').warn(
+        'PUSH_PROVIDER=fcm but FCM_SERVICE_ACCOUNT_JSON is not set: falling back to the mock push provider. ' +
+          'No push will reach any phone. Set the key to send real pushes.',
+      );
+      provider = 'mock';
+    }
+  }
+  if (requested === 'mock' && production) {
+    new Logger('NotificationConfig').warn('PUSH_PROVIDER=mock in production: no push will reach any phone. Use for testing only.');
   }
 
   const schedulerRaw = config.get<string>('SCHEDULER_ENABLED')?.trim().toLowerCase();
@@ -43,7 +61,7 @@ export function readNotificationSettings(config: ConfigService): NotificationSet
 
   return {
     provider,
-    fcm: provider === 'fcm' ? parseServiceAccount(config.get<string>('FCM_SERVICE_ACCOUNT_JSON')) : null,
+    fcm,
     schedulerEnabled: schedulerRaw !== 'false',
   };
 }

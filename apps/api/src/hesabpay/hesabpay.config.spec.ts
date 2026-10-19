@@ -31,10 +31,24 @@ describe('readHesabPaySettings', () => {
     expect(s.baseUrl).toBe('https://api.hesab.com/api/v1');
   });
 
-  it('refuses mock mode in production, whether chosen or defaulted', () => {
-    expect(() => readHesabPaySettings(config({ NODE_ENV: 'production', HESABPAY_MODE: 'mock', HESABPAY_WEBHOOK_SECRET: SECRET }))).toThrow(/not allowed in production/);
-    // Unset mode defaults to live in production, which then demands real config.
-    expect(() => readHesabPaySettings(config({ NODE_ENV: 'production' }))).toThrow(/HESABPAY_API_KEY/);
+  it('allows mock mode in production when chosen on purpose', () => {
+    const s = readHesabPaySettings(config({ NODE_ENV: 'production', HESABPAY_MODE: 'mock', HESABPAY_WEBHOOK_SECRET: SECRET }));
+    expect(s).toMatchObject({ mode: 'mock', webhookSecret: SECRET });
+  });
+
+  it('falls back to mock mode when live mode (chosen, or the production default) has no API key', () => {
+    for (const env of [{ NODE_ENV: 'production' }, { NODE_ENV: 'production', HESABPAY_MODE: 'live', HESABPAY_API_KEY: ' ' }]) {
+      const s = readHesabPaySettings(config(env));
+      expect(s.mode).toBe('mock');
+      expect(s.prices.ladder).toBe('50');
+      // No secret was given, so a random one closes the webhook rather than a guessable one opening it.
+      expect(s.webhookSecret).toMatch(/^[0-9a-f]{64}$/);
+    }
+    expect(readHesabPaySettings(config({ NODE_ENV: 'production', HESABPAY_WEBHOOK_SECRET: SECRET })).webhookSecret).toBe(SECRET);
+  });
+
+  it('still insists on explicit prices once an API key is given', () => {
+    expect(() => readHesabPaySettings(config({ NODE_ENV: 'production', HESABPAY_API_KEY: 'key' }))).toThrow(/must be set/);
   });
 
   it('requires a long webhook secret in mock mode', () => {
@@ -47,7 +61,7 @@ describe('readHesabPaySettings', () => {
     expect(s).toMatchObject({ mode: 'live', apiKey: 'key', baseUrl: 'https://example.test/v1' });
   });
 
-  it.each(Object.keys(LIVE_ENV).filter((k) => k !== 'HESABPAY_MODE'))('refuses live mode without %s', (name) => {
+  it.each(Object.keys(LIVE_ENV).filter((k) => k !== 'HESABPAY_MODE' && k !== 'HESABPAY_API_KEY'))('refuses live mode without %s', (name) => {
     const env: Record<string, string> = { ...LIVE_ENV };
     delete env[name];
     expect(() => readHesabPaySettings(config(env))).toThrow(new RegExp(name));
