@@ -404,6 +404,7 @@ export default function HomeScreen({ navigation }: Props) {
                   <ActivityIndicator color={colors.primary} />
                 ) : (
                   <Button
+                    icon="down"
                     title={t('home.loadMore')}
                     variant="outline"
                     onPress={() => listQuery.fetchNextPage()}
@@ -454,6 +455,7 @@ export default function HomeScreen({ navigation }: Props) {
       <View style={styles.notice}>
         <Banner kind="error" message={errorMessage(mapQuery.error, t)}>
           <Button
+            icon="refresh"
             title={t('common.retry')}
             variant="outline"
             onPress={() => mapQuery.refetch()}

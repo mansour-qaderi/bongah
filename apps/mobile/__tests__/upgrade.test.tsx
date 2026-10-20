@@ -14,6 +14,7 @@ import { planRank } from '../src/map/priority';
 import { colors } from '../src/theme';
 import { captureToasts } from '../test-utils/toasts';
 import { planOffers } from '../src/payments/plans';
+import app from '../app.json';
 import pkg from '../package.json';
 import {
   allText,
@@ -364,10 +365,28 @@ describe('UpgradeScreen', () => {
   });
 
   it.each([
-    ['MONTHLY', '۸ آگهی', '۲ آگهی هدیه', '۱ آگهی ویژه هدیه', false],
-    ['QUARTERLY', '۱۸ آگهی', '۶ آگهی هدیه', '۳ آگهی ویژه هدیه', true],
-    ['SEMIANNUAL', '۳۰ آگهی', '۹ آگهی هدیه', '۶ آگهی ویژه هدیه', true],
-    ['YEARLY', '۶۰ آگهی', '۱۵ آگهی هدیه', '۱۲ آگهی ویژه هدیه', true],
+    ['MONTHLY', '۸ آگهی', '۲ آگهی هدیه', '۱ کادر ویژه برای آگهی هدیه', false],
+    [
+      'QUARTERLY',
+      '۱۸ آگهی',
+      '۶ آگهی هدیه',
+      '۳ کادر ویژه برای آگهی هدیه',
+      true,
+    ],
+    [
+      'SEMIANNUAL',
+      '۳۰ آگهی',
+      '۹ آگهی هدیه',
+      '۶ کادر ویژه برای آگهی هدیه',
+      true,
+    ],
+    [
+      'YEARLY',
+      '۶۰ آگهی',
+      '۱۵ آگهی هدیه',
+      '۱۲ کادر ویژه برای آگهی هدیه',
+      true,
+    ],
   ] as const)(
     '%s lists its listings, its gifts, accounting%s',
     async (plan, listings, gift, featured, portfolio) => {
@@ -394,14 +413,6 @@ describe('UpgradeScreen', () => {
     expect(text).not.toContain(prs.upgrade.bonus.split('{{')[0].trim());
   });
 
-  it('says the featured ad is sold in bundles of 3, 5, 10 and 20', async () => {
-    mockApi(fetchMock, ROUTES);
-    const { tree } = await mount(UpgradeScreen);
-    expect(
-      allText(tree.root.findByProps({ testID: 'promo-featured' })),
-    ).toContain('۳، ۵، ۱۰ و ۲۰');
-  });
-
   it('draws the 6-month plan with its own price, and leaves out a plan the server has no price for', async () => {
     mockApi(fetchMock, ROUTES);
     let { tree } = await mount(UpgradeScreen);
@@ -426,30 +437,25 @@ describe('UpgradeScreen', () => {
     ).toBeGreaterThan(0);
   });
 
-  it('keeps the ladder and the featured ad apart, and leads to each one', async () => {
+  it('offers the featured frame in its own gold card, leads to its packs, and has no ladder row', async () => {
     mockApi(fetchMock, ROUTES);
     const { tree, nav } = await mount(UpgradeScreen);
-    const ladder = tree.root.findByProps({ testID: 'promo-ladder' });
     const featured = tree.root.findByProps({ testID: 'promo-featured' });
-    expect(ladder).not.toBe(featured);
-    expect(allText(ladder)).toContain(prs.upgrade.ladderTitle);
-    expect(allText(ladder)).not.toContain(prs.upgrade.featuredTitle);
-    expect(allText(featured)).toContain(prs.upgrade.featuredTitle);
+    expect(tree.root.findAllByProps({ testID: 'promo-ladder' })).toHaveLength(
+      0,
+    );
+    expect(allText(tree.root)).not.toContain(prs.upgrade.ladderTitle);
+    expect(allText(featured)).toContain(prs.frame.title);
     expect(allText(featured)).toContain(prs.upgrade.featuredBadge);
+    expect(allText(featured)).toContain(
+      '۷ روز با نشان و کادر ویژه به بالای فهرست نمایش داده می‌شود',
+    );
     // The featured card has its own gold frame.
     const frame = JSON.stringify(featured.props.style);
     expect(frame).toContain(colors.accentBright);
 
-    await act(async () => ladder.props.onPress());
-    expect(nav.navigate).toHaveBeenLastCalledWith('Checkout', {
-      tab: 'promotion',
-      purpose: 'LADDER',
-    });
     await act(async () => featured.props.onPress());
-    expect(nav.navigate).toHaveBeenLastCalledWith('Checkout', {
-      tab: 'promotion',
-      purpose: 'FEATURED_AD',
-    });
+    expect(nav.navigate).toHaveBeenLastCalledWith('Checkout');
   });
 
   it('asks a visitor to sign in first', async () => {
@@ -537,8 +543,9 @@ describe('the welcome gift', () => {
 });
 
 describe('the version', () => {
-  it('is 1.1.4 in the package and in the app', () => {
-    expect(pkg.version).toBe('1.1.4');
-    expect(APP_VERSION).toBe('1.1.4');
+  it('is 1.2.4 in the package, in app.json and in the app', () => {
+    expect(pkg.version).toBe('1.2.4');
+    expect(app.version).toBe('1.2.4');
+    expect(APP_VERSION).toBe('1.2.4');
   });
 });

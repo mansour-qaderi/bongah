@@ -71,19 +71,24 @@ describe.skipIf(!hasDb)('Map location rules (e2e)', () => {
       const res = await ctx
         .post(
           '/properties',
-          propertyBody({ ...PIN, district: undefined, neighborhood: undefined, address: undefined, description: undefined }),
+          propertyBody({ ...PIN, district: undefined, neighborhood: undefined, address: undefined }),
           user.token,
         )
         .expect(201);
-      expect(res.body).toMatchObject({ ...PIN, district: '', neighborhood: null, address: '', description: '' });
+      expect(res.body).toMatchObject({ ...PIN, district: '', neighborhood: null, address: '' });
       const stored = await row(res.body.id);
-      expect([stored.district, stored.neighborhood, stored.address, stored.description]).toEqual(['', null, '', '']);
+      expect([stored.district, stored.neighborhood, stored.address]).toEqual(['', null, '']);
     });
 
-    it('treats the description as optional with or without a pin', async () => {
+    it('requires a description with or without a pin, and stores it as written', async () => {
       const user = await ctx.user(Role.ADMIN);
-      const res = await ctx.post('/properties', propertyBody({ description: undefined }), user.token).expect(201);
-      expect(res.body.description).toBe('');
+      for (const body of [propertyBody({ description: undefined }), propertyBody({ ...PIN, description: undefined })]) {
+        const res = await ctx.post('/properties', body, user.token).expect(400);
+        expect(JSON.stringify(res.body)).toContain('description');
+      }
+      await ctx.post('/properties', propertyBody({ description: '   ' }), user.token).expect(400);
+      const ok = await ctx.post('/properties', propertyBody({ description: 'خانه دو منزله\nنزدیک بازار' }), user.token).expect(201);
+      expect(ok.body.description).toBe('خانه دو منزله\nنزدیک بازار');
     });
 
     it('does not spend a token an account happens to hold', async () => {

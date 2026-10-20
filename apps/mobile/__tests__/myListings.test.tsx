@@ -1,5 +1,5 @@
 import React from 'react';
-import { Alert, Share } from 'react-native';
+import { Alert, Share, StyleSheet } from 'react-native';
 import ReactTestRenderer from 'react-test-renderer';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { Property } from '@bongah/shared-types';
@@ -142,7 +142,22 @@ afterEach(async () => {
   });
 });
 
-// A button is a few nested elements sharing one handler, so count handlers, not elements.
+// An icon-only button has no words: it is found by what it says to a screen reader.
+const iconButtonCount = (
+  root: ReactTestRenderer.ReactTestInstance,
+  label: string,
+) =>
+  new Set(
+    root
+      .findAll(
+        node =>
+          typeof node.props.onPress === 'function' &&
+          node.props.accessibilityLabel === label,
+      )
+      .map(node => node.props.onPress),
+  ).size;
+// A button is a few nested elements sharing one handler, so count handlers, not elements. (The picture of a card is
+// tappable too, but it is not a button a screen reader announces, and its only words are the status pill's.)
 const buttonCount = (
   root: ReactTestRenderer.ReactTestInstance,
   label: string,
@@ -152,6 +167,7 @@ const buttonCount = (
       .findAll(
         node =>
           typeof node.props.onPress === 'function' &&
+          node.props.accessible !== false &&
           allText(node).trim() === label,
       )
       .map(node => node.props.onPress),
@@ -217,7 +233,7 @@ describe('ListingCard', () => {
     expect(allText(tree.root)).toContain(prs.propertyType.HOUSE_HAWILI);
     // The tag row holds the deal only (no "featured" badge on a plain listing).
     const row = tree.root.findAll(
-      node => node.props.testID === 'listing-badges',
+      node => node.props.testID === 'listing-tags',
     )[0];
     expect(allText(row)).not.toContain(prs.property.featured);
     const images = tree.root.findAll(
@@ -260,6 +276,184 @@ describe('ListingCard', () => {
     mounted.push(tree);
     await press(tree.root, prs.my.promote);
     expect(act).toHaveBeenCalledTimes(1);
+  });
+
+  describe('the layout', () => {
+    const withActions = async (p: Property) => {
+      const tree = await renderTree(
+        <ListingCard
+          property={p}
+          onPress={jest.fn()}
+          actions={[{ label: prs.my.edit, icon: 'edit', onPress: jest.fn() }]}
+          menu={[
+            { label: prs.property.share, icon: 'share', onPress: jest.fn() },
+            { label: prs.my.archive, onPress: jest.fn() },
+          ]}
+        />,
+      );
+      mounted.push(tree);
+      return tree;
+    };
+    const host = (root: ReactTestRenderer.ReactTestInstance, id: string) =>
+      root.findAll(
+        node => typeof node.type === 'string' && node.props.testID === id,
+      )[0];
+    const style = (node: ReactTestRenderer.ReactTestInstance) =>
+      (StyleSheet.flatten(node.props.style) ?? {}) as Record<string, unknown>;
+
+    it('puts the deal tag at the top of a column at the far end with the buttons stacked directly under it, beside the picture and never above it', async () => {
+      const tree = await withActions(property());
+      const top = host(tree.root, 'listing-top');
+      const media = host(top, 'listing-media');
+      const main = host(top, 'listing-main');
+      const side = host(top, 'listing-side');
+      const tags = host(side, 'listing-tags');
+      const actions = host(side, 'listing-actions');
+      expect(allText(tags)).toContain(prs.dealType.SALE);
+      expect(actions).toBeDefined();
+      // The card's first part is the row of picture, body and side column; nothing comes before it.
+      const cardView = top.parent!;
+      expect(
+        cardView.children
+          .map(c => (typeof c === 'string' ? '' : String(c.props.testID)))
+          .filter(Boolean)[0],
+      ).toBe('listing-top');
+      expect(style(top).flexDirection).toBe('row');
+      const ids = (node: ReactTestRenderer.ReactTestInstance) =>
+        node.children.map(c =>
+          typeof c === 'string' ? '' : String(c.props.testID),
+        );
+      // Right to left: the picture first (on the right), the body next, the tag-and-buttons column last (the left edge).
+      expect(ids(top).filter(Boolean)).toEqual([
+        'listing-media',
+        'listing-main',
+        'listing-side',
+      ]);
+      // In the column: the tag first, the buttons right under it.
+      expect(ids(side)).toEqual(['listing-tags', 'listing-actions']);
+      // The buttons are one above the other, not side by side.
+      expect(style(actions).flexDirection).not.toBe('row');
+      expect(style(side).flexDirection).not.toBe('row');
+      // Neither the picture nor the body holds the tag or the buttons.
+      for (const part of [media, main]) {
+        expect(
+          part.findAll(
+            n =>
+              n.props.testID === 'listing-tags' ||
+              n.props.testID === 'listing-actions',
+          ),
+        ).toHaveLength(0);
+      }
+      // Exactly one group of them, and none at the foot of the card.
+      expect(
+        tree.root.findAll(
+          n =>
+            typeof n.type === 'string' && n.props.testID === 'listing-actions',
+        ),
+      ).toHaveLength(1);
+    });
+
+    it('stacks the "featured" badge under the deal tag, not beside it, so the column stays narrow', async () => {
+      const tree = await withActions(
+        property({ is_featured: true, featured_until: '2026-11-01T00:00:00Z' }),
+      );
+      const tags = host(tree.root, 'listing-tags');
+      expect(style(tags).flexDirection).not.toBe('row');
+      expect(allText(tags)).toContain(prs.dealType.SALE);
+      expect(allText(tags)).toContain(prs.property.featured);
+    });
+
+    it('draws each action as a round icon-only button like the bookmark: no words, a label for the screen reader', async () => {
+      const tree = await withActions(property());
+      const actions = host(tree.root, 'listing-actions');
+      expect(allText(actions)).toBe('');
+      for (const [label, icon] of [
+        [prs.my.edit, 'edit'],
+        [prs.my.moreActions, 'more'],
+      ] as const) {
+        const button = actions.findAll(
+          n =>
+            typeof n.type === 'string' && n.props.accessibilityLabel === label,
+        )[0];
+        expect(button).toBeDefined();
+        const look = style(button);
+        expect(look.width).toBe(40);
+        expect(look.height).toBe(40);
+        expect(look.borderRadius).toBe(20);
+        expect(look.borderWidth).toBe(1);
+        expect(look.backgroundColor).toBe('#FFFFFF');
+        expect(
+          button.findAll(n => n.props.name === icon).length,
+        ).toBeGreaterThan(0);
+      }
+    });
+
+    it('keeps the picture a compact fixed square of its own, whatever the column beside it holds', async () => {
+      for (const images of [[], ['https://img.example/a.jpg']]) {
+        const tree = await withActions(
+          property({ images, description: 'یک توضیح بلند '.repeat(30) }),
+        );
+        const top = host(tree.root, 'listing-top');
+        const media = host(top, 'listing-media');
+        // The row does not stretch its children, so the picture's height does not follow the tall button column.
+        expect(style(top).alignItems).toBe('flex-start');
+        expect(style(media)).toMatchObject({ width: 104, height: 104 });
+        const tile = media.findAll(
+          n =>
+            typeof n.type === 'string' &&
+            style(n).width === 104 &&
+            style(n).height === 104 &&
+            style(n).borderRadius !== undefined,
+        );
+        expect(tile.length).toBeGreaterThan(0);
+        expect(style(tile[0]).flex).toBeUndefined();
+        expect(style(tile[0]).minHeight).toBeUndefined();
+      }
+    });
+
+    it('keeps only Edit and "more" in the column under the tag', async () => {
+      const tree = await withActions(property());
+      const actions = host(tree.root, 'listing-actions');
+      const labels = actions
+        .findAll(
+          n =>
+            typeof n.type === 'string' &&
+            n.props.accessibilityRole === 'button',
+        )
+        .map(n => n.props.accessibilityLabel);
+      expect(labels).toEqual([prs.my.edit, prs.my.moreActions]);
+    });
+
+    it('shows the description at the foot of the card, a few lines at most, below the facts', async () => {
+      const text = 'دو منزله با حیاط بزرگ، نزدیک مکتب و بازار.';
+      const tree = await withActions(property({ description: ` ${text} ` }));
+      const desc = host(tree.root, 'card-description');
+      expect(desc.props.children).toBe(text);
+      expect(desc.props.numberOfLines).toBe(3);
+      // Not in the body beside the picture or in the buttons' column.
+      for (const id of ['listing-main', 'listing-side']) {
+        expect(
+          host(tree.root, id).findAll(
+            n => n.props.testID === 'card-description',
+          ),
+        ).toHaveLength(0);
+      }
+      const all = allText(tree.root);
+      expect(all.split(text)).toHaveLength(2);
+      // (The kind's word is also in the title, so the facts grid is the last place it is said.)
+      expect(all.indexOf(text)).toBeGreaterThan(
+        all.lastIndexOf(prs.propertyType.HOUSE_HAWILI),
+      );
+    });
+
+    it('collapses the description when there is none', async () => {
+      for (const description of ['', '  \n ']) {
+        const tree = await withActions(property({ description }));
+        expect(
+          tree.root.findAll(n => n.props.testID === 'card-description'),
+        ).toHaveLength(0);
+      }
+    });
   });
 
   it('keeps the rest behind a "more" button, and opens them from its sheet', async () => {
@@ -392,10 +586,30 @@ describe('MyListingsScreen', () => {
     expect(nav.navigate).toHaveBeenCalledWith('AddProperty');
   });
 
-  it('puts Edit and Share on every card, and the rest behind "more"', async () => {
+  it('puts only Edit and "more" on every card, and the rest (Share first) behind "more"', async () => {
     const { tree } = await mine(LIST);
-    expect(buttonCount(tree.root, prs.my.edit)).toBe(3);
-    expect(buttonCount(tree.root, prs.property.share)).toBe(3);
+    expect(iconButtonCount(tree.root, prs.my.edit)).toBe(3);
+    // Share is not a button of the card any more: it is a line of the "more" sheet.
+    expect(iconButtonCount(tree.root, prs.property.share)).toBe(0);
+    expect(buttonCount(tree.root, prs.property.share)).toBe(0);
+    // Two buttons on each card: Edit and "more".
+    for (const group of tree.root.findAll(
+      node =>
+        typeof node.type === 'string' &&
+        node.props.testID === 'listing-actions',
+    )) {
+      const buttons = group.findAll(
+        node =>
+          typeof node.type === 'string' &&
+          node.props.accessibilityRole === 'button',
+      );
+      expect(buttons.map(b => b.props.accessibilityLabel)).toEqual([
+        prs.my.edit,
+        prs.my.moreActions,
+      ]);
+    }
+    // They are icons: the words are not drawn on the cards.
+    expect(buttonCount(tree.root, prs.my.edit)).toBe(0);
     expect(
       tree.root.findAll(
         node =>
@@ -431,9 +645,10 @@ describe('MyListingsScreen', () => {
     return labels;
   };
 
-  it('offers promote, traded, switch off and delete in the menu of a live listing', async () => {
+  it('offers share, promote, traded, switch off and delete in the menu of a live listing, share first', async () => {
     const { tree } = await mine([property({ id: 'a' })]);
     expect(await menuLabels(tree.root)).toEqual([
+      prs.property.share,
       prs.my.promote,
       prs.my.markSold,
       prs.my.archive,
@@ -441,10 +656,11 @@ describe('MyListingsScreen', () => {
     ]);
   });
 
-  it('offers switch on and delete (no promote, no traded) in the menu of a traded or switched-off listing', async () => {
+  it('offers share, switch on and delete (no promote, no traded) in the menu of a traded or switched-off listing', async () => {
     for (const status of ['SOLD', 'ARCHIVED'] as const) {
       const { tree } = await mine([property({ id: 'b', status })]);
       expect(await menuLabels(tree.root)).toEqual([
+        prs.property.share,
         prs.my.activate,
         prs.common.delete,
       ]);
@@ -467,21 +683,21 @@ describe('MyListingsScreen', () => {
     expect(words.some(text => text.includes(prs.status.ARCHIVED))).toBe(true);
   });
 
-  it('puts a line icon beside each action: a pencil for Edit and the share glyph for Share', async () => {
+  it('puts a pencil on Edit', async () => {
     const { tree } = await mine([property({ id: 'a' })]);
     const iconOf = (label: string) =>
       tree.root
         .findAll(
           node =>
             typeof node.props.onPress === 'function' &&
-            allText(node).trim() === label,
+            node.props.accessibilityLabel === label,
         )
         .flatMap(node =>
           node.findAll(inner => typeof inner.props.name === 'string'),
         )
         .map(inner => inner.props.name)[0];
     expect(iconOf(prs.my.edit)).toBe('edit');
-    expect(iconOf(prs.property.share)).toBe('share');
+    // (The share glyph on the menu's Share line is checked with the other menu icons below.)
   });
 
   it('puts an icon on every menu row: a tick for "معامله شد", an arrow for promote, a bin for delete', async () => {
@@ -503,6 +719,7 @@ describe('MyListingsScreen', () => {
       ]),
     );
     expect(icons).toEqual({
+      [prs.property.share]: 'share',
       [prs.my.promote]: 'arrowUp',
       [prs.my.markSold]: 'check',
       [prs.my.archive]: 'toggleOff',
@@ -535,8 +752,6 @@ describe('MyListingsScreen', () => {
         .findAllByType(Badge)
         .filter(badge => badge.props.label === prs.dealType[deal]);
       expect(badges).toHaveLength(1);
-      // a plain tag: no dot
-      expect(badges[0].props.dot).toBe(false);
     }
   });
 
@@ -724,15 +939,12 @@ describe('MyListingsScreen', () => {
               match(node),
           )
           .map(node => node.props.accessibilityState)[0];
-      // The "more" button shows it is working; Edit and Share wait.
+      // The "more" button shows it is working (so Share and the rest in its sheet cannot be opened); Edit waits.
       expect(
         stateOf(node => node.props.testID === 'listing-more'),
       ).toMatchObject({ busy: true, disabled: true });
       expect(
-        stateOf(node => allText(node).trim() === prs.my.edit),
-      ).toMatchObject({ disabled: true });
-      expect(
-        stateOf(node => allText(node).trim() === prs.property.share),
+        stateOf(node => node.props.accessibilityLabel === prs.my.edit),
       ).toMatchObject({ disabled: true });
 
       await ReactTestRenderer.act(async () => {
@@ -752,12 +964,13 @@ describe('MyListingsScreen', () => {
     });
   });
 
-  it("shares the listing from its card through the phone's share sheet", async () => {
+  it('shares the listing from the "more" menu through the phone\'s share sheet', async () => {
     const share = jest
       .spyOn(Share, 'share')
       .mockResolvedValue({ action: 'sharedAction', activityType: undefined });
     const { tree, nav } = await mine([property({ id: 'a' })]);
-    await press(tree.root, prs.property.share);
+    // Not a button of the card: it is chosen from the "more" menu.
+    await choose(tree.root, prs.property.share);
     expect(share).toHaveBeenCalledTimes(1);
     expect(share.mock.calls[0][0].message).toContain('/listing/a');
     expect(nav.navigate).not.toHaveBeenCalled();

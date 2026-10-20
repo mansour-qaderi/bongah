@@ -1,10 +1,10 @@
 import { Body, Controller, HttpCode, HttpStatus, Post, UseGuards } from '@nestjs/common';
-import type { RedeemLadderTokenResponse } from '@bongah/shared-types';
+import type { SpendLaddersResponse } from '@bongah/shared-types';
 import type { AuthenticatedUser } from '../auth/auth.types.js';
 import { CurrentUser } from '../auth/decorators/current-user.decorator.js';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard.js';
 import { ZodValidationPipe } from '../common/pipes/zod-validation.pipe.js';
-import { redeemLadderTokenSchema, type RedeemLadderTokenDto } from './dto/redeem-ladder-token.dto.js';
+import { spendLaddersSchema, type SpendLaddersDto } from './dto/spend-ladders.dto.js';
 import { RewardsService } from './rewards.service.js';
 
 @Controller('rewards')
@@ -12,13 +12,13 @@ import { RewardsService } from './rewards.service.js';
 export class RewardsController {
   constructor(private readonly rewards: RewardsService) {}
 
-  /** Spend one free ladder token on one of my listings. */
-  @Post('ladder-tokens/redeem')
+  /** Spend ladders on one more listing (3; free ones used up) or on a featured frame for one of my listings (7). */
+  @Post('ladders/spend')
   @HttpCode(HttpStatus.OK)
-  redeem(
+  spend(
     @CurrentUser() user: AuthenticatedUser,
-    @Body(new ZodValidationPipe(redeemLadderTokenSchema)) body: RedeemLadderTokenDto,
-  ): Promise<RedeemLadderTokenResponse> {
-    return this.rewards.redeemLadderToken(user.id, body.property_id);
+    @Body(new ZodValidationPipe(spendLaddersSchema)) body: SpendLaddersDto,
+  ): Promise<SpendLaddersResponse> {
+    return this.rewards.spendLadders(user.id, body);
   }
 }

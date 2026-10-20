@@ -45,6 +45,45 @@ const dot = (cx: number, cy: number, d: number): Shape => ({
   r: d / 2,
   fill: 'color',
 });
+/** A straight stroke from (x1, y1) to (x2, y2), any angle: a bar of the icon colour, turned to lie along it. */
+const line = (
+  x1: number,
+  y1: number,
+  x2: number,
+  y2: number,
+  t = 1.5,
+): Shape => {
+  const length = Math.hypot(x2 - x1, y2 - y1);
+  const cx = (x1 + x2) / 2;
+  const cy = (y1 + y2) / 2;
+  return {
+    x: Math.round((cx - length / 2) * 100) / 100,
+    y: Math.round((cy - t / 2) * 100) / 100,
+    w: Math.round(length * 100) / 100,
+    h: t,
+    r: t / 2,
+    fill: 'color',
+    rotate:
+      Math.round(((Math.atan2(y2 - y1, x2 - x1) * 180) / Math.PI) * 10) / 10,
+  };
+};
+/** The five points of a star centred on (cx, cy), the first straight up. */
+const starPoints = (cx: number, cy: number, radius: number) =>
+  [0, 1, 2, 3, 4].map(i => {
+    const angle = ((-90 + i * 72) * Math.PI) / 180;
+    return [
+      cx + radius * Math.cos(angle),
+      cy + radius * Math.sin(angle),
+    ] as const;
+  });
+/** A five-pointed star drawn as its outline's five long strokes (each corner joined to the second one after it). */
+const star = (cx: number, cy: number, radius: number, t = 1.5): Shape[] => {
+  const pts = starPoints(cx, cy, radius);
+  return pts.map((from, i) => {
+    const to = pts[(i + 2) % 5];
+    return line(from[0], from[1], to[0], to[1], t);
+  });
+};
 /** An outlined circle centred on (cx, cy). */
 const ring = (cx: number, cy: number, d: number, fill?: 'bg'): Shape => ({
   x: cx - d / 2,
@@ -150,7 +189,11 @@ export type IconName =
   | 'bath'
   | 'shower'
   | 'area'
-  | 'coin';
+  | 'coin'
+  // A featured frame (کادر ویژه): a rounded frame with a star in it
+  | 'frameStar'
+  // The balance: a wallet
+  | 'wallet';
 
 export const ICON_GRID = 24;
 
@@ -283,12 +326,14 @@ export const ICON_SHAPES: Record<IconName, Shape[]> = {
   ],
   // The letter "i" in a circle.
   info: [ring(12, 12, 19), dot(12, 7.6, 1.9), bar(11.2, 10.8, 1.6, 6.4)],
-  // The share sheet's glyph: an arrow leaving an open tray.
+  // The share glyph: three connected circles (the left one joined to the two on the right), the node-connection mark
+  // every phone shows for "share".
   share: [
-    frame(4.5, 10, 15, 11, 2.5, [0, 1, 1, 1]),
-    bar(11.1, 3.4, 1.8, 10.9),
-    { x: 7.8, y: 4.9, w: 5.2, h: 1.8, r: 0.9, fill: 'color', rotate: -45 },
-    { x: 11, y: 4.9, w: 5.2, h: 1.8, r: 0.9, fill: 'color', rotate: 45 },
+    ring(17.5, 5.5, 7),
+    ring(6.5, 12, 7),
+    ring(17.5, 18.5, 7),
+    { x: 8.6, y: 7.9, w: 6.8, h: 1.7, r: 0.85, fill: 'color', rotate: -30.6 },
+    { x: 8.6, y: 14.4, w: 6.8, h: 1.7, r: 0.85, fill: 'color', rotate: 30.6 },
   ],
   // A camera: a body with a lens and a small bump on top.
   camera: [
@@ -461,4 +506,13 @@ export const ICON_SHAPES: Record<IconName, Shape[]> = {
   ],
   // A coin: a ring within a ring.
   coin: [ring(12, 12, 19), ring(12, 12, 10)],
+  // A featured frame: the rounded frame of the listing card with a five-pointed star in it.
+  frameStar: [frame(2.5, 2.5, 19, 19, 4.5), ...star(12, 12.8, 6.2, 1.5)],
+  // A wallet: its body, the flap's clasp at one end and the button on it.
+  wallet: [
+    frame(2.5, 6, 19, 14, 3.5),
+    bar(5.5, 3.5, 11, 1.6),
+    frame(14, 10.5, 7.5, 5, 2.5),
+    dot(17.2, 13, 1.8),
+  ],
 };

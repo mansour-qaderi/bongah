@@ -26,8 +26,7 @@ type Props = NativeStackScreenProps<RootStackParamList, 'Upgrade'>;
 
 /**
  * "ارتقای حساب و خرید اشتراک": the subscription plans for real estate agencies, each with its discount, what it
- * includes and the way to pay; above them the launch-gifts banner (while the gifts are still on offer); below them, the two one-listing promotions as their own offers (the ladder, and the featured listing with
- * its gold frame). Reached from the Account tab and from the banners that say a free listing is used up. Only an
+ * includes and the way to pay; above them the launch-gifts banner (while the gifts are still on offer); below them, the featured frame («کادر ویژه برای آگهی», in its gold frame) with the way to its packs. Reached from the Account tab and from the banners that say a free listing is used up. Only an
  * agency can buy a plan; anyone else who taps the button is told so in a toast.
  */
 export default function UpgradeScreen({ navigation }: Props) {
@@ -46,6 +45,7 @@ export default function UpgradeScreen({ navigation }: Props) {
     return (
       <EmptyView message={t('auth.signInRequired')}>
         <Button
+          icon="login"
           title={t('auth.signIn')}
           onPress={() => navigation.navigate('Auth')}
         />
@@ -127,6 +127,7 @@ export default function UpgradeScreen({ navigation }: Props) {
 
       {chosen ? (
         <Button
+          icon="card"
           title={t('upgrade.pay', {
             price: format.price(chosen.price, prices.currency),
           })}
@@ -137,44 +138,15 @@ export default function UpgradeScreen({ navigation }: Props) {
 
       <View style={styles.promotions}>
         <Pressable
-          testID="promo-ladder"
-          accessibilityRole="button"
-          accessibilityLabel={t('upgrade.ladderTitle')}
-          onPress={() =>
-            navigation.navigate('Checkout', {
-              tab: 'promotion',
-              purpose: 'LADDER',
-            })
-          }
-          style={styles.ladder}
-        >
-          <Icon name="arrowUp" size={22} color={colors.primary} />
-          <View style={styles.promoText}>
-            <AppText variant="label">{t('upgrade.ladderTitle')}</AppText>
-            <AppText variant="caption" color={colors.textMuted}>
-              {t('upgrade.ladderHelp')}
-            </AppText>
-          </View>
-          <AppText variant="label" color={colors.primaryDark}>
-            {format.price(prices.ladder, prices.currency)}
-          </AppText>
-        </Pressable>
-
-        <Pressable
           testID="promo-featured"
           accessibilityRole="button"
-          accessibilityLabel={t('upgrade.featuredTitle')}
-          onPress={() =>
-            navigation.navigate('Checkout', {
-              tab: 'promotion',
-              purpose: 'FEATURED_AD',
-            })
-          }
+          accessibilityLabel={t('frame.title')}
+          onPress={() => navigation.navigate('Checkout')}
           style={styles.featured}
         >
           <View style={styles.featuredTop}>
             <AppText variant="label" color={colors.accentText}>
-              {t('upgrade.featuredTitle')}
+              {t('frame.title')}
             </AppText>
             <Badge
               label={t('upgrade.featuredBadge')}
@@ -182,7 +154,7 @@ export default function UpgradeScreen({ navigation }: Props) {
             />
           </View>
           <AppText variant="caption" color={colors.textMuted}>
-            {t('upgrade.featuredHelpBundles', {
+            {t('frame.topOfList', {
               days: formatNumber(prices.featured_ad_days, 0),
             })}
           </AppText>
@@ -250,7 +222,7 @@ function PlanCard({
                 />
                 <Feature
                   gift
-                  text={t('upgrade.feature.giftFeatured', {
+                  text={t('frame.giftCount', {
                     count: formatNumber(offer.benefits.gift_featured, 0),
                   })}
                 />
@@ -344,17 +316,6 @@ const styles = StyleSheet.create({
   badge: { alignSelf: 'flex-start', marginTop: spacing.xs },
   struck: { textDecorationLine: 'line-through' },
   promotions: { marginTop: spacing.xl, gap: spacing.md },
-  ladder: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.md,
-    padding: spacing.lg,
-    borderRadius: radius.lg,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.surface,
-  },
-  promoText: { flex: 1, gap: spacing.xs },
   // The featured listing is the premium offer: a gold frame, thicker than any other card, and its badge.
   featured: {
     gap: spacing.sm,

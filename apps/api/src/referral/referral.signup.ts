@@ -14,8 +14,9 @@ export async function findReferrerId(db: Prisma.TransactionClient, code: string)
 }
 
 /**
- * Gives the new user and (within the cap) their inviter one free ladder token each, plus
- * `contactCredits` contact reveal credits each when that is above 0.
+ * Gives the inviter (within the cap) one ladder (نردبان) for the friend who signed up with their code. The new user
+ * starts with none: a new account holds 0 ladders. Both sides also get `contactCredits` contact reveal credits when
+ * that is above 0.
  * Call it in the same transaction that creates the invited user: either the account and both
  * rewards exist, or none of them do. The (user, type, reason, invitee) UNIQUE index means the
  * same signup can never pay twice.
@@ -36,13 +37,17 @@ export async function grantSignupRewards(
   });
   const referrerRewarded = alreadyRewarded < signup.maxRewardedInvites;
 
-  const base = { type: RewardType.LADDER_TOKEN, amount: 1, inviteeId: signup.inviteeId };
-  await db.reward.createMany({
-    data: [
-      { ...base, userId: signup.inviteeId, reason: RewardReason.REFEREE_BONUS },
-      ...(referrerRewarded ? [{ ...base, userId: signup.referrerId, reason: RewardReason.REFERRER_BONUS }] : []),
-    ],
-  });
+  if (referrerRewarded) {
+    await db.reward.create({
+      data: {
+        type: RewardType.LADDER_TOKEN,
+        amount: 1,
+        inviteeId: signup.inviteeId,
+        userId: signup.referrerId,
+        reason: RewardReason.REFERRER_BONUS,
+      },
+    });
+  }
 
   const credits = signup.contactCredits ?? 0;
   if (credits > 0) {

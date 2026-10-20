@@ -141,13 +141,17 @@ export default function FilterSheet({
       : maxValue !== undefined
       ? t('home.priceUpTo', { amount: describeStop(maxValue) })
       : null;
-  // What the empty boxes hint at: clean round figures, plain digits, never a bare zero. The lighter placeholder colour
-  // (not a "for example" word) is what tells them from a typed amount.
+  // What the empty boxes hint at: a clean round figure said the way a person would type it («حداقل ۱,۰۰۰»,
+  // «حداکثر ۱۰,۰۰۰»). Never a bare zero; the lighter placeholder colour (not a "for example" word) is what tells it
+  // from a typed amount. The currency is not in the hint: it is written inside the box (`unit`), so it stays in
+  // sight once an amount is typed or the slider has filled the box.
   const examples =
     currency === 'USD'
-      ? { min: 1_000, max: 100_000 }
+      ? { min: 1_000, max: 10_000 }
       : { min: 1_000, max: 1_000_000 };
-  const example = (amount: number) => String(amount);
+  const hint = (word: string, amount: number) =>
+    `${word} ${formatNumber(amount, 0)}`;
+  const unit = t(`currency.${currency}`);
 
   return (
     <>
@@ -158,12 +162,14 @@ export default function FilterSheet({
         footer={
           <>
             <Button
+              icon="close"
               title={t('home.clearFilters')}
               variant="outline"
               onPress={clear}
               style={styles.footerSmall}
             />
             <Button
+              icon="check"
               title={t('home.applyFilters')}
               onPress={apply}
               style={styles.footerMain}
@@ -273,8 +279,9 @@ export default function FilterSheet({
                   onChangeText={setMinText}
                   keyboardType="decimal-pad"
                   ltr
-                  placeholder={example(examples.min)}
+                  placeholder={hint(t('home.minPrice'), examples.min)}
                   thousands
+                  unit={unit}
                   style={styles.field}
                 />
               </View>
@@ -285,8 +292,9 @@ export default function FilterSheet({
                   onChangeText={setMaxText}
                   keyboardType="decimal-pad"
                   ltr
-                  placeholder={example(examples.max)}
+                  placeholder={hint(t('home.maxPrice'), examples.max)}
                   thousands
+                  unit={unit}
                   style={styles.field}
                 />
               </View>

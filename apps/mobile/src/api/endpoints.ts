@@ -1,6 +1,7 @@
 import type {
   CreateFeedbackInput,
   CreatePropertyInput,
+  SpendLaddersInput,
   CreateTemplateInput,
   InitiatePaymentInput,
   RegisterDeviceInput,
@@ -22,15 +23,16 @@ import type {
   Currency,
   DealType,
   FeaturedCreditUsed,
+  SpendLaddersResponse,
   FeedbackReceived,
   Language,
   Paginated,
   PaymentInitiated,
   Pricing,
+  Wallet,
   Property,
   PropertyImageUploaded,
   PropertyType,
-  RedeemLadderTokenResponse,
   ReferralSummary,
   SendOtpResponse,
   Transaction,
@@ -234,12 +236,11 @@ export const getAgencyDashboard = () =>
 export const getReferralSummary = () =>
   request<ReferralSummary>('GET', '/referrals/me', { auth: true });
 
-/** Spends one free ladder token to move one of my listings to the top of search. */
-export const redeemLadderToken = (propertyId: string) =>
-  request<RedeemLadderTokenResponse>('POST', '/rewards/ladder-tokens/redeem', {
-    auth: true,
-    body: { property_id: propertyId },
-  });
+// ───────────── Wallet ─────────────
+
+/** What I have left: the listings I can still publish, contact credits, plan days. */
+export const getWallet = () =>
+  request<Wallet>('GET', '/wallet', { auth: true });
 
 // ───────────── Chat ─────────────
 
@@ -335,6 +336,16 @@ export const spendFeaturedCredit = (propertyId: string) =>
   request<FeaturedCreditUsed>('POST', '/hesabpay/featured-credits/use', {
     auth: true,
     body: { property_id: propertyId },
+  });
+
+/**
+ * Spends seven ladders (نردبان, earned by inviting friends): on one more listing once the free ones are used up, or
+ * on a featured frame for one of my listings.
+ */
+export const spendLadders = (input: SpendLaddersInput) =>
+  request<SpendLaddersResponse>('POST', '/rewards/ladders/spend', {
+    auth: true,
+    body: input,
   });
 
 export const getPayment = (id: string) =>

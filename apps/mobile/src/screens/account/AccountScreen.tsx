@@ -305,6 +305,15 @@ export default function AccountScreen({ navigation }: Props) {
           hint={t('account.upgradeHint')}
           onPress={() => navigation.navigate('Upgrade')}
         />
+        {/* A plain line like the others: what I have left (listings, frames, ladders), on its own screen. */}
+        {user ? (
+          <MenuRow
+            icon="wallet"
+            label={t('account.balanceTitle')}
+            hint={t('account.balanceHint')}
+            onPress={() => navigation.navigate('Balance')}
+          />
+        ) : null}
       </MenuGroup>
 
       <MenuGroup title={t('account.settings')} testID="settings-group">
@@ -360,6 +369,7 @@ export default function AccountScreen({ navigation }: Props) {
 
       {user ? (
         <Button
+          icon="logout"
           title={t('auth.signOut')}
           variant="danger"
           onPress={confirmSignOut}

@@ -387,7 +387,7 @@ describe('ListingCard (My Listings)', () => {
     expect(solid).toHaveLength(0);
   });
 
-  it('has the deal as a plain solid tag, and the status as the white pill', async () => {
+  it('has the deal as a solid emerald tag, and the status as the white pill', async () => {
     const tree = await card(property({ status: 'ACTIVE', deal_type: 'SALE' }));
     const tag = hosts(
       tree.root,
@@ -397,10 +397,6 @@ describe('ListingCard (My Listings)', () => {
         allText(n).trim() === prs.dealType.SALE,
     );
     expect(tag).toHaveLength(1);
-    // no dot inside the deal tag
-    expect(
-      hosts(tag[0], n => styleOf(n).width === 6 && styleOf(n).height === 6),
-    ).toHaveLength(0);
     // the status pill is the white one
     const white = hosts(
       tree.root,
@@ -412,23 +408,38 @@ describe('ListingCard (My Listings)', () => {
     expect(white.length).toBeGreaterThan(0);
   });
 
-  it('gives the actions flat looks: promote solid emerald, edit white with an edge, deactivate white with a red edge', async () => {
+  it('gives the actions flat looks: one white disc with an edge each; promote in emerald ink, deactivate in red ink with a red edge', async () => {
     const tree = await card(property(), [
-      { label: prs.my.promote, tone: 'brand', onPress: jest.fn() },
-      { label: prs.my.edit, onPress: jest.fn() },
-      { label: prs.my.archive, tone: 'danger', onPress: jest.fn() },
+      {
+        label: prs.my.promote,
+        icon: 'arrowUp',
+        tone: 'brand',
+        onPress: jest.fn(),
+      },
+      { label: prs.my.edit, icon: 'edit', onPress: jest.fn() },
+      {
+        label: prs.my.archive,
+        icon: 'toggleOff',
+        tone: 'danger',
+        onPress: jest.fn(),
+      },
     ]);
-    expect(styleOf(buttonNamed(tree.root, prs.my.promote))).toMatchObject({
-      backgroundColor: '#047857',
-    });
-    expect(styleOf(buttonNamed(tree.root, prs.my.edit))).toMatchObject({
-      backgroundColor: '#FFFFFF',
-      borderColor: '#E5E7EB',
-    });
-    expect(styleOf(buttonNamed(tree.root, prs.my.archive))).toMatchObject({
-      backgroundColor: '#FFFFFF',
-      borderColor: '#C0392B',
-    });
+    const disc = (label: string) =>
+      hosts(tree.root, n => n.props.accessibilityLabel === label)[0];
+    const ink = (label: string) =>
+      disc(label).findAll(n => typeof n.props.name === 'string')[0].props.color;
+    for (const label of [prs.my.promote, prs.my.edit, prs.my.archive]) {
+      expect(styleOf(disc(label))).toMatchObject({
+        backgroundColor: '#FFFFFF',
+        borderRadius: 20,
+        borderWidth: 1,
+      });
+    }
+    expect(styleOf(disc(prs.my.promote)).borderColor).toBe('#E5E7EB');
+    expect(styleOf(disc(prs.my.edit)).borderColor).toBe('#E5E7EB');
+    expect(styleOf(disc(prs.my.archive)).borderColor).toBe('#C0392B');
+    expect(ink(prs.my.promote)).toBe('#047857');
+    expect(ink(prs.my.archive)).toBe('#C0392B');
     expect(prs.my.archive).toBe('غیرفعال کردن');
   });
 

@@ -40,8 +40,12 @@ export const optionalReferralCode = z
     return code;
   });
 
-/** POST /rewards/ladder-tokens/redeem: which of my listings to ladder with a free token. */
-export const redeemLadderTokenSchema = z.strictObject({
-  property_id: z.uuid(),
-});
-export type RedeemLadderTokenInput = z.output<typeof redeemLadderTokenSchema>;
+/**
+ * POST /rewards/ladders/spend: spend ladders either on one more listing (three, when the free ones are used up) or
+ * on a featured frame for one of my listings.
+ */
+export const spendLaddersSchema = z.discriminatedUnion('purpose', [
+  z.strictObject({ purpose: z.literal('LISTING_QUOTA') }),
+  z.strictObject({ purpose: z.literal('FEATURED_FRAME'), property_id: z.uuid() }),
+]);
+export type SpendLaddersInput = z.output<typeof spendLaddersSchema>;

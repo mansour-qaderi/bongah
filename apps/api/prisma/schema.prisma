@@ -71,6 +71,13 @@ enum PropertyUnit {
   @@map("property_unit")
 }
 
+enum PriceTerms {
+  FIXED
+  NEGOTIABLE
+
+  @@map("price_terms")
+}
+
 enum DealType {
   SALE
   RENT
@@ -149,6 +156,16 @@ enum RewardType {
   SUBSCRIPTION_EXTENSION
 
   @@map("reward_type")
+}
+
+/// What a spent ladder bought. Ladders are spent seven at a time: LISTING_QUOTA (one more listing) or FEATURED_FRAME
+/// (a frame on one listing). LADDER_BUMP is the old one-ladder "move to top", kept for the rows already spent that way.
+enum RewardSpend {
+  LADDER_BUMP
+  LISTING_QUOTA
+  FEATURED_FRAME
+
+  @@map("reward_spend")
 }
 
 /// Why a reward was granted. Together with the user and the invited friend it identifies the reward.
@@ -418,6 +435,10 @@ model Property {
   /// LEGACY, unused (see PropertyUnit).
   unitType      PropertyUnit?  @map("unit_type")
   dealType      DealType       @map("deal_type")
+  /// How long a mortgage (گروی) runs, in months. Set only on MORTGAGE_GROWI listings, and only when the owner said.
+  mortgageMonths Int?          @map("mortgage_months")
+  /// Fixed (مقطوع) or negotiable (جورآمد) price. Null when the owner said neither.
+  priceTerms    PriceTerms?    @map("price_terms")
   price         Decimal        @db.Decimal(14, 2)
   currency      Currency
   areaSqm       Float          @map("area_sqm")
@@ -575,8 +596,8 @@ model MapLocationToken {
 ///
 /// Granted at signup, in the same transaction that creates the invited user. UNIQUE on
 /// (recipient, type, reason, invitee): replaying a signup can never pay the same reward twice.
-/// A LADDER_TOKEN is spent by laddering one of the owner's listings; consumed_at and property_id
-/// are then set together (CHECK constraint in the migration), like map_location_tokens.
+/// A LADDER_TOKEN is spent seven at a time (see RewardSpend); consumed_at and spent_on are then set together
+/// (CHECK constraint in the migration).
 model Reward {
   id             String       @id @default(uuid()) @db.Uuid
   /// Who receives the reward.
@@ -589,7 +610,9 @@ model Reward {
   amount         Int          @default(1)
   /// When it was spent (LADDER_TOKEN only; the reserved types are never "spent" yet).
   consumedAt     DateTime?    @map("consumed_at") @db.Timestamptz(3)
-  /// The listing a LADDER_TOKEN was spent on.
+  /// What a LADDER_TOKEN was spent on; set together with consumed_at (CHECK constraint in the migration).
+  spentOn        RewardSpend? @map("spent_on")
+  /// The listing a LADDER_TOKEN was spent on (none for a listing quota).
   propertyId     String?      @map("property_id") @db.Uuid
   createdAt      DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
 

@@ -1,9 +1,7 @@
 import {
   QueryClient,
   useInfiniteQuery,
-  useMutation,
   useQuery,
-  useQueryClient,
   type InfiniteData,
 } from '@tanstack/react-query';
 import type { Language, Paginated, Property } from '@bongah/shared-types';
@@ -15,6 +13,7 @@ import {
   getChatCapabilities,
   getContactAccess,
   getPricing,
+  getWallet,
   getProperty,
   getReferralSummary,
   getWelcomeQuote,
@@ -22,7 +21,6 @@ import {
   listMyProperties,
   listProperties,
   listTemplates,
-  redeemLadderToken,
   type PropertyFilters,
 } from './endpoints';
 
@@ -53,6 +51,11 @@ export const queryKeys = {
   agencyDashboard: ['properties', 'agency-dashboard'] as const,
   property: (id: string) => ['properties', 'detail', id] as const,
   pricing: ['pricing'] as const,
+  /**
+   * Under `properties` on purpose, like the agency dashboard: the listings I can still publish change when I add one or
+   * pay for a plan, and those already refresh everything under `properties`.
+   */
+  wallet: ['properties', 'wallet'] as const,
   referral: ['referral'] as const,
   /** Everything about a listing's owner number: the allowance and who has been revealed. A payment or a reveal refreshes it all. */
   contact: ['contact'] as const,
@@ -134,11 +137,22 @@ export function usePropertyDetail(id: string, enabled = true) {
   });
 }
 
-export function usePricing() {
+/** What I have left to publish with (the wallet: listing quota, plan). Never trusted when old: it moves as I publish. */
+export function useWallet(enabled: boolean) {
+  return useQuery({
+    queryKey: queryKeys.wallet,
+    queryFn: getWallet,
+    enabled,
+    staleTime: 0,
+  });
+}
+
+export function usePricing(enabled = true) {
   return useQuery({
     queryKey: queryKeys.pricing,
     queryFn: getPricing,
     staleTime: 5 * 60_000,
+    enabled,
   });
 }
 
@@ -184,7 +198,7 @@ export function useWelcomeQuote(language: Language, enabled: boolean) {
   });
 }
 
-/** My referral code, who joined with it, and the free ladder tokens I hold. */
+/** My referral code and who joined with it. */
 export function useReferralSummary(enabled: boolean) {
   return useQuery({
     queryKey: queryKeys.referral,
@@ -192,21 +206,6 @@ export function useReferralSummary(enabled: boolean) {
     enabled,
     // Friends join and tokens get spent without this screen knowing, so never trust an old answer.
     staleTime: 0,
-  });
-}
-
-/**
- * Spends one free ladder token on one of my listings. Moving a listing up changes the lists, and
- * the token count on the referral screen, so both are refreshed.
- */
-export function useRedeemLadderToken() {
-  const client = useQueryClient();
-  return useMutation({
-    mutationFn: redeemLadderToken,
-    onSuccess: () => {
-      client.invalidateQueries({ queryKey: queryKeys.properties });
-      client.invalidateQueries({ queryKey: queryKeys.referral });
-    },
   });
 }
 

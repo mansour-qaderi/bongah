@@ -61,12 +61,14 @@ export default function ContactActionBar({
       ) : null}
       <View style={styles.row}>
         <Button
+          icon="phone"
           title={t('property.callAction')}
           loading={actions.revealing}
           onPress={actions.call}
           style={styles.button}
         />
         <Button
+          icon="chat"
           title={t('property.whatsappAction')}
           variant="outline"
           disabled={actions.revealing}
@@ -74,6 +76,7 @@ export default function ContactActionBar({
           style={styles.button}
         />
         <Button
+          icon="chat"
           title={t('property.chatAction')}
           variant="secondary"
           loading={actions.openingChat}

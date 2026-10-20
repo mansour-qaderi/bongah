@@ -45,6 +45,7 @@ describe('PricingService', () => {
       contact_credits: 40,
       contact_credits_per_pack: 10,
       featured_bundles: [
+        { size: 1, price: 100.5, list_price: 100.5, discount_percent: 0 },
         { size: 3, price: 271.35, list_price: 301.5, discount_percent: 10 },
         { size: 5, price: 402, list_price: 502.5, discount_percent: 20 },
         { size: 10, price: 653.25, list_price: 1005, discount_percent: 35 },
@@ -57,6 +58,7 @@ describe('PricingService', () => {
   it('prices the featured bundles from an overridden single price', async () => {
     const pricing = service([{ key: PricingKey.FEATURED_AD, price: 200, quantity: 3 }]);
     expect(pricing.toWire(await pricing.effective()).featured_bundles).toEqual([
+      { size: 1, price: 200, list_price: 200, discount_percent: 0 },
       { size: 3, price: 540, list_price: 600, discount_percent: 10 },
       { size: 5, price: 800, list_price: 1000, discount_percent: 20 },
       { size: 10, price: 1300, list_price: 2000, discount_percent: 35 },

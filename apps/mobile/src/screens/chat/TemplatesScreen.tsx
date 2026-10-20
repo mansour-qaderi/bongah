@@ -43,6 +43,7 @@ export default function TemplatesScreen({ navigation }: Props) {
     return (
       <EmptyView message={t('templates.signInHint')}>
         <Button
+          icon="login"
           title={t('auth.signIn')}
           onPress={() => navigation.navigate('Auth')}
         />
@@ -62,10 +63,9 @@ export default function TemplatesScreen({ navigation }: Props) {
       <EmptyView message={t('templates.lockedBody')}>
         <AppText variant="heading">{t('templates.lockedTitle')}</AppText>
         <Button
+          icon="card"
           title={t('templates.subscribe')}
-          onPress={() =>
-            navigation.navigate('Checkout', { tab: 'subscription' })
-          }
+          onPress={() => navigation.navigate('Upgrade')}
         />
       </EmptyView>
     );
@@ -198,6 +198,7 @@ function Manager({
         <View style={styles.buttons}>
           {editing ? (
             <Button
+              icon="close"
               title={t('common.cancel')}
               variant="outline"
               style={styles.flex}
@@ -205,6 +206,7 @@ function Manager({
             />
           ) : null}
           <Button
+            icon="check"
             title={editing ? t('templates.update') : t('templates.add')}
             loading={save.isPending}
             disabled={full || body.trim() === ''}
@@ -229,12 +231,14 @@ function Manager({
             <AppText>{template.body}</AppText>
             <View style={styles.buttons}>
               <Button
+                icon="edit"
                 title={t('templates.edit')}
                 variant="outline"
                 style={styles.flex}
                 onPress={() => startEdit(template)}
               />
               <Button
+                icon="refresh"
                 title={
                   template.is_auto_reply
                     ? t('templates.makeNotAuto')
@@ -249,6 +253,7 @@ function Manager({
                 onPress={() => toggleAuto.mutate(template)}
               />
               <Button
+                icon="trash"
                 title={t('common.delete')}
                 variant="danger"
                 style={styles.flex}

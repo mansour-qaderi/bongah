@@ -188,6 +188,7 @@ export default function BottomSheet({
           {children}
           {footer ? (
             <View
+              testID="sheet-footer"
               style={[
                 styles.footer,
                 {
@@ -244,7 +245,5 @@ const styles = StyleSheet.create({
     gap: spacing.md,
     padding: spacing.lg,
     backgroundColor: colors.surface,
-    borderTopWidth: 1,
-    borderTopColor: colors.border,
   },
 });

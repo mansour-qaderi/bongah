@@ -147,6 +147,7 @@ function SheetBody({
                     </AppText>
                   ) : null}
                   <Button
+                    icon="check"
                     title={t('contact.useCredit')}
                     loading={spend.isPending}
                     onPress={() => spend.mutate()}
@@ -165,6 +166,7 @@ function SheetBody({
               ) : !prices ? (
                 <Banner kind="error" message={t('checkout.pricesFailed')}>
                   <Button
+                    icon="refresh"
                     title={t('common.retry')}
                     variant="outline"
                     onPress={() => pricing.refetch()}
@@ -186,6 +188,7 @@ function SheetBody({
                     {t('contact.buyHelp')}
                   </AppText>
                   <Button
+                    icon="card"
                     title={t('contact.buy')}
                     loading={flow.starting}
                     onPress={() => flow.begin({ purpose: 'CONTACT_CREDITS' })}
@@ -195,6 +198,7 @@ function SheetBody({
 
               {perInvite > 0 ? (
                 <Button
+                  icon="gift"
                   title={t('contact.inviteFriends', {
                     count: formatNumber(perInvite, 0),
                   })}

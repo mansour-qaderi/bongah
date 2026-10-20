@@ -13,9 +13,11 @@ import {
   CURRENCIES,
   DEAL_TYPES,
   PROPERTY_TYPES,
+  PRICE_TERMS,
   PROPERTY_UNIT_MAX_LENGTH,
   type Currency,
   type DealType,
+  type PriceTerms,
   type Property,
   type PropertyType,
 } from '@bongah/shared-types';
@@ -26,11 +28,12 @@ import {
 import { createProperty, getMe, updateProperty } from '../../api/endpoints';
 import {
   errorMessage,
+  isAnyListingLimit,
   isListingLimitReached,
   isSubscriptionRequired,
   listingLimitMessage,
 } from '../../api/errors';
-import { queryKeys, usePropertyDetail } from '../../api/hooks';
+import { queryKeys, usePricing, usePropertyDetail } from '../../api/hooks';
 import { useAuth } from '../../auth/AuthContext';
 import AppText from '../../components/AppText';
 import Banner from '../../components/Banner';
@@ -38,12 +41,15 @@ import BottomSheet from '../../components/BottomSheet';
 import Button from '../../components/Button';
 import Card from '../../components/Card';
 import { Chip } from '../../components/Chip';
+import FramePayStep from '../../components/FramePayStep';
 import JeribInfoButton from '../../components/JeribInfo';
+import LadderUnlockBanner from '../../components/LadderUnlockBanner';
 import { KeyboardAwareScrollView } from '../../components/KeyboardAware';
 import PinSection from '../../components/PinSection';
 import ProvincePicker from '../../components/ProvincePicker';
 import SegmentedControl from '../../components/SegmentedControl';
 import Stepper from '../../components/Stepper';
+import SwitchRow from '../../components/SwitchRow';
 import { showToast } from '../../components/Toast';
 import { EmptyView, ErrorView, LoadingView } from '../../components/States';
 import TextField from '../../components/TextField';
@@ -52,7 +58,12 @@ import {
   provinceValue,
   type Province,
 } from '../../constants/provinces';
-import { formatNumber, jeribToSqm, parseNumberInput } from '../../i18n/format';
+import {
+  formatDate,
+  formatNumber,
+  jeribToSqm,
+  parseNumberInput,
+} from '../../i18n/format';
 import { propertyTypeLabel } from '../../i18n/propertyType';
 import { useFormat } from '../../i18n/useFormat';
 import {
@@ -63,8 +74,12 @@ import {
   type Coordinate,
   type MapCamera,
 } from '../../map/geo';
-import { findAddress as findOnMap, lookUpPlace } from '../../map/geocode';
+import {
+  findAddressLoosely as findOnMap,
+  lookUpPlace,
+} from '../../map/geocode';
 import type { RootStackParamList } from '../../navigation/types';
+import { useFeaturedCreditSpend } from '../../payments/useFeaturedCreditSpend';
 import { colors, radius, spacing } from '../../theme';
 import {
   failingFields,
@@ -75,6 +90,7 @@ import {
   type FieldErrors,
   type FormField,
 } from './formErrors';
+import { monthsFromInput, splitMonths, type DurationUnit } from './mortgage';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'AddProperty'>;
 type AreaUnit = 'sqm' | 'jerib';
@@ -135,7 +151,8 @@ const addressFrom = (place: {
  */
 export default function AddPropertyScreen({ navigation, route }: Props) {
   const { t } = useTranslation();
-  const { language } = useFormat();
+  const format = useFormat();
+  const { language } = format;
   const { status, user, updateUser } = useAuth();
   const queryClient = useQueryClient();
   const propertyId = route.params?.propertyId;
@@ -150,6 +167,15 @@ export default function AddPropertyScreen({ navigation, route }: Props) {
   const [deal, setDeal] = useState<DealType>('SALE');
   const [priceText, setPriceText] = useState('');
   const [currency, setCurrency] = useState<Currency>('AFGHANI');
+  // How long a mortgage (گروی) runs, as typed, and whether the number is months or years.
+  const [durationText, setDurationText] = useState('');
+  const [durationUnit, setDurationUnit] = useState<DurationUnit>('month');
+  // مقطوع / جورآمد; null says neither.
+  const [priceTerms, setPriceTerms] = useState<PriceTerms | null>(null);
+  // Asked for the featured frame (کادر ویژه) along with this save.
+  const [framed, setFramed] = useState(false);
+  // The id of the listing just saved while its frame still has to be paid for: the sheet shows the payment step.
+  const [payingFrame, setPayingFrame] = useState<string | null>(null);
   const [areaText, setAreaText] = useState('');
   const [areaUnit, setAreaUnit] = useState<AreaUnit>('sqm');
   const [bedrooms, setBedrooms] = useState<number | null>(null);
@@ -204,8 +230,7 @@ export default function AddPropertyScreen({ navigation, route }: Props) {
       const abort = new AbortController();
       syncAbort.current = abort;
       setMapSync('finding');
-      const where = province ? `${text}، ${province.name.prs}` : text;
-      const result = await findOnMap(where, abort.signal);
+      const result = await findOnMap(text, province?.name.prs, abort.signal);
       if (abort.signal.aborted) return;
       if (result.status === 'found') {
         syncNonce.current += 1;
@@ -273,6 +298,10 @@ export default function AddPropertyScreen({ navigation, route }: Props) {
     setDeal(property.deal_type);
     setPriceText(String(property.price));
     setCurrency(property.currency);
+    const length = splitMonths(property.mortgage_months);
+    setDurationText(length.text);
+    setDurationUnit(length.unit);
+    setPriceTerms(property.price_terms ?? null);
     setAreaText(String(property.area_sqm));
     setAreaUnit('sqm');
     setBedrooms(property.bedrooms);
@@ -305,6 +334,11 @@ export default function AddPropertyScreen({ navigation, route }: Props) {
 
   /** A new account's gift listing is still unspent: the first listing posted uses it. */
   const hasGift = (user?.welcome_listing_credits ?? 0) > 0;
+  // Featured-frame credits (bought in a bundle, or the first-subscription gift), and what one frame costs and lasts.
+  const frameCredits = user?.featured_credits ?? 0;
+  // The price is only asked for once the frame is switched on: a form that is only filled in makes no payment call.
+  const pricing = usePricing(framed);
+  const frameSpend = useFeaturedCreditSpend();
 
   const mutation = useMutation({
     mutationFn: (data: CreatePropertyInput) =>
@@ -331,13 +365,39 @@ export default function AddPropertyScreen({ navigation, route }: Props) {
       // balances (and the prompt) follow.
       if (!editing) getMe().then(updateUser, () => undefined);
       await queryClient.invalidateQueries({ queryKey: queryKeys.properties });
-      if (editing) stepAside(() => navigation.goBack());
-      else
-        stepAside(() =>
-          navigation.replace('PropertyDetails', { id: property.id }),
-        );
+      if (framed) {
+        if (frameCredits > 0) {
+          // A credit pays for the frame at once.
+          try {
+            const used = await frameSpend.mutateAsync(property.id);
+            showToast(
+              t('checkout.creditUsed', {
+                count: formatNumber(used.featured_credits, 0),
+              }),
+              'success',
+            );
+          } catch {
+            // The listing is saved either way; only the frame did not happen.
+            showToast(t('frame.creditFailed'));
+          }
+        } else {
+          // No credit: pay for the frame here, in the sheet. Closing the sheet from now on lands on the listing.
+          pending.current = () => leave(property.id);
+          setPayingFrame(property.id);
+          return;
+        }
+      }
+      leave(property.id);
     },
   });
+
+  /** Done with the form: back to where it was opened from (an edit), or on to the new listing. */
+  const leave = (id: string) =>
+    stepAside(() =>
+      editing
+        ? navigation.goBack()
+        : navigation.replace('PropertyDetails', { id }),
+    );
 
   const sheetTitle = editing ? t('add.editTitle') : t('nav.addProperty');
   /** The sheet around whatever the screen has to show right now. */
@@ -358,6 +418,7 @@ export default function AddPropertyScreen({ navigation, route }: Props) {
     return sheet(
       <EmptyView message={t('auth.signInRequired')}>
         <Button
+          icon="login"
           title={t('auth.signIn')}
           onPress={() => stepAside(() => navigation.navigate('Auth'))}
         />
@@ -371,6 +432,18 @@ export default function AddPropertyScreen({ navigation, route }: Props) {
         message={errorMessage(existing.error, t)}
         onRetry={() => existing.refetch()}
       />,
+    );
+  }
+
+  // The listing is saved and its frame is being paid for: nothing of the form is left to show.
+  if (payingFrame) {
+    return sheet(
+      <View style={styles.payStep}>
+        <FramePayStep
+          propertyId={payingFrame}
+          onDone={() => leave(payingFrame)}
+        />
+      </View>,
     );
   }
 
@@ -391,6 +464,13 @@ export default function AddPropertyScreen({ navigation, route }: Props) {
     typedPrice === null
       ? undefined
       : `${formatNumber(typedPrice)} ${t(`currency.${currency}`)}`;
+  // The mortgage length typed so far; a number of years also says how many months it comes to.
+  const mortgage = deal === 'MORTGAGE_GROWI';
+  const typedMonths = monthsFromInput(durationText, durationUnit);
+  const durationHelper =
+    mortgage && durationUnit === 'year' && typeof typedMonths === 'number'
+      ? t('mortgage.equals', { months: formatNumber(typedMonths, 0) })
+      : undefined;
   /** The ℹ beside the "مساحت" label: what a jerib is, and what the typed area comes to in jerib. */
   const areaInfo = (
     <JeribInfoButton
@@ -403,6 +483,20 @@ export default function AddPropertyScreen({ navigation, route }: Props) {
       }
     />
   );
+
+  // What turning the frame on does, so nobody is surprised by a payment page: it costs a credit, or money.
+  const featuredUntil =
+    editing && original?.is_featured ? original.featured_until : null;
+  const framePrice = pricing.data
+    ? format.price(pricing.data.featured_ad, pricing.data.currency)
+    : null;
+  const frameHelper = featuredUntil
+    ? t('frame.toggleExtends', { date: formatDate(featuredUntil) })
+    : frameCredits > 0
+    ? t('frame.toggleCredit', { count: formatNumber(frameCredits, 0) })
+    : framePrice
+    ? t('frame.togglePay', { price: framePrice })
+    : t('frame.togglePayGeneric');
 
   /** "۲,۵۰۰,۰۰۰": a sample figure for an empty box (the lighter placeholder colour is what says it is only a hint). */
   const example = (amount: number) => formatNumber(amount);
@@ -479,6 +573,12 @@ export default function AddPropertyScreen({ navigation, route }: Props) {
       // What was typed for a unit stays in the box while the type is changed, but only a type that has units sends it.
       unit: hasUnit ? unit.trim() || null : null,
       deal_type: deal,
+      // Only a mortgage has a length. (An edit that moves a listing off a mortgage needs no null: the server drops it.)
+      mortgage_months:
+        mortgage && typeof typedMonths === 'number' ? typedMonths : undefined,
+      // Neither term is sent unless it clears one that was there.
+      price_terms:
+        priceTerms ?? (editing && original?.price_terms ? null : undefined),
       price: price === null ? undefined : roundTo2(price),
       currency,
       area_sqm:
@@ -500,6 +600,11 @@ export default function AddPropertyScreen({ navigation, route }: Props) {
     // The schema lets a count be left out; this form does not (a listing without them is not comparable).
     if (hasRooms && bedrooms === null) next.bedrooms = t('add.required');
     if (hasRooms && bathrooms === null) next.bathrooms = t('add.required');
+    // A mortgage says how long it runs; the schema lets it be left out, this form does not.
+    if (mortgage && typedMonths === 'empty')
+      next.mortgage_months = t('add.required');
+    else if (mortgage && typedMonths === 'invalid')
+      next.mortgage_months = fieldMessage('mortgage_months', 'invalid', t);
 
     // The same schema the server enforces, so mistakes are caught before a round trip.
     const parsed = createPropertySchema.safeParse(raw);
@@ -510,7 +615,7 @@ export default function AddPropertyScreen({ navigation, route }: Props) {
         const value = (raw as Record<string, unknown>)[issue.path[0] as string];
         const empty =
           value === undefined ||
-          value === '' ||
+          (typeof value === 'string' && value.trim() === '') ||
           (Array.isArray(value) && !value.length);
         // Each field says what is wrong with it in its own words (a price is not "invalid", it is "not a number above zero").
         next[field] = fieldMessage(field, empty ? 'required' : 'invalid', t);
@@ -552,6 +657,7 @@ export default function AddPropertyScreen({ navigation, route }: Props) {
       {isSubscriptionRequired(mutation.error) ? (
         <Banner kind="error" message={errorMessage(mutation.error, t)}>
           <Button
+            icon="card"
             title={t('add.buySubscription')}
             variant="outline"
             onPress={() => stepAside(() => navigation.navigate('Upgrade'))}
@@ -566,10 +672,18 @@ export default function AddPropertyScreen({ navigation, route }: Props) {
       {isListingLimitReached(mutation.error) ? (
         <Banner kind="promo" message={listingLimitMessage(mutation.error, t)}>
           <Button
-            title={t('add.upgrade')}
+            icon="up"
+            title={t('add.upgradeAccount')}
             onPress={() => stepAside(() => navigation.navigate('Upgrade'))}
           />
         </Banner>
+      ) : null}
+      {/* Seven ladders open one more listing (and the save runs again); fewer say how to earn them. */}
+      {isAnyListingLimit(mutation.error) ? (
+        <LadderUnlockBanner
+          onUnlocked={submit}
+          onInvite={() => stepAside(() => navigation.navigate('Referral'))}
+        />
       ) : null}
 
       <Card title={t('add.sectionBasics')} flush>
@@ -658,7 +772,7 @@ export default function AddPropertyScreen({ navigation, route }: Props) {
       <Card title={t('add.sectionPrice')} flush>
         <View ref={anchor('price')} collapsable={false}>
           <TextField
-            label={t('add.price')}
+            label={t(`dealPrice.${deal}`)}
             value={priceText}
             onChangeText={v => {
               setPriceText(v);
@@ -690,6 +804,61 @@ export default function AddPropertyScreen({ navigation, route }: Props) {
             </AppText>
           ) : null}
         </View>
+        {mortgage ? (
+          <View ref={anchor('mortgage_months')} collapsable={false}>
+            <TextField
+              testID="mortgage-duration"
+              label={t('mortgage.label')}
+              value={durationText}
+              onChangeText={v => {
+                setDurationText(v);
+                clearError('mortgage_months');
+              }}
+              keyboardType="decimal-pad"
+              placeholder={t('mortgage.placeholder')}
+              helper={durationHelper}
+              error={errors.mortgage_months}
+            />
+            <View style={styles.toggle}>
+              <SegmentedControl
+                value={durationUnit}
+                onChange={setDurationUnit}
+                options={(['month', 'year'] as const).map(measure => ({
+                  value: measure,
+                  label: t(`mortgage.${measure}`),
+                }))}
+              />
+            </View>
+          </View>
+        ) : null}
+        <View ref={anchor('price_terms')} collapsable={false}>
+          <AppText variant="label" color={colors.textSecondary}>
+            {`${t('priceTerms.label')} (${t('common.optional')})`}
+          </AppText>
+          <View style={styles.wrap}>
+            {[...PRICE_TERMS, null].map(term => (
+              <Chip
+                compact
+                key={term ?? 'none'}
+                label={t(`priceTerms.${term ?? 'NONE'}`)}
+                selected={priceTerms === term}
+                onPress={() => {
+                  setPriceTerms(term);
+                  clearError('price_terms');
+                }}
+              />
+            ))}
+          </View>
+          {errors.price_terms ? (
+            <AppText
+              variant="caption"
+              color={colors.danger}
+              style={styles.chipError}
+            >
+              {errors.price_terms}
+            </AppText>
+          ) : null}
+        </View>
         <View ref={anchor('area_sqm')} collapsable={false}>
           <TextField
             label={t('add.area')}
@@ -700,7 +869,7 @@ export default function AddPropertyScreen({ navigation, route }: Props) {
               clearError('area_sqm');
             }}
             keyboardType="decimal-pad"
-            placeholder={example(areaUnit === 'jerib' ? 2 : 200)}
+            placeholder={`${example(areaUnit === 'jerib' ? 2 : 200)}`}
             helper={areaHelper}
             error={errors.area_sqm}
           />
@@ -839,7 +1008,8 @@ export default function AddPropertyScreen({ navigation, route }: Props) {
       <Card title={t('add.sectionDetails')} flush>
         <View ref={anchor('description')} collapsable={false}>
           <TextField
-            label={t('add.descriptionField')}
+            label={t('add.descriptionLabel')}
+            required
             value={description}
             onChangeText={v => {
               setDescription(v);
@@ -882,6 +1052,7 @@ export default function AddPropertyScreen({ navigation, route }: Props) {
           ))}
           {imageLinks.length < MAX_IMAGE_LINKS ? (
             <Button
+              icon="plus"
               title={t('add.addImage')}
               variant="outline"
               onPress={() => setImageLinks(links => [...links, ''])}
@@ -889,6 +1060,20 @@ export default function AddPropertyScreen({ navigation, route }: Props) {
           ) : null}
         </View>
       </Card>
+
+      {/* The last thing on the form: put the featured frame on this listing now, instead of going to a payment page
+          afterwards. With a credit it is spent on save; without, the payment step follows the save. */}
+      <SwitchRow
+        gold
+        testID="frame-switch"
+        label={t('frame.toggle', {
+          days: formatNumber(pricing.data?.featured_ad_days ?? 7, 0),
+        })}
+        helper={frameHelper}
+        value={framed}
+        onValueChange={setFramed}
+        style={styles.frameRow}
+      />
 
       <ProvincePicker
         visible={pickerOpen}
@@ -907,6 +1092,7 @@ export default function AddPropertyScreen({ navigation, route }: Props) {
       />
     </KeyboardAwareScrollView>,
     <Button
+      icon="check"
       title={editing ? t('add.save') : t('add.submit')}
       onPress={submit}
       loading={mutation.isPending}
@@ -946,4 +1132,6 @@ const styles = StyleSheet.create({
   addressInput: { minHeight: 88 },
   help: { marginBottom: spacing.sm },
   descriptionInput: { marginTop: 0 },
+  frameRow: { marginTop: spacing.sm },
+  payStep: { padding: spacing.lg, gap: spacing.sm },
 });

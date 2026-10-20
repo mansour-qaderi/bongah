@@ -150,7 +150,11 @@ export default function JeribInfoButton({ areaSqm }: Props) {
                 })}
               </AppText>
             ) : null}
-            <Button title={t('common.ok')} onPress={() => setOpen(false)} />
+            <Button
+              icon="check"
+              title={t('common.ok')}
+              onPress={() => setOpen(false)}
+            />
           </View>
         </View>
       </Modal>

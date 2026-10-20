@@ -19,6 +19,8 @@ import { useKeyboardFocus } from './KeyboardAware';
 
 interface Props extends TextInputProps {
   label?: string;
+  /** Marks the field as required: a red « *» after the label (the screen still checks the value). */
+  required?: boolean;
   /** Something small right beside the label (an info button), on the label's own line. */
   labelAccessory?: React.ReactNode;
   error?: string | null;
@@ -46,10 +48,16 @@ interface Props extends TextInputProps {
    * while the value handed to the screen stays plain digits ("1300000"). Needs `digits="persian"`.
    */
   thousands?: boolean;
+  /**
+   * A short word drawn inside the box at its end edge and always visible, also once a value is typed and the placeholder
+   * is gone: the currency of a price ("افغانی", "دالر"). The text keeps clear of it.
+   */
+  unit?: string;
 }
 
 export default function TextField({
   label,
+  required,
   labelAccessory,
   error,
   invalid,
@@ -57,6 +65,7 @@ export default function TextField({
   helper,
   digits = 'persian',
   thousands = false,
+  unit,
   style,
   multiline,
   value,
@@ -114,6 +123,7 @@ export default function TextField({
     persian && styles.digitsFont,
     multiline && styles.multiline,
     ltr && ltrInput,
+    unit ? styles.withUnit : null,
     error || invalid ? styles.inputError : null,
     style,
   ]) as TextStyle;
@@ -156,38 +166,52 @@ export default function TextField({
         <View style={styles.labelRow} testID="label-row">
           <AppText variant="label" color={colors.textSecondary}>
             {label}
+            {required ? (
+              <AppText variant="label" color={colors.danger}>
+                {' *'}
+              </AppText>
+            ) : null}
           </AppText>
           {labelAccessory}
         </View>
       ) : null}
-      <TextInput
-        placeholderTextColor={colors.placeholder}
-        accessibilityLabel={label}
-        multiline={multiline}
-        {...rest}
-        value={shown}
-        placeholder={
-          persian && placeholder !== undefined
-            ? toPersianDigits(placeholder)
-            : placeholder
-        }
-        onChangeText={onChangeText ? handleChange : undefined}
-        onSelectionChange={handleSelection}
-        selection={
-          forcedCaret !== null
-            ? { start: forcedCaret, end: forcedCaret }
-            : selection
-        }
-        onFocus={event => {
-          focus?.inputFocused();
-          onFocus?.(event);
-        }}
-        onBlur={event => {
-          setForcedCaret(null);
-          onBlur?.(event);
-        }}
-        style={inputStyle}
-      />
+      <View style={unit ? styles.unitHost : null}>
+        <TextInput
+          placeholderTextColor={colors.placeholder}
+          accessibilityLabel={label}
+          multiline={multiline}
+          {...rest}
+          value={shown}
+          placeholder={
+            persian && placeholder !== undefined
+              ? toPersianDigits(placeholder)
+              : placeholder
+          }
+          onChangeText={onChangeText ? handleChange : undefined}
+          onSelectionChange={handleSelection}
+          selection={
+            forcedCaret !== null
+              ? { start: forcedCaret, end: forcedCaret }
+              : selection
+          }
+          onFocus={event => {
+            focus?.inputFocused();
+            onFocus?.(event);
+          }}
+          onBlur={event => {
+            setForcedCaret(null);
+            onBlur?.(event);
+          }}
+          style={inputStyle}
+        />
+        {unit ? (
+          <View style={styles.unit} pointerEvents="none" testID="field-unit">
+            <AppText variant="caption" color={colors.textMuted}>
+              {unit}
+            </AppText>
+          </View>
+        ) : null}
+      </View>
       {error ? (
         <AppText variant="caption" color={colors.danger} style={styles.error}>
           {error}
@@ -230,6 +254,16 @@ const styles = StyleSheet.create({
     textAlignVertical: 'top',
   },
   inputError: { borderColor: colors.danger },
+  // Room at the end of the box for the unit word drawn over it.
+  withUnit: { paddingEnd: 64 },
+  unitHost: { justifyContent: 'center' },
+  unit: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    end: spacing.md,
+    justifyContent: 'center',
+  },
   // Regular Vazirmatn whose 0-9 are drawn as ۰-۹, so a digit is Persian from the moment it is typed.
   digitsFont: { fontFamily: fonts.digits },
   error: { marginTop: spacing.xs },

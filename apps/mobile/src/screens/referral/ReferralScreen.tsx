@@ -24,9 +24,15 @@ import { colors, radius, spacing, surfaces } from '../../theme';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Referral'>;
 
+const LISTED_REWARDS: readonly RewardItem['type'][] = [
+  'LADDER_TOKEN',
+  'BONUS_LISTING',
+  'SUBSCRIPTION_EXTENSION',
+];
+
 /**
  * Invite friends: my code (selectable, so it can be copied), a Share button that opens the
- * phone's share sheet, how many friends joined, and the free ladders I earned.
+ * phone's share sheet, how many friends joined, and the rewards I earned.
  */
 export default function ReferralScreen({ navigation }: Props) {
   const { t } = useTranslation();
@@ -37,6 +43,7 @@ export default function ReferralScreen({ navigation }: Props) {
     return (
       <EmptyView message={t('referral.signInHint')}>
         <Button
+          icon="login"
           title={t('auth.signIn')}
           onPress={() => navigation.navigate('Auth')}
         />
@@ -54,6 +61,10 @@ export default function ReferralScreen({ navigation }: Props) {
   }
 
   const data = query.data;
+  // Only the rewards this app can name and use are listed (a ladder, a bonus listing, a longer subscription).
+  const rewards = data.rewards.filter(reward =>
+    LISTED_REWARDS.includes(reward.type),
+  );
   return (
     <Screen edges={['left', 'right']}>
       <ScrollView
@@ -67,9 +78,15 @@ export default function ReferralScreen({ navigation }: Props) {
           />
         }
       >
-        <AppText color={colors.textMuted}>{t('referral.intro')}</AppText>
+        <AppText color={colors.textMuted}>{t('referral.introLadders')}</AppText>
         <CodeCard data={data} />
         <Stats data={data} />
+        <Button
+          icon="arrow"
+          variant="secondary"
+          title={t('account.balanceOpen')}
+          onPress={() => navigation.navigate('Balance')}
+        />
         {data.stats.rewarded_invites >= data.stats.max_rewarded_invites ? (
           <Banner
             kind="info"
@@ -77,9 +94,6 @@ export default function ReferralScreen({ navigation }: Props) {
               max: formatNumber(data.stats.max_rewarded_invites, 0),
             })}
           />
-        ) : null}
-        {data.stats.ladder_tokens_available > 0 ? (
-          <Banner kind="success" message={t('referral.howToUse')} />
         ) : null}
 
         <AppText variant="heading" style={styles.sectionTitle}>
@@ -98,12 +112,12 @@ export default function ReferralScreen({ navigation }: Props) {
         <AppText variant="heading" style={styles.sectionTitle}>
           {t('referral.rewardsTitle')}
         </AppText>
-        {data.rewards.length === 0 ? (
+        {rewards.length === 0 ? (
           <AppText color={colors.textMuted}>
             {t('referral.rewardsEmpty')}
           </AppText>
         ) : (
-          data.rewards.map((reward, index) => (
+          rewards.map((reward, index) => (
             <RewardRow key={`${reward.created_at}-${index}`} reward={reward} />
           ))
         )}
@@ -151,6 +165,7 @@ function CodeCard({ data }: { data: ReferralSummary }) {
       </AppText>
       <View style={styles.codeButtons}>
         <Button
+          icon="check"
           title={copied ? t('referral.copied') : t('referral.copy')}
           variant="secondary"
           onPress={() => {
@@ -159,6 +174,7 @@ function CodeCard({ data }: { data: ReferralSummary }) {
           style={styles.codeButton}
         />
         <Button
+          icon="share"
           title={t('referral.share')}
           onPress={share}
           style={styles.codeButton}
@@ -173,8 +189,8 @@ function Stats({ data }: { data: ReferralSummary }) {
   const { stats } = data;
   const tiles: [string, number][] = [
     [t('referral.statInvited'), stats.invited_count],
-    [t('referral.statEarned'), stats.ladder_tokens_earned],
-    [t('referral.statAvailable'), stats.ladder_tokens_available],
+    [t('referral.statRewarded'), stats.rewarded_invites],
+    [t('referral.statLadders'), stats.ladder_tokens_available],
   ];
   return (
     <View style={styles.grid}>

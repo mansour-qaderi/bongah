@@ -1,6 +1,7 @@
 import { randomInt } from 'node:crypto';
 import { REFERRAL_CODE_ALPHABET } from '@bongah/validation';
-import { PropertyStatus, RewardReason, RewardType } from '../src/generated/prisma/client.js';
+import { LADDERS_PER_FRAME, LADDERS_PER_LISTING } from '@bongah/shared-types';
+import { RewardReason, RewardSpend, RewardType } from '../src/generated/prisma/client.js';
 import { hasDb, propertyBody, randomPhone, TestContext, uniqueProvince, type TestUser } from './helpers.js';
 
 // test/setup-env.ts sets REFERRAL_MAX_REWARDED_INVITES=3 and a link template.
@@ -24,9 +25,21 @@ describe.skipIf(!hasDb)('Referrals and rewards (e2e)', () => {
     });
   const publish = async (user: TestUser) =>
     (await ctx.post('/properties', propertyBody({ province: uniqueProvince() }), user.token).expect(201)).body as { id: string };
+  /** Another listing of a user who has used their free one: made straight in the database. */
+  const publishAnother = async (user: TestUser) => ctx.listing(user);
   const listing = (id: string) => ctx.prisma.property.findUniqueOrThrow({ where: { id } });
-  const redeem = (user: TestUser, propertyId: string) =>
-    ctx.post('/rewards/ladder-tokens/redeem', { property_id: propertyId }, user.token);
+  const frame = (user: TestUser, propertyId: string) =>
+    ctx.post('/rewards/ladders/spend', { purpose: 'FEATURED_FRAME', property_id: propertyId }, user.token);
+  const unlock = (user: TestUser) => ctx.post('/rewards/ladders/spend', { purpose: 'LISTING_QUOTA' }, user.token);
+  /** Gives `user` that many unspent ladders, each earned by a (made-up) invited friend, without going through signup. */
+  const giveLadders = async (userId: string, count: number) => {
+    for (let i = 0; i < count; i++) {
+      const friend = await ctx.user();
+      await ctx.prisma.reward.create({
+        data: { userId, inviteeId: friend.id, type: RewardType.LADDER_TOKEN, reason: RewardReason.REFERRER_BONUS },
+      });
+    }
+  };
   const randomCode = () =>
     Array.from({ length: 8 }, () => REFERRAL_CODE_ALPHABET[randomInt(REFERRAL_CODE_ALPHABET.length)]).join('');
 
@@ -53,7 +66,7 @@ describe.skipIf(!hasDb)('Referrals and rewards (e2e)', () => {
   });
 
   describe('signing up with a code', () => {
-    it('gives the new user and their inviter one free ladder token each, and links them', async () => {
+    it('gives the inviter one ladder, gives the new user none, and links them', async () => {
       const referrer = await ctx.signUp();
       const friend = await ctx.signUp(await ctx.codeOf(referrer.id));
 
@@ -62,11 +75,12 @@ describe.skipIf(!hasDb)('Referrals and rewards (e2e)', () => {
       expect((await ctx.prisma.user.findUniqueOrThrow({ where: { id: friend.id } })).referredById).toBe(referrer.id);
 
       const rewards = await ctx.prisma.reward.findMany({ where: { inviteeId: friend.id }, orderBy: { reason: 'asc' } });
-      expect(rewards).toHaveLength(2);
       expect(rewards).toEqual([
         expect.objectContaining({ userId: referrer.id, reason: RewardReason.REFERRER_BONUS, type: RewardType.LADDER_TOKEN, amount: 1, consumedAt: null }),
-        expect.objectContaining({ userId: friend.id, reason: RewardReason.REFEREE_BONUS, type: RewardType.LADDER_TOKEN, amount: 1, consumedAt: null }),
       ]);
+      // A new account starts with 0 ladders.
+      expect(await tokensOf(friend.id)).toBe(0);
+      expect(await tokensOf(friend.id, true)).toBe(0);
     });
 
     it('is not applied when nobody invited the user', async () => {
@@ -140,7 +154,7 @@ describe.skipIf(!hasDb)('Referrals and rewards (e2e)', () => {
       expect(again.body.referral_applied).toBe(false);
     });
 
-    it('gives the invited friend the token and the inviter nothing once the inviter reached the cap', async () => {
+    it('gives the inviter nothing more once they reached the cap, and the friends still join with 0 ladders', async () => {
       const referrer = await ctx.signUp();
       const code = await ctx.codeOf(referrer.id);
       const friends: Awaited<ReturnType<typeof ctx.signUp>>[] = [];
@@ -148,7 +162,7 @@ describe.skipIf(!hasDb)('Referrals and rewards (e2e)', () => {
 
       expect(friends.every((f) => f.response.referral_applied)).toBe(true);
       expect(await tokensOf(referrer.id)).toBe(CAP);
-      for (const f of friends) expect(await tokensOf(f.id)).toBe(1);
+      for (const f of friends) expect(await tokensOf(f.id)).toBe(0);
 
       const s = await summary(referrer);
       expect(s.stats).toMatchObject({ invited_count: CAP + 1, rewarded_invites: CAP, max_rewarded_invites: CAP });
@@ -162,7 +176,7 @@ describe.skipIf(!hasDb)('Referrals and rewards (e2e)', () => {
 
       expect(await tokensOf(referrer.id)).toBe(CAP);
       expect(await ctx.prisma.reward.count({ where: { userId: referrer.id, reason: RewardReason.REFERRER_BONUS } })).toBe(CAP);
-      for (const f of friends) expect(await tokensOf(f.id)).toBe(1);
+      for (const f of friends) expect(await tokensOf(f.id)).toBe(0);
     });
   });
 
@@ -244,13 +258,13 @@ describe.skipIf(!hasDb)('Referrals and rewards (e2e)', () => {
       ]);
     });
 
-    it("shows a friend their own welcome token, and doesn't mention who invited them", async () => {
+    it("shows a friend no ladders at the start, and doesn't mention who invited them", async () => {
       const referrer = await ctx.signUp();
       const friend = await ctx.signUp(await ctx.codeOf(referrer.id));
       const s = await summary(friend);
-      expect(s.stats).toMatchObject({ invited_count: 0, ladder_tokens_available: 1, ladder_tokens_earned: 1 });
+      expect(s.stats).toMatchObject({ invited_count: 0, ladder_tokens_available: 0, ladder_tokens_earned: 0 });
       expect(s.invited).toEqual([]);
-      expect(s.rewards).toEqual([expect.objectContaining({ reason: 'REFEREE_BONUS', used_at: null })]);
+      expect(s.rewards).toEqual([]);
     });
 
     it("never shows another user's friends", async () => {
@@ -259,105 +273,197 @@ describe.skipIf(!hasDb)('Referrals and rewards (e2e)', () => {
       expect((await summary(b)).invited).toEqual([]);
     });
 
-    it('counts a spent token as earned but not available, and shows when it was used', async () => {
-      const referrer = await ctx.signUp();
-      await ctx.signUp(await ctx.codeOf(referrer.id));
+    it('counts spent ladders as earned but not available, and shows when they were used', async () => {
+      const referrer = await ctx.user();
+      await giveLadders(referrer.id, LADDERS_PER_FRAME + 1);
       const home = await publish(referrer);
-      await redeem(referrer, home.id).expect(200);
+      await frame(referrer, home.id).expect(200);
       const s = await summary(referrer);
-      expect(s.stats).toMatchObject({ ladder_tokens_available: 0, ladder_tokens_earned: 1 });
-      expect(s.rewards[0].used_at).toEqual(expect.any(String));
+      expect(s.stats).toMatchObject({ ladder_tokens_available: 1, ladder_tokens_earned: LADDERS_PER_FRAME + 1 });
+      expect(s.rewards.filter((r: { used_at: string | null }) => r.used_at !== null)).toHaveLength(LADDERS_PER_FRAME);
     });
   });
 
-  describe('POST /rewards/ladder-tokens/redeem', () => {
-    /** A user holding `tokens` free tokens (one per friend invited) and one listing. */
-    const withTokens = async (tokens: number) => {
-      const owner = await ctx.signUp();
-      const code = await ctx.codeOf(owner.id);
-      for (let i = 0; i < tokens; i++) await ctx.signUp(code);
+  describe('POST /rewards/ladders/spend', () => {
+    const SPEND = '/rewards/ladders/spend';
+    /** A user with `ladders` unspent ladders (made directly, so the invite cap does not matter) and one listing. */
+    const holder = async (ladders: number) => {
+      const owner = await ctx.user();
+      await giveLadders(owner.id, ladders);
       return { owner, property: await publish(owner) };
     };
 
-    it('needs a token, and a listing id that is a uuid', async () => {
-      await ctx.post('/rewards/ladder-tokens/redeem', { property_id: '00000000-0000-4000-8000-000000000000' }).expect(401);
-      const user = await ctx.signUp();
-      await redeem(user, 'nope').expect(400);
-      await ctx.post('/rewards/ladder-tokens/redeem', {}, user.token).expect(400);
-      await ctx.post('/rewards/ladder-tokens/redeem', { property_id: '00000000-0000-4000-8000-000000000000', extra: 1 }, user.token).expect(400);
+    it('needs a sign-in, and a body that names what the ladders are for', async () => {
+      await ctx.post(SPEND, { purpose: 'LISTING_QUOTA' }).expect(401);
+      const user = await ctx.user();
+      await ctx.post(SPEND, {}, user.token).expect(400);
+      await ctx.post(SPEND, { purpose: 'BUMP' }, user.token).expect(400);
+      await ctx.post(SPEND, { purpose: 'FEATURED_FRAME' }, user.token).expect(400);
+      await ctx.post(SPEND, { purpose: 'FEATURED_FRAME', property_id: 'nope' }, user.token).expect(400);
+      await ctx.post(SPEND, { purpose: 'LISTING_QUOTA', property_id: '00000000-0000-4000-8000-000000000000' }, user.token).expect(400);
     });
 
-    it('moves the listing to the top of search and spends one token', async () => {
-      const { owner, property } = await withTokens(2);
-      const before = (await listing(property.id)).ladderedAt!;
-      await new Promise((resolve) => setTimeout(resolve, 20));
-
-      const res = await redeem(owner, property.id).expect(200);
-      const after = (await listing(property.id)).ladderedAt!;
-      expect(after.getTime()).toBeGreaterThan(before.getTime());
-      expect(res.body).toEqual({ property_id: property.id, laddered_at: after.toISOString(), ladder_tokens_available: 1 });
-      expect(await tokensOf(owner.id)).toBe(1);
-      expect(await tokensOf(owner.id, true)).toBe(1);
+    it('is the only way to spend ladders: the old one-ladder bump route is gone', async () => {
+      const { owner, property } = await holder(LADDERS_PER_FRAME);
+      await ctx.post('/rewards/ladder-tokens/redeem', { property_id: property.id }, owner.token).expect(404);
+      expect(await tokensOf(owner.id)).toBe(LADDERS_PER_FRAME);
     });
 
-    it('spends the oldest token first and records the listing on it', async () => {
-      const { owner, property } = await withTokens(2);
-      const [oldest, newest] = await ctx.prisma.reward.findMany({ where: { userId: owner.id }, orderBy: [{ createdAt: 'asc' }, { id: 'asc' }] });
-      await redeem(owner, property.id).expect(200);
-      expect(await ctx.prisma.reward.findUniqueOrThrow({ where: { id: oldest.id } })).toMatchObject({ propertyId: property.id, consumedAt: expect.any(Date) });
-      expect(await ctx.prisma.reward.findUniqueOrThrow({ where: { id: newest.id } })).toMatchObject({ propertyId: null, consumedAt: null });
+    describe('a featured frame (کادر ویژه) for seven ladders', () => {
+      const COST = LADDERS_PER_FRAME;
+      it('frames the listing for the usual seven days and spends exactly seven ladders', async () => {
+        const { owner, property } = await holder(COST);
+        const res = await frame(owner, property.id).expect(200);
+        const row = await listing(property.id);
+        expect(row.isFeatured).toBe(true);
+        expect(row.featuredUntil!.getTime()).toBeGreaterThan(Date.now() + 6.9 * 86_400_000);
+        expect(res.body).toEqual({
+          purpose: 'FEATURED_FRAME',
+          ladders_available: 0,
+          featured_until: row.featuredUntil!.toISOString(),
+          extra_listings: null,
+        });
+        const spent = await ctx.prisma.reward.findMany({ where: { userId: owner.id, consumedAt: { not: null } } });
+        expect(spent).toHaveLength(COST);
+        expect(spent.every((r) => r.spentOn === RewardSpend.FEATURED_FRAME && r.propertyId === property.id)).toBe(true);
+      });
+
+      it('spends the oldest seven and keeps the rest', async () => {
+        const { owner, property } = await holder(COST + 2);
+        const all = await ctx.prisma.reward.findMany({ where: { userId: owner.id }, orderBy: [{ createdAt: 'asc' }, { id: 'asc' }] });
+        const res = await frame(owner, property.id).expect(200);
+        expect(res.body.ladders_available).toBe(2);
+        const after = await ctx.prisma.reward.findMany({ where: { id: { in: all.map((r) => r.id) } }, orderBy: [{ createdAt: 'asc' }, { id: 'asc' }] });
+        expect(after.map((r) => r.consumedAt !== null)).toEqual([true, true, true, true, true, true, true, false, false]);
+      });
+
+      it('adds seven days to a listing that is already framed', async () => {
+        const { owner, property } = await holder(COST * 2);
+        await frame(owner, property.id).expect(200);
+        const first = (await listing(property.id)).featuredUntil!;
+        await frame(owner, property.id).expect(200);
+        const second = (await listing(property.id)).featuredUntil!;
+        expect(second.getTime() - first.getTime()).toBe(7 * 86_400_000);
+      });
+
+      it('refuses with 409 NOT_ENOUGH_LADDERS below seven, and leaves the ladders and the listing alone', async () => {
+        const { owner, property } = await holder(COST - 1);
+        const res = await frame(owner, property.id).expect(409);
+        expect(res.body).toMatchObject({ code: 'NOT_ENOUGH_LADDERS', needed: COST });
+        expect(await tokensOf(owner.id)).toBe(COST - 1);
+        expect((await listing(property.id)).isFeatured).toBe(false);
+      });
+
+      it('costs seven, not the three a listing costs: three ladders are refused and kept', async () => {
+        const { owner, property } = await holder(LADDERS_PER_LISTING);
+        const res = await frame(owner, property.id).expect(409);
+        expect(res.body).toMatchObject({ code: 'NOT_ENOUGH_LADDERS', needed: LADDERS_PER_FRAME });
+        expect(await tokensOf(owner.id)).toBe(LADDERS_PER_LISTING);
+        expect((await listing(property.id)).isFeatured).toBe(false);
+      });
+
+      it("refuses someone else's listing (403) and an archived or unknown one (404) without spending a ladder", async () => {
+        const [{ owner }, { property: theirs }] = [await holder(COST), await holder(0)];
+        await frame(owner, theirs.id).expect(403);
+        const mine = await publishAnother(owner);
+        await ctx.del(`/properties/${mine.id}`, owner.token).expect(204);
+        await frame(owner, mine.id).expect(404);
+        await frame(owner, '00000000-0000-4000-8000-000000000000').expect(404);
+        expect(await tokensOf(owner.id)).toBe(COST);
+        expect((await listing(theirs.id)).isFeatured).toBe(false);
+      });
+
+      it('cannot spend ladders somebody else holds', async () => {
+        const [{ owner: rich }, { owner: poor, property }] = [await holder(COST), await holder(0)];
+        await frame(poor, property.id).expect(409);
+        expect(await tokensOf(rich.id)).toBe(COST);
+      });
+
+      it('spends seven once, however many requests arrive together', async () => {
+        const { owner, property } = await holder(COST);
+        const results = await Promise.all(Array.from({ length: 5 }, () => frame(owner, property.id)));
+        expect(results.map((r) => r.status).sort()).toEqual([200, 409, 409, 409, 409]);
+        expect(await tokensOf(owner.id, true)).toBe(COST);
+      });
     });
 
-    it('lets a friend spend the welcome token on their own listing', async () => {
-      const referrer = await ctx.signUp();
-      const friend = await ctx.signUp(await ctx.codeOf(referrer.id));
-      const home = await publish(friend);
-      await redeem(friend, home.id).expect(200);
-      expect(await tokensOf(friend.id)).toBe(0);
-    });
+    describe('one more listing (listing quota) for three ladders', () => {
+      const COST = LADDERS_PER_LISTING;
+      it('is refused while the free listing of the month is still unused, and costs nothing', async () => {
+        const owner = await ctx.user();
+        await giveLadders(owner.id, COST);
+        const res = await unlock(owner).expect(409);
+        expect(res.body.code).toBe('LISTING_QUOTA_NOT_EXHAUSTED');
+        expect(await tokensOf(owner.id)).toBe(COST);
+      });
 
-    it('answers 409 NO_LADDER_TOKEN when there is none, and leaves the listing alone', async () => {
-      const { owner, property } = await withTokens(0);
-      const before = (await listing(property.id)).ladderedAt!;
-      const res = await redeem(owner, property.id).expect(409);
-      expect(res.body.code).toBe('NO_LADDER_TOKEN');
-      expect((await listing(property.id)).ladderedAt).toEqual(before);
-    });
+      it('once the free listing is used, turns three ladders into one more listing, which then publishes', async () => {
+        const { owner } = await holder(COST + 1);
+        await ctx.post('/properties', propertyBody({ province: uniqueProvince() }), owner.token).expect(403);
 
-    it("refuses someone else's listing (403) without spending the token", async () => {
-      const [{ owner }, { property: theirs }] = [await withTokens(1), await withTokens(0)];
-      await redeem(owner, theirs.id).expect(403);
-      expect(await tokensOf(owner.id)).toBe(1);
-    });
+        const res = await unlock(owner).expect(200);
+        expect(res.body).toEqual({ purpose: 'LISTING_QUOTA', ladders_available: 1, featured_until: null, extra_listings: 1 });
+        const spent = await ctx.prisma.reward.findMany({ where: { userId: owner.id, consumedAt: { not: null } } });
+        expect(spent).toHaveLength(COST);
+        expect(spent.every((r) => r.spentOn === RewardSpend.LISTING_QUOTA && r.propertyId === null)).toBe(true);
 
-    it('refuses an archived or unknown listing (404) without spending the token', async () => {
-      const { owner, property } = await withTokens(1);
-      await ctx.del(`/properties/${property.id}`, owner.token).expect(204);
-      expect((await listing(property.id)).status).toBe(PropertyStatus.ARCHIVED);
-      await redeem(owner, property.id).expect(404);
-      await redeem(owner, '00000000-0000-4000-8000-000000000000').expect(404);
-      expect(await tokensOf(owner.id)).toBe(1);
-    });
+        const wallet = (await ctx.get('/wallet', owner.token).expect(200)).body;
+        expect(wallet.ladder_tokens).toBe(1);
+        expect(wallet.listing_quota).toMatchObject({ limit: 1, used: 1, extra: 1 });
 
-    it('cannot spend a token somebody else holds', async () => {
-      const [{ owner: rich }, { owner: poor, property }] = [await withTokens(2), await withTokens(0)];
-      await redeem(poor, property.id).expect(409);
-      expect(await tokensOf(rich.id)).toBe(2);
-    });
+        await ctx.post('/properties', propertyBody({ province: uniqueProvince() }), owner.token).expect(201);
+        await ctx.post('/properties', propertyBody({ province: uniqueProvince() }), owner.token).expect(403);
+      });
 
-    it('spends one token once, however many requests arrive together', async () => {
-      const { owner, property } = await withTokens(1);
-      const results = await Promise.all(Array.from({ length: 6 }, () => redeem(owner, property.id)));
-      expect(results.map((r) => r.status).sort()).toEqual([200, 409, 409, 409, 409, 409]);
-      expect(await tokensOf(owner.id, true)).toBe(1);
-    });
+      it('does not let a second unlock pile up while an unused extra listing is still held', async () => {
+        const { owner } = await holder(COST * 2);
+        await unlock(owner).expect(200);
+        const again = await unlock(owner).expect(409);
+        expect(again.body.code).toBe('LISTING_QUOTA_NOT_EXHAUSTED');
+        expect(await tokensOf(owner.id)).toBe(COST);
+      });
 
-    it('spends two different tokens when two requests arrive together and two are held', async () => {
-      const { owner, property } = await withTokens(2);
-      const results = await Promise.all([redeem(owner, property.id), redeem(owner, property.id)]);
-      expect(results.map((r) => r.status)).toEqual([200, 200]);
-      expect(await tokensOf(owner.id)).toBe(0);
-      expect(await tokensOf(owner.id, true)).toBe(2);
+      it('needs three ladders', async () => {
+        const { owner } = await holder(COST - 1);
+        const res = await unlock(owner).expect(409);
+        expect(res.body).toMatchObject({ code: 'NOT_ENOUGH_LADDERS', needed: LADDERS_PER_LISTING });
+        // Nothing was granted when the ladders fell short.
+        expect((await ctx.prisma.user.findUniqueOrThrow({ where: { id: owner.id } })).welcomeListingCredits).toBe(0);
+        expect(await tokensOf(owner.id)).toBe(COST - 1);
+      });
+
+      it("gives an office a bonus listing once its plan's listings are used up, and refuses one without a running plan", async () => {
+        const office = await ctx.agency('MONTHLY');
+        await giveLadders(office.id, COST);
+        expect((await unlock(office).expect(409)).body.code).toBe('LISTING_QUOTA_NOT_EXHAUSTED');
+
+        const subscription = await ctx.prisma.subscription.findFirstOrThrow({ where: { agencyId: office.agencyId } });
+        await ctx.prisma.subscription.update({ where: { id: subscription.id }, data: { listingsUsed: 8 } });
+        const res = await unlock(office).expect(200);
+        expect(res.body).toMatchObject({ purpose: 'LISTING_QUOTA', ladders_available: 0, extra_listings: 1 });
+        expect((await ctx.prisma.user.findUniqueOrThrow({ where: { id: office.id } })).bonusListingCredits).toBe(1);
+        await ctx.post('/properties', propertyBody({ province: uniqueProvince() }), office.token).expect(201);
+
+        const lapsed = await ctx.lapsedAgency();
+        await giveLadders(lapsed.id, COST);
+        expect((await unlock(lapsed).expect(403)).body.code).toBe('SUBSCRIPTION_REQUIRED');
+        expect(await tokensOf(lapsed.id)).toBe(COST);
+      });
+
+      it('has nothing to unlock for an admin, whose listings are unlimited', async () => {
+        const admin = await ctx.admin();
+        await giveLadders(admin.id, COST);
+        expect((await unlock(admin).expect(409)).body.code).toBe('LISTING_QUOTA_NOT_EXHAUSTED');
+        expect(await tokensOf(admin.id)).toBe(COST);
+      });
+
+      it('grants one listing however many requests arrive together', async () => {
+        const { owner } = await holder(COST * 3);
+        const results = await Promise.all(Array.from({ length: 4 }, () => unlock(owner)));
+        expect(results.map((r) => r.status).sort()).toEqual([200, 409, 409, 409]);
+        expect((await ctx.prisma.user.findUniqueOrThrow({ where: { id: owner.id } })).welcomeListingCredits).toBe(1);
+        expect(await tokensOf(owner.id, true)).toBe(COST);
+      });
     });
   });
 });

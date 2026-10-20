@@ -1,11 +1,5 @@
 import React, { useState } from 'react';
-import {
-  ActivityIndicator,
-  Image,
-  Pressable,
-  StyleSheet,
-  View,
-} from 'react-native';
+import { Image, Pressable, StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import type { Property, PropertyStatus } from '@bongah/shared-types';
 import { formatDate } from '../i18n/format';
@@ -15,6 +9,7 @@ import { colors, radius, spacing, surfaces } from '../theme';
 import ActionMenuSheet from './ActionMenuSheet';
 import AppText from './AppText';
 import Badge, { badgeTones, DealBadge } from './Badge';
+import CircleIconButton from './CircleIconButton';
 import Icon, { type IconName } from './Icon';
 import Price from './Price';
 import PropertyFacts, { propertyPlace } from './PropertyFacts';
@@ -52,17 +47,19 @@ interface Props {
 }
 
 const THUMB = 104;
-/** Width kept free beside the title for the status pill: the widest word («معامله شد») plus its dot and padding. */
-const STATUS_RESERVE = 88;
 
 /**
- * One of the person's own listings, as a flat horizontal card (white, 1 px border, no shadow): the picture beside
- * the title, then the price and the place; the card carries the listing's status (active, traded, switched off) as
- * a quiet white pill in the card's top-left corner; under the address sits the deal's tag (for sale, rent, mortgage; no
- * dot), with a "featured" badge beside it when the listing is promoted. The kind, area, bedrooms and bathrooms are said once, in the icon grid across the card's width that
- * every listing card uses. Under a divider, the things they can do with it (the screen decides which): the main
- * ones as white buttons with an edge, and a "more" button that opens a sheet with the rest. The top part opens the
- * listing; the buttons act on it. A listing with no picture gets a grey tile with the kind's line icon.
+ * One of the person's own listings, as a flat card (white, 1 px border, no shadow). The top is three parts side by
+ * side: the picture (at the start, on the right), the main body (the title, the price and the place), and a narrow column at the far end (the top-left corner, since the app
+ * reads right to left): the deal's tag (for sale, rent, mortgage; the "featured" badge under it when the listing is
+ * promoted) and, directly under the tag, the things they can do with the listing, stacked one above the other (round
+ * white buttons with one line icon each and no words, the same design as the bookmark ribbon on the Home list; the
+ * screen decides which: the main ones, and a "more" button that opens a sheet with the rest). Nothing is above the
+ * picture, and the picture is a compact fixed square that never stretches with the column beside it. The listing's status (active, traded, switched off) is a quiet white pill on the picture; below come the
+ * kind, area, bedrooms and bathrooms, said once, in the icon grid every listing card uses, and at the foot the description
+ * (a few lines, collapsed when there is none). No rules between the parts,
+ * only space. The picture and the title open the listing; the buttons act on it. A listing with no picture gets a grey
+ * tile with the kind's line icon.
  */
 export default function ListingCard({
   property,
@@ -77,24 +74,20 @@ export default function ListingCard({
   const menuLocked = menu?.some(action => action.disabled) ?? false;
   const image = property.images[0];
   const place = propertyPlace(property, format.province);
+  const description = property.description?.trim() ?? '';
 
   return (
     <View style={[styles.card, property.is_featured ? styles.featured : null]}>
-      {/* The status sits in the card's own top-left corner, clear of the picture and of the tags. */}
-      <View style={styles.status} pointerEvents="none" testID="listing-status">
-        <DealBadge deal={property.deal_type} />
-        {property.is_featured ? (
-          <Badge label={t('property.featured')} tone={badgeTones.warning} />
-        ) : null}
-      </View>
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel={property.title}
-        onPress={onPress}
-        style={({ pressed }) => [styles.top, pressed ? styles.pressed : null]}
-      >
-        {/* The picture, on its own. */}
-        <View style={styles.media}>
+      {/* The picture on one side; on the other, the deal's tag, directly under it the things that can be done with
+          the listing (nothing sits above the picture), then the title, the price and the place. */}
+      <View style={styles.top} testID="listing-top">
+        {/* The picture opens the listing for a finger; the title below it is what a screen reader announces. */}
+        <Pressable
+          accessible={false}
+          onPress={onPress}
+          style={styles.media}
+          testID="listing-media"
+        >
           {image ? (
             <Image source={{ uri: image }} style={styles.thumb} />
           ) : (
@@ -119,41 +112,81 @@ export default function ListingCard({
               tone="neutral"
             />
           </View>
+        </Pressable>
+        <View style={styles.main} testID="listing-main">
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={property.title}
+            onPress={onPress}
+            style={({ pressed }) => [
+              styles.text,
+              pressed ? styles.pressed : null,
+            ]}
+          >
+            <AppText variant="label" numberOfLines={2}>
+              {property.title}
+            </AppText>
+            <Price
+              amount={property.price}
+              currency={property.currency}
+              variant="title"
+              color={colors.primary}
+            />
+            {place ? (
+              <View style={styles.place}>
+                <Icon
+                  name="pin"
+                  size={14}
+                  color={colors.textMuted}
+                  weight={1.9}
+                />
+                <AppText
+                  variant="caption"
+                  color={colors.textMuted}
+                  numberOfLines={1}
+                  style={styles.placeText}
+                >
+                  {place}
+                </AppText>
+              </View>
+            ) : null}
+          </Pressable>
         </View>
-        <View style={styles.main}>
-          {/* Leaves room for the status pill in the corner, so a long title never runs under it. */}
-          <AppText variant="label" numberOfLines={2} style={styles.title}>
-            {property.title}
-          </AppText>
-          <Price
-            amount={property.price}
-            currency={property.currency}
-            variant="title"
-            color={colors.primary}
-          />
-          {place ? (
-            <View style={styles.place}>
-              <Icon
-                name="pin"
-                size={14}
-                color={colors.textMuted}
-                weight={1.9}
-              />
-              <AppText
-                variant="caption"
-                color={colors.textMuted}
-                numberOfLines={1}
-                style={styles.placeText}
-              >
-                {place}
-              </AppText>
+        {/* The far-end column: the tag at the very top, the buttons stacked directly under it. */}
+        <View style={styles.side} testID="listing-side">
+          <View style={styles.tags} testID="listing-tags">
+            <DealBadge deal={property.deal_type} />
+            {property.is_featured ? (
+              <Badge label={t('property.featured')} tone={badgeTones.warning} />
+            ) : null}
+          </View>
+          {(actions && actions.length > 0) || (menu && menu.length > 0) ? (
+            <View style={styles.actions} testID="listing-actions">
+              {actions?.map(action => (
+                <ActionButton key={action.label} {...action} />
+              ))}
+              {menu && menu.length > 0 ? (
+                <CircleIconButton
+                  testID="listing-more"
+                  icon="more"
+                  label={t('my.moreActions')}
+                  loading={menuBusy}
+                  disabled={menuLocked}
+                  onPress={() => setMenuOpen(true)}
+                />
+              ) : null}
             </View>
           ) : null}
         </View>
-      </Pressable>
+      </View>
 
       {/* The same four facts, in the same icon grid, as the Home list and the details page. */}
-      <PropertyFacts property={property} withType layout="grid" />
+      <PropertyFacts
+        property={property}
+        withType
+        layout="grid"
+        divider={false}
+      />
 
       {property.is_featured && property.featured_until ? (
         <AppText variant="caption" color={colors.accentText}>
@@ -161,40 +194,15 @@ export default function ListingCard({
         </AppText>
       ) : null}
 
-      {(actions && actions.length > 0) || (menu && menu.length > 0) ? (
-        <View style={styles.actions}>
-          {actions?.map(action => (
-            <ActionButton key={action.label} {...action} />
-          ))}
-          {menu && menu.length > 0 ? (
-            <Pressable
-              testID="listing-more"
-              accessibilityRole="button"
-              accessibilityLabel={t('my.moreActions')}
-              accessibilityState={{ busy: menuBusy, disabled: menuLocked }}
-              disabled={menuBusy || menuLocked}
-              onPress={() => setMenuOpen(true)}
-              style={({ pressed }) => [
-                styles.more,
-                {
-                  opacity: menuBusy
-                    ? 0.75
-                    : menuLocked
-                    ? 0.5
-                    : pressed
-                    ? 0.75
-                    : 1,
-                },
-              ]}
-            >
-              {menuBusy ? (
-                <ActivityIndicator size="small" color={colors.text} />
-              ) : (
-                <Icon name="more" size={22} color={colors.text} />
-              )}
-            </Pressable>
-          ) : null}
-        </View>
+      {description ? (
+        <AppText
+          variant="bodySm"
+          color={colors.textSecondary}
+          numberOfLines={3}
+          testID="card-description"
+        >
+          {description}
+        </AppText>
       ) : null}
 
       {menu && menu.length > 0 ? (
@@ -209,17 +217,10 @@ export default function ListingCard({
   );
 }
 
-/** Each tone: the fill, the edge and the words. */
-const TONES = {
-  brand: {
-    bg: colors.primary,
-    border: colors.primary,
-    fg: colors.textOnPrimary,
-  },
-  neutral: { bg: colors.surface, border: colors.border, fg: colors.text },
-  danger: { bg: colors.surface, border: colors.danger, fg: colors.danger },
-} as const;
-
+/**
+ * One action of a listing, drawn as a round icon button (its words are what a screen reader says). An action given
+ * without an icon would have nothing to show, so it falls back to a small bordered word.
+ */
 function ActionButton({
   label,
   icon,
@@ -228,33 +229,32 @@ function ActionButton({
   loading = false,
   disabled = false,
 }: ListingAction) {
-  const { bg, border, fg } = TONES[tone];
-  const inactive = loading || disabled;
+  if (icon) {
+    return (
+      <CircleIconButton
+        icon={icon}
+        label={label}
+        tone={tone}
+        loading={loading}
+        disabled={disabled}
+        onPress={onPress}
+      />
+    );
+  }
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityState={{ busy: loading, disabled: inactive }}
-      disabled={inactive}
+      accessibilityState={{ busy: loading, disabled: loading || disabled }}
+      disabled={loading || disabled}
       onPress={onPress}
       style={({ pressed }) => [
-        styles.action,
-        {
-          backgroundColor: bg,
-          borderColor: border,
-          opacity: loading ? 0.75 : disabled ? 0.5 : pressed ? 0.75 : 1,
-        },
+        styles.wordAction,
+        { opacity: loading ? 0.75 : disabled ? 0.5 : pressed ? 0.75 : 1 },
       ]}
     >
-      {loading ? (
-        <ActivityIndicator size="small" color={fg} />
-      ) : (
-        <View style={styles.actionContent}>
-          {icon ? <Icon name={icon} size={18} color={fg} weight={1.9} /> : null}
-          <AppText variant="label" color={fg} numberOfLines={1}>
-            {label}
-          </AppText>
-        </View>
-      )}
+      <AppText variant="label" numberOfLines={1}>
+        {label}
+      </AppText>
     </Pressable>
   );
 }
@@ -269,56 +269,35 @@ const styles = StyleSheet.create({
   },
   // A featured listing is framed in gold, thicker than the 1 px edge of the others, so it is found first in the list.
   featured: { borderColor: colors.accentBright, borderWidth: 2.5 },
-  top: { flexDirection: 'row', gap: spacing.md },
+  // The picture is a compact square of its own, whatever the column beside it holds: it never stretches.
+  top: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.md },
   pressed: { opacity: 0.85 },
   media: { width: THUMB, height: THUMB },
   thumb: { width: THUMB, height: THUMB, borderRadius: radius.md },
-  // Top-left of the card: `end`, because the app reads right to left. Above the content, so it is never covered.
+  text: { gap: spacing.xs },
+  // The status pill, in the picture's own top corner (`end`, because the app reads right to left).
   status: { position: 'absolute', top: spacing.xs, end: spacing.xs },
-
-  // The room the status pill takes at the far end of the first lines (a Persian word, a dot and the padding).
-  title: { paddingEnd: STATUS_RESERVE },
+  // The deal's tag, with the "featured" badge under it.
+  tags: { alignItems: 'center', gap: spacing.xs },
   placeholder: {
     backgroundColor: colors.neutralSoft,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  main: { flex: 1, gap: spacing.xs, justifyContent: 'center' },
+  main: { flex: 1 },
   place: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
   placeText: { flexShrink: 1 },
-  badges: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
-  // Two buttons that share the width, and the "more" button at the end.
-  actions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-    paddingTop: spacing.md,
-    borderTopWidth: 1,
-    borderTopColor: colors.border,
-  },
-  more: {
-    width: 48,
+  // The far-end column: as wide as its widest part (the tag), its parts centred on one another.
+  side: { alignItems: 'center', gap: spacing.sm },
+  // The round icon buttons, stacked one above the other, directly under the tag.
+  actions: { alignItems: 'center', gap: spacing.sm },
+  wordAction: {
     minHeight: 40,
-    borderRadius: radius.md,
+    paddingHorizontal: spacing.md,
+    borderRadius: 20,
     borderWidth: 1,
     borderColor: colors.border,
     backgroundColor: colors.surface,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  actionContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: spacing.xs + 2,
-  },
-  action: {
-    flexGrow: 1,
-    flexBasis: 0,
-    minHeight: 40,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    paddingHorizontal: spacing.sm,
     alignItems: 'center',
     justifyContent: 'center',
   },

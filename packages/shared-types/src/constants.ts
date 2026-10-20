@@ -25,6 +25,13 @@ export const PROPERTY_TYPES = [
  */
 export const PROPERTY_UNIT_MAX_LENGTH = 40;
 export const DEAL_TYPES = ['SALE', 'RENT', 'MORTGAGE_GROWI'] as const;
+/**
+ * What the price of a listing means: FIXED ("مقطوع", the owner will not bargain) or NEGOTIABLE ("جورآمد", open to an
+ * offer). A listing may say neither (null).
+ */
+export const PRICE_TERMS = ['FIXED', 'NEGOTIABLE'] as const;
+/** Longest mortgage (گروی) a listing may state, in months: fifty years. */
+export const MORTGAGE_MONTHS_MAX = 600;
 export const CURRENCIES = ['AFGHANI', 'USD'] as const;
 export const PROPERTY_STATUSES = ['ACTIVE', 'SOLD', 'ARCHIVED'] as const;
 export const SUBSCRIPTION_PACKAGES = [
@@ -86,11 +93,13 @@ export const SUBSCRIPTION_PLAN_BENEFITS = {
 export const LAUNCH_GIFTS_ONCE_PER_ACCOUNT = true;
 /**
  * The featured-listing bundles that can be bought ahead of time, as a number of featured listings and the discount
- * on the single price times that number (3 for 270, 5 for 400, 10 for 650, 20 for 1100 when one costs 100). One
- * featured listing is bought directly for a listing, not as a bundle.
+ * on the single price times that number (3 for 270, 5 for 400, 10 for 650, 20 for 1100 when one costs 100). The
+ * "bundle" of 1 is a single featured listing bought as a credit, at full price: the payment screen needs no listing
+ * to be chosen first, and the credit is spent on a listing afterwards. A featured listing can still be bought
+ * directly for one listing (`FEATURED_AD`) from that listing's own promotion sheet.
  */
-export const FEATURED_BUNDLE_SIZES = [3, 5, 10, 20] as const;
-export const FEATURED_BUNDLE_DISCOUNT_PERCENT = { 3: 10, 5: 20, 10: 35, 20: 45 } as const satisfies Record<
+export const FEATURED_BUNDLE_SIZES = [1, 3, 5, 10, 20] as const;
+export const FEATURED_BUNDLE_DISCOUNT_PERCENT = { 1: 0, 3: 10, 5: 20, 10: 35, 20: 45 } as const satisfies Record<
   (typeof FEATURED_BUNDLE_SIZES)[number],
   number
 >;
@@ -117,6 +126,18 @@ export const CONTACT_CREDIT_SOURCES = ['PURCHASE', 'REFERRAL', 'ADMIN_GRANT'] as
 export const REWARD_TYPES = ['LADDER_TOKEN', 'BONUS_LISTING', 'SUBSCRIPTION_EXTENSION'] as const;
 /** Why a reward was granted: for inviting a friend, or for joining through a friend's code. */
 export const REWARD_REASONS = ['REFERRER_BONUS', 'REFEREE_BONUS'] as const;
+/** What ladders (نردبان) can be spent on: one more listing, or a featured frame on one listing. */
+export const LADDER_SPEND_PURPOSES = ['LISTING_QUOTA', 'FEATURED_FRAME'] as const;
+export type LadderSpendPurpose = (typeof LADDER_SPEND_PURPOSES)[number];
+/** Ladders one more listing costs (once the free ones are used up). */
+export const LADDERS_PER_LISTING = 3;
+/** Ladders a featured frame (کادر ویژه) on one listing costs. */
+export const LADDERS_PER_FRAME = 7;
+/** What each purpose costs, in ladders. */
+export const LADDER_SPEND_COST: Record<LadderSpendPurpose, number> = {
+  LISTING_QUOTA: LADDERS_PER_LISTING,
+  FEATURED_FRAME: LADDERS_PER_FRAME,
+};
 export const TRANSACTION_STATUSES = ['PENDING', 'SUCCESS', 'FAILED'] as const;
 
 // ───────────── Admin panel, moderation and agency tools ─────────────
@@ -164,6 +185,7 @@ export type Language = (typeof LANGUAGES)[number];
 export type Role = (typeof ROLES)[number];
 export type PropertyType = (typeof PROPERTY_TYPES)[number];
 export type DealType = (typeof DEAL_TYPES)[number];
+export type PriceTerms = (typeof PRICE_TERMS)[number];
 export type Currency = (typeof CURRENCIES)[number];
 export type PropertyStatus = (typeof PROPERTY_STATUSES)[number];
 export type SubscriptionPackage = (typeof SUBSCRIPTION_PACKAGES)[number];

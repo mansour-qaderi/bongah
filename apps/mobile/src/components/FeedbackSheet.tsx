@@ -87,6 +87,7 @@ export default function FeedbackSheet({ visible, onClose, onSignIn }: Props) {
     body = (
       <EmptyView message={t('auth.signInRequired')}>
         <Button
+          icon="login"
           title={t('auth.signIn')}
           onPress={() => {
             onClose();
@@ -98,7 +99,12 @@ export default function FeedbackSheet({ visible, onClose, onSignIn }: Props) {
   } else if (sent) {
     body = <EmptyView message={t('feedback.success')} />;
     footer = (
-      <Button title={t('common.close')} onPress={onClose} style={styles.main} />
+      <Button
+        icon="close"
+        title={t('common.close')}
+        onPress={onClose}
+        style={styles.main}
+      />
     );
   } else {
     body = (
@@ -141,6 +147,7 @@ export default function FeedbackSheet({ visible, onClose, onSignIn }: Props) {
     );
     footer = (
       <Button
+        icon="send"
         title={t('feedback.send')}
         onPress={submit}
         loading={mutation.isPending}

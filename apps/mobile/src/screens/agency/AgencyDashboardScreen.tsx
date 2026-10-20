@@ -35,6 +35,7 @@ export default function AgencyDashboardScreen({ navigation }: Props) {
     return (
       <EmptyView message={t('dashboard.signInHint')}>
         <Button
+          icon="login"
           title={t('auth.signIn')}
           onPress={() => navigation.navigate('Auth')}
         />
@@ -55,8 +56,7 @@ export default function AgencyDashboardScreen({ navigation }: Props) {
   }
 
   const data = query.data;
-  const subscribe = () =>
-    navigation.navigate('Checkout', { tab: 'subscription' });
+  const subscribe = () => navigation.navigate('Upgrade');
 
   return (
     <Screen edges={['left', 'right']}>
@@ -80,11 +80,13 @@ export default function AgencyDashboardScreen({ navigation }: Props) {
         </AppText>
         <View style={styles.actions}>
           <Button
+            icon="plus"
             title={t('dashboard.post')}
             style={styles.action}
             onPress={() => navigation.navigate('AddProperty')}
           />
           <Button
+            icon="list"
             title={t('dashboard.manage')}
             variant="outline"
             style={styles.action}
@@ -168,7 +170,11 @@ function SubscriptionCard({
         <AppText variant="caption" color={colors.textMuted}>
           {t('dashboard.subscriptionInactiveHelp')}
         </AppText>
-        <Button title={t('dashboard.subscribe')} onPress={onSubscribe} />
+        <Button
+          icon="card"
+          title={t('dashboard.subscribe')}
+          onPress={onSubscribe}
+        />
       </View>
     );
   }
@@ -195,6 +201,7 @@ function SubscriptionCard({
         </AppText>
       ) : null}
       <Button
+        icon="refresh"
         title={t('dashboard.renew')}
         variant="outline"
         onPress={onSubscribe}
@@ -261,6 +268,7 @@ function TopListingRow({
         ) : null}
       </View>
       <Button
+        icon="up"
         title={t('dashboard.promote')}
         variant="secondary"
         style={styles.promote}

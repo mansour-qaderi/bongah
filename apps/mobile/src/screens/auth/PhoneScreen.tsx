@@ -99,7 +99,7 @@ export default function PhoneScreen({ navigation }: Props) {
         color={colors.textMuted}
         style={styles.referralHint}
       >
-        {t('auth.referralHint')}
+        {t('auth.referralHintLadder')}
       </AppText>
       <TextField
         label={t('auth.referralLabel')}

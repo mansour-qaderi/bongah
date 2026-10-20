@@ -25,7 +25,12 @@ export function ErrorView({
     <View style={styles.center}>
       <AppText style={styles.text}>{message}</AppText>
       {onRetry ? (
-        <Button title={t('common.retry')} variant="outline" onPress={onRetry} />
+        <Button
+          icon="refresh"
+          title={t('common.retry')}
+          variant="outline"
+          onPress={onRetry}
+        />
       ) : null}
     </View>
   );

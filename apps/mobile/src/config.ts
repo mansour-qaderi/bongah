@@ -44,6 +44,8 @@ export const GEOCODER_SEARCH_URL = 'https://nominatim.openstreetmap.org/search';
 export const GEOCODER_USER_AGENT = 'Bongah/1.0 (real-estate app, Afghanistan)';
 /** The place lookup is a convenience: after this long the person types the address themselves. */
 export const GEOCODER_TIMEOUT_MS = 8_000;
+/** The shared geocoder asks for about one request a second: this long between two questions about the same thing. */
+export const GEOCODER_GAP_MS = 1_100;
 
 /** Give up on a request after this long (slow mobile networks are expected, hanging forever is not). */
 export const REQUEST_TIMEOUT_MS = 20_000;

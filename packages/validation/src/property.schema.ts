@@ -3,6 +3,8 @@ import {
   AFGHANISTAN_BOUNDS,
   CURRENCIES,
   DEAL_TYPES,
+  MORTGAGE_MONTHS_MAX,
+  PRICE_TERMS,
   PROPERTY_STATUSES,
   PROPERTY_TYPES,
   PROPERTY_UNIT_MAX_LENGTH,
@@ -43,12 +45,20 @@ const optionalPlace = (max: number) =>
 
 const propertyShape = {
   title: cleanText(3, 150),
-  /** Optional: a listing can be published without a description. Stored as '' when left out. Keeps its line breaks. */
-  description: multilineText(0, 5000).optional(),
+  /**
+   * Required: every listing says something about the property. Keeps its line breaks. On an update it may be left
+   * out (the stored text stays), but not blanked. (Listings published before this was required may still hold '' until
+   * they are next edited.)
+   */
+  description: multilineText(1, 5000),
   type: z.enum(PROPERTY_TYPES),
   /** Optional free text: which unit of a building ("واحد ۳"). null (or blank) clears it on an update. */
   unit: cleanText(0, PROPERTY_UNIT_MAX_LENGTH).nullish(),
   deal_type: z.enum(DEAL_TYPES),
+  /** How long a mortgage (گروی) runs, in months. Only for a MORTGAGE_GROWI listing; null clears it on an update. */
+  mortgage_months: z.int().min(1).max(MORTGAGE_MONTHS_MAX).nullish(),
+  /** Fixed (مقطوع) or negotiable (جورآمد) price; null says neither (and clears it on an update). */
+  price_terms: z.enum(PRICE_TERMS).nullish(),
   price: moneyAmount,
   currency: z.enum(CURRENCIES),
   area_sqm: z.number().positive().max(100_000_000),
@@ -84,6 +94,11 @@ export const createPropertySchema = z
     message: 'lat and lng must be sent together',
     path: ['lat'],
   })
+  // A mortgage duration belongs to a mortgage listing only.
+  .refine((value) => value.mortgage_months == null || value.deal_type === 'MORTGAGE_GROWI', {
+    message: 'A duration is only for a mortgage listing',
+    path: ['mortgage_months'],
+  })
   // Where the listing is: a pin on the map, OR the address written out as one line. A pin makes even the address
   // optional; district and neighbourhood are never required (a pin fills them in, a written address carries them).
   .superRefine((value, ctx) => {
@@ -110,7 +125,14 @@ export const updatePropertySchema = z
   .refine((value) => (value.lat === undefined) === (value.lng === undefined), {
     message: 'lat and lng must be sent together',
     path: ['lat'],
-  });
+  })
+  // When the same request names the deal, it cannot give a duration to a deal that has none. (A request that only
+  // names the duration is checked against the stored deal by the service.)
+  .refine(
+    (value) =>
+      value.mortgage_months == null || value.deal_type === undefined || value.deal_type === 'MORTGAGE_GROWI',
+    { message: 'A duration is only for a mortgage listing', path: ['mortgage_months'] },
+  );
 export type UpdatePropertyInput = z.output<typeof updatePropertySchema>;
 
 // ───────────────────────── Query strings ─────────────────────────

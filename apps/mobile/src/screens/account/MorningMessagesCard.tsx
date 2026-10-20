@@ -84,6 +84,7 @@ export default function MorningMessagesCard({
       {blocked && enabled ? (
         <Banner kind="info" message={t('account.morningMessagesBlocked')}>
           <Button
+            icon="sliders"
             title={t('account.openSettings')}
             variant="outline"
             onPress={() => Linking.openSettings()}

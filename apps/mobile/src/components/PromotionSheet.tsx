@@ -1,14 +1,10 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import type { Property } from '@bongah/shared-types';
 import { errorMessage } from '../api/errors';
-import {
-  usePricing,
-  useRedeemLadderToken,
-  useReferralSummary,
-} from '../api/hooks';
+import { usePricing } from '../api/hooks';
 import { useSafeAuth } from '../auth/useSafeAuth';
 import { formatDate, formatNumber } from '../i18n/format';
 import { useFormat } from '../i18n/useFormat';
@@ -16,15 +12,13 @@ import { useFeaturedCreditSpend } from '../payments/useFeaturedCreditSpend';
 import { usePaymentFlow } from '../payments/usePaymentFlow';
 import { colors, radius, spacing } from '../theme';
 import AppText from './AppText';
-import Banner from './Banner';
 import Button from './Button';
-import OptionCard from './OptionCard';
 import PaymentProgress from './PaymentProgress';
+import LadderFrameOption from './LadderFrameOption';
 import { ErrorView, LoadingView } from './States';
 import { showToast, ToastHost } from './Toast';
 import { useErrorToast } from './useErrorToast';
 
-type Promotion = 'LADDER' | 'FEATURED_AD';
 type Promotable = Pick<
   Property,
   'id' | 'title' | 'is_featured' | 'featured_until'
@@ -37,10 +31,10 @@ interface Props {
 }
 
 /**
- * Bottom sheet for the two paid promotions of one listing: "Ladder" (back to the top of search)
- * and "Featured" (badge and frame for a number of days). The person picks one, pays on the
- * HesabPay page, and the sheet follows the payment until the server confirms it. The price is
- * the server's; the app only says which promotion and which listing.
+ * Bottom sheet for the one paid promotion of a listing: the featured frame («کادر ویژه برای آگهی»), which puts the
+ * listing at the top of the list with a badge and a frame for a number of days. A frame already bought ahead of time
+ * is spent with one tap, so are seven ladders (نردبان) when they hold that many; otherwise the person pays on the HesabPay page and the sheet follows the payment until the
+ * server confirms it. The price is the server's; the app only says which listing.
  *
  * The caller makes sure the person is signed in and owns the listing.
  */
@@ -69,9 +63,6 @@ function SheetBody({
   const format = useFormat();
   const pricing = usePricing();
   const flow = usePaymentFlow();
-  // A free ladder earned by inviting friends. Only counted when the server says so.
-  const referral = useReferralSummary(true);
-  const redeem = useRedeemLadderToken();
   const spend = useFeaturedCreditSpend();
   // Credits for featured listings: bought in a bundle, or the first-subscription bonus.
   const credits = useSafeAuth()?.user?.featured_credits ?? 0;
@@ -79,13 +70,7 @@ function SheetBody({
     flow.startError ? errorMessage(flow.startError, t) : null,
     flow.startError,
   );
-  useErrorToast(
-    redeem.error ? errorMessage(redeem.error, t) : null,
-    redeem.error,
-  );
   useErrorToast(spend.error ? errorMessage(spend.error, t) : null, spend.error);
-  const freeTokens = referral.data?.stats.ladder_tokens_available ?? 0;
-  const [choice, setChoice] = useState<Promotion>('LADDER');
 
   const prices = pricing.data;
   const featuredHelp =
@@ -94,14 +79,9 @@ function SheetBody({
           date: formatDate(property.featured_until),
           days: formatNumber(prices.featured_ad_days, 0),
         })
-      : t('checkout.featuredHelp', {
+      : t('frame.topOfList', {
           days: formatNumber(prices?.featured_ad_days ?? 0, 0),
         });
-  const amount = prices
-    ? choice === 'LADDER'
-      ? prices.ladder
-      : prices.featured_ad
-    : null;
 
   return (
     <View style={styles.root}>
@@ -134,17 +114,7 @@ function SheetBody({
           contentContainerStyle={styles.content}
           keyboardShouldPersistTaps="handled"
         >
-          {redeem.isSuccess ? (
-            <>
-              <Banner
-                kind="success"
-                message={t('promotion.freeTokenDone', {
-                  count: formatNumber(redeem.data.ladder_tokens_available, 0),
-                })}
-              />
-              <Button title={t('common.close')} onPress={onClose} />
-            </>
-          ) : flow.payment ? (
+          {flow.payment ? (
             <PaymentProgress flow={flow} onDone={onClose} />
           ) : pricing.isPending ? (
             <LoadingView />
@@ -155,46 +125,29 @@ function SheetBody({
             />
           ) : (
             <>
-              <AppText variant="label" style={styles.help}>
-                {t('promotion.choose')}
-              </AppText>
-              <OptionCard
-                title={t('checkout.ladder')}
-                subtitle={t('checkout.ladderHelp')}
-                trailing={format.price(prices.ladder, prices.currency)}
-                selected={choice === 'LADDER'}
-                onPress={() => setChoice('LADDER')}
-              />
-              <OptionCard
-                title={t('checkout.featured')}
-                subtitle={featuredHelp}
-                trailing={format.price(prices.featured_ad, prices.currency)}
-                selected={choice === 'FEATURED_AD'}
-                onPress={() => setChoice('FEATURED_AD')}
-              />
-              {choice === 'LADDER' && freeTokens > 0 ? (
-                <View style={styles.freeToken}>
-                  <AppText variant="label" color={colors.success}>
-                    {t('promotion.freeTokens', {
-                      count: formatNumber(freeTokens, 0),
-                    })}
+              <View style={styles.offer} testID="frame-offer">
+                <View style={styles.offerText}>
+                  <AppText variant="label" color={colors.primaryDark}>
+                    {t('frame.title')}
                   </AppText>
-                  <Button
-                    title={t('promotion.useFreeToken')}
-                    loading={redeem.isPending}
-                    onPress={() => redeem.mutate(property.id)}
-                  />
+                  <AppText variant="caption" color={colors.textMuted}>
+                    {featuredHelp}
+                  </AppText>
                 </View>
-              ) : null}
-              {choice === 'FEATURED_AD' && credits > 0 ? (
+                <AppText variant="label" color={colors.primaryDark}>
+                  {format.price(prices.featured_ad, prices.currency)}
+                </AppText>
+              </View>
+              {credits > 0 ? (
                 <View style={styles.freeToken}>
                   <AppText variant="label" color={colors.success}>
-                    {t('checkout.featuredCredits', {
+                    {t('frame.credits', {
                       count: formatNumber(credits, 0),
                     })}
                   </AppText>
                   <Button
-                    title={t('checkout.useCredit')}
+                    icon="check"
+                    title={t('frame.useCredit')}
                     loading={spend.isPending}
                     onPress={() =>
                       spend.mutate(property.id, {
@@ -212,15 +165,20 @@ function SheetBody({
                   />
                 </View>
               ) : null}
+              <LadderFrameOption propertyId={property.id} onDone={onClose} />
               <AppText variant="heading" style={styles.amount}>
                 {t('checkout.amount')}:{' '}
-                {format.price(amount ?? 0, prices.currency)}
+                {format.price(prices.featured_ad, prices.currency)}
               </AppText>
               <Button
+                icon="card"
                 title={t('checkout.pay')}
                 loading={flow.starting}
                 onPress={() =>
-                  flow.begin({ purpose: choice, property_id: property.id })
+                  flow.begin({
+                    purpose: 'FEATURED_AD',
+                    property_id: property.id,
+                  })
                 }
               />
             </>
@@ -253,7 +211,17 @@ const styles = StyleSheet.create({
   headerText: { flex: 1 },
   scroll: { flexGrow: 0 },
   content: { padding: spacing.lg, paddingTop: spacing.sm },
-  help: { marginBottom: spacing.md },
+  offer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    padding: spacing.md,
+    borderRadius: radius.md,
+    borderWidth: 2,
+    borderColor: colors.accentBright,
+    backgroundColor: colors.surface,
+  },
+  offerText: { flex: 1, gap: 2 },
   amount: { marginVertical: spacing.lg },
   freeToken: {
     marginTop: spacing.md,

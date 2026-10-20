@@ -291,6 +291,49 @@ describe.skipIf(!hasDb)('Wallet, payment history and receipts (e2e)', () => {
       expect(wallet.contact_unlimited).toBe(true);
     });
 
+    describe('listing quota', () => {
+      it('shows an ordinary user the free listing of the month, then the gift on top, and counts down as they publish', async () => {
+        const user = await ctx.user();
+        const before = (await ctx.get('/wallet', user.token).expect(200)).body as Wallet;
+        expect(before.listing_quota).toMatchObject({ limit: 1, used: 0, extra: 0 });
+        expect(new Date(before.listing_quota!.resets_at!).getTime()).toBeGreaterThan(Date.now());
+
+        await ctx.prisma.user.update({ where: { id: user.id }, data: { welcomeListingCredits: 1 } });
+        await ctx.listing(user);
+        const after = (await ctx.get('/wallet', user.token).expect(200)).body as Wallet;
+        expect(after.listing_quota).toMatchObject({ limit: 1, used: 1, extra: 1 });
+      });
+
+      it('does not count a listing the welcome gift paid for as one of the month\'s free listings', async () => {
+        const user = await ctx.user();
+        await ctx.listing(user, { usedWelcomeCredit: true });
+        const wallet = (await ctx.get('/wallet', user.token).expect(200)).body as Wallet;
+        expect(wallet.listing_quota).toMatchObject({ limit: 1, used: 0, extra: 0 });
+      });
+
+      it('shows an office the listings of its running plan and its bonus listings, ending with the plan', async () => {
+        const agency = await ctx.agency('QUARTERLY');
+        await ctx.prisma.subscription.updateMany({ where: { agencyId: agency.agencyId }, data: { listingsUsed: 5 } });
+        await ctx.prisma.user.update({ where: { id: agency.id }, data: { bonusListingCredits: 3 } });
+        const wallet = (await ctx.get('/wallet', agency.token).expect(200)).body as Wallet;
+        expect(wallet.listing_quota).toMatchObject({ limit: 18, used: 5, extra: 3 });
+        expect(wallet.listing_quota!.resets_at).toBe(wallet.subscription!.ends_at);
+      });
+
+      it('shows an office with no running plan nothing to publish with, bonus listings included', async () => {
+        const agency = await ctx.agency(false);
+        await ctx.prisma.user.update({ where: { id: agency.id }, data: { bonusListingCredits: 3 } });
+        const wallet = (await ctx.get('/wallet', agency.token).expect(200)).body as Wallet;
+        expect(wallet.listing_quota).toEqual({ limit: 0, used: 0, extra: 0, resets_at: null });
+      });
+
+      it('has no limit for an admin', async () => {
+        const admin = await ctx.admin();
+        const wallet = (await ctx.get('/wallet', admin.token).expect(200)).body as Wallet;
+        expect(wallet.listing_quota).toEqual({ limit: null, used: 0, extra: 0, resets_at: null });
+      });
+    });
+
     it('refuses a banned account like every other endpoint', async () => {
       const admin = await ctx.admin();
       const user = await ctx.user();

@@ -610,6 +610,72 @@ describe.skipIf(!hasDb)('Properties (e2e)', () => {
     });
   });
 
+  describe('the mortgage duration and the price terms', () => {
+    it('are null when not given and returned as the owner sent them', async () => {
+      const admin = await ctx.user(Role.ADMIN);
+      const plain = await ctx.post('/properties', propertyBody(), admin.token).expect(201);
+      expect(plain.body).toMatchObject({ mortgage_months: null, price_terms: null });
+
+      const mortgage = await ctx
+        .post('/properties', propertyBody({ deal_type: 'MORTGAGE_GROWI', mortgage_months: 24, price_terms: 'NEGOTIABLE' }), admin.token)
+        .expect(201);
+      expect(mortgage.body).toMatchObject({ deal_type: 'MORTGAGE_GROWI', mortgage_months: 24, price_terms: 'NEGOTIABLE' });
+      const stored = await ctx.prisma.property.findUniqueOrThrow({ where: { id: mortgage.body.id } });
+      expect(stored).toMatchObject({ mortgageMonths: 24, priceTerms: 'NEGOTIABLE' });
+      expect((await ctx.get(`/properties/${mortgage.body.id}`).expect(200)).body).toMatchObject({ mortgage_months: 24 });
+
+      const rent = await ctx.post('/properties', propertyBody({ deal_type: 'RENT', price_terms: 'FIXED' }), admin.token).expect(201);
+      expect(rent.body).toMatchObject({ mortgage_months: null, price_terms: 'FIXED' });
+    });
+
+    it('refuse a duration on a sale or rent, a zero or absurd duration and an unknown term', async () => {
+      const admin = await ctx.user(Role.ADMIN);
+      await ctx.post('/properties', propertyBody({ deal_type: 'SALE', mortgage_months: 12 }), admin.token).expect(400);
+      await ctx.post('/properties', propertyBody({ deal_type: 'RENT', mortgage_months: 12 }), admin.token).expect(400);
+      const mortgage = { deal_type: 'MORTGAGE_GROWI' };
+      await ctx.post('/properties', propertyBody({ ...mortgage, mortgage_months: 0 }), admin.token).expect(400);
+      await ctx.post('/properties', propertyBody({ ...mortgage, mortgage_months: 601 }), admin.token).expect(400);
+      await ctx.post('/properties', propertyBody({ ...mortgage, mortgage_months: 1.5 }), admin.token).expect(400);
+      await ctx.post('/properties', propertyBody({ ...mortgage, price_terms: 'HALF' }), admin.token).expect(400);
+      // A mortgage may leave the duration out.
+      await ctx.post('/properties', propertyBody(mortgage), admin.token).expect(201);
+    });
+
+    it('can be set, changed and cleared by the owner', async () => {
+      const owner = await ctx.user();
+      const target = await seed(owner, { dealType: 'MORTGAGE_GROWI' });
+      const set = await ctx.patch(`/properties/${target.id}`, { mortgage_months: 12, price_terms: 'FIXED' }, owner.token).expect(200);
+      expect(set.body).toMatchObject({ mortgage_months: 12, price_terms: 'FIXED' });
+      const changed = await ctx.patch(`/properties/${target.id}`, { mortgage_months: 36, price_terms: 'NEGOTIABLE' }, owner.token).expect(200);
+      expect(changed.body).toMatchObject({ mortgage_months: 36, price_terms: 'NEGOTIABLE' });
+      const cleared = await ctx.patch(`/properties/${target.id}`, { mortgage_months: null, price_terms: null }, owner.token).expect(200);
+      expect(cleared.body).toMatchObject({ mortgage_months: null, price_terms: null });
+    });
+
+    it('are kept when something else is edited', async () => {
+      const owner = await ctx.user();
+      const target = await seed(owner, { dealType: 'MORTGAGE_GROWI', mortgageMonths: 18, priceTerms: 'FIXED' });
+      const res = await ctx.patch(`/properties/${target.id}`, { title: 'Renamed' }, owner.token).expect(200);
+      expect(res.body).toMatchObject({ mortgage_months: 18, price_terms: 'FIXED' });
+    });
+
+    it('drop the duration when the listing moves to another deal, and refuse one for a deal that has none', async () => {
+      const owner = await ctx.user();
+      const target = await seed(owner, { dealType: 'MORTGAGE_GROWI', mortgageMonths: 18, priceTerms: 'NEGOTIABLE' });
+      const moved = await ctx.patch(`/properties/${target.id}`, { deal_type: 'RENT' }, owner.token).expect(200);
+      expect(moved.body).toMatchObject({ deal_type: 'RENT', mortgage_months: null, price_terms: 'NEGOTIABLE' });
+
+      // Now a rent: a duration alone is refused (the stored deal decides), and so is one sent with the rent.
+      await ctx.patch(`/properties/${target.id}`, { mortgage_months: 12 }, owner.token).expect(400);
+      await ctx.patch(`/properties/${target.id}`, { deal_type: 'SALE', mortgage_months: 12 }, owner.token).expect(400);
+      // The way back to a mortgage carries its duration.
+      const back = await ctx.patch(`/properties/${target.id}`, { deal_type: 'MORTGAGE_GROWI', mortgage_months: 6 }, owner.token).expect(200);
+      expect(back.body).toMatchObject({ deal_type: 'MORTGAGE_GROWI', mortgage_months: 6 });
+      // Clearing a duration on a rent is not an error.
+      await ctx.patch(`/properties/${target.id}`, { deal_type: 'SALE', mortgage_months: null }, owner.token).expect(200);
+    });
+  });
+
   describe('DELETE /properties/:id', () => {
     it('archives instead of deleting, so history and payments stay intact', async () => {
       const owner = await ctx.user();
