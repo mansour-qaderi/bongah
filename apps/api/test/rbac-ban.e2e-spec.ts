@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { Role } from '../src/generated/prisma/client.js';
 import { demoteAdmin, promoteToAdmin, RoleChangeError } from '../src/admin/admin.bootstrap.js';
+import { seedAdmin } from '../src/admin/admin.seed.js';
 import { hasDb, randomPhone, TestContext, type TestUser } from './helpers.js';
 
 describe.skipIf(!hasDb)('Admin access control and bans (e2e)', () => {
@@ -203,6 +204,19 @@ describe.skipIf(!hasDb)('Admin access control and bans (e2e)', () => {
       const log = await ctx.prisma.adminAuditLog.findMany({ where: { targetId: user.id, action: 'ADMIN_PROMOTED' } });
       expect(log).toHaveLength(1);
       expect(log[0].actorId).toBeNull();
+    });
+
+    it('seeds the developer account as an admin, once, and the admin then has no limits', async () => {
+      const phone = randomPhone();
+      const first = await seedAdmin(ctx.prisma, phone);
+      ctx.userIds.push(first.userId);
+      expect(first).toMatchObject({ created: true, unchanged: false, phoneNumber: phone });
+      expect(await seedAdmin(ctx.prisma, phone)).toMatchObject({ userId: first.userId, created: false, unchanged: true });
+      expect(await ctx.prisma.adminAuditLog.count({ where: { targetId: first.userId, action: 'ADMIN_PROMOTED' } })).toBe(1);
+
+      // An existing ordinary account with that number is promoted, not duplicated.
+      const user = await ctx.user();
+      expect(await seedAdmin(ctx.prisma, user.phone)).toMatchObject({ userId: user.id, created: false, unchanged: false });
     });
 
     it('refuses a bad number, an agency owner and a banned account', async () => {

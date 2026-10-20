@@ -1,4 +1,5 @@
 import { BadGatewayException } from '@nestjs/common';
+import { SUBSCRIPTION_PLAN_BENEFITS } from '@bongah/shared-types';
 import request from 'supertest';
 import { HesabPayGateway } from '../src/hesabpay/gateway/hesabpay-gateway.js';
 import { hasDb, PIN, propertyBody, signWebhook, TestContext, uniqueProvince, type TestUser } from './helpers.js';
@@ -74,7 +75,7 @@ describe.skipIf(!hasDb)('HesabPay (e2e)', () => {
 
     it('records a PENDING subscription purchase at the configured price', async () => {
       const agency = await ctx.agency(false);
-      const expected = { MONTHLY: 1000, QUARTERLY: 2700, YEARLY: 9600 } as const;
+      const expected = { MONTHLY: 900, QUARTERLY: 2400, SEMIANNUAL: 3900, YEARLY: 6000 } as const;
       for (const [pkg, amount] of Object.entries(expected)) {
         const res = await subscribe(agency, pkg).expect(201);
         expect(res.body).toMatchObject({ purpose: 'SUBSCRIPTION', status: 'PENDING', amount, currency: 'AFGHANI' });
@@ -102,11 +103,11 @@ describe.skipIf(!hasDb)('HesabPay (e2e)', () => {
       const ladder = await pay(owner, { purpose: 'LADDER', property_id: listing.id }).expect(201);
       expect(ladder.body).toMatchObject({ purpose: 'LADDER', amount: 50, status: 'PENDING' });
       const featured = await pay(owner, { purpose: 'FEATURED_AD', property_id: listing.id }).expect(201);
-      expect(featured.body).toMatchObject({ purpose: 'FEATURED_AD', amount: 100.5 });
+      expect(featured.body).toMatchObject({ purpose: 'FEATURED_AD', amount: 100 });
 
       const row = await ctx.prisma.transaction.findUniqueOrThrow({ where: { id: featured.body.id } });
       expect(row.propertyId).toBe(listing.id);
-      expect(row.amount.toString()).toBe('100.5');
+      expect(row.amount.toString()).toBe('100');
     });
 
     it("refuses to promote someone else's, archived or missing listings", async () => {
@@ -134,13 +135,21 @@ describe.skipIf(!hasDb)('HesabPay (e2e)', () => {
       const res = await ctx.get('/hesabpay/pricing').expect(200);
       expect(res.body).toEqual({
         currency: 'AFGHANI',
-        subscription: { MONTHLY: 1000, QUARTERLY: 2700, YEARLY: 9600 },
+        subscription: { MONTHLY: 900, QUARTERLY: 2400, SEMIANNUAL: 3900, YEARLY: 6000 },
+        subscription_list: { MONTHLY: 1000, QUARTERLY: 3000, SEMIANNUAL: 6000, YEARLY: 12000 },
         ladder: 50,
-        featured_ad: 100.5,
+        featured_ad: 100,
         map_location: 30,
         featured_ad_days: 7,
         contact_credits: 40,
         contact_credits_per_pack: 10,
+        featured_bundles: [
+          { size: 3, price: 270, list_price: 300, discount_percent: 10 },
+          { size: 5, price: 400, list_price: 500, discount_percent: 20 },
+          { size: 10, price: 650, list_price: 1000, discount_percent: 35 },
+          { size: 20, price: 1100, list_price: 2000, discount_percent: 45 },
+        ],
+        plans: SUBSCRIPTION_PLAN_BENEFITS,
       });
     });
   });
@@ -150,7 +159,7 @@ describe.skipIf(!hasDb)('HesabPay (e2e)', () => {
       const agency = await ctx.agency(false);
       const { id, sessionId } = await start(agency, { purpose: 'SUBSCRIPTION', package_type: 'MONTHLY' });
       const before = await ctx.get(`/hesabpay/payments/${id}`, agency.token).expect(200);
-      expect(before.body).toMatchObject({ id, status: 'PENDING', purpose: 'SUBSCRIPTION', amount: 1000, currency: 'AFGHANI' });
+      expect(before.body).toMatchObject({ id, status: 'PENDING', purpose: 'SUBSCRIPTION', amount: 900, currency: 'AFGHANI' });
 
       await confirm(sessionId).expect(200);
       expect((await ctx.get(`/hesabpay/payments/${id}`, agency.token).expect(200)).body.status).toBe('SUCCESS');
@@ -226,6 +235,16 @@ describe.skipIf(!hasDb)('HesabPay (e2e)', () => {
       await ctx.post('/properties', propertyBody(), agency.token).expect(201); // unlocked by paying
     });
 
+    it('runs the six-month plan for six months', async () => {
+      const agency = await ctx.agency(false);
+      const { id, sessionId } = await start(agency, { purpose: 'SUBSCRIPTION', package_type: 'SEMIANNUAL' });
+      await confirm(sessionId).expect(200);
+      const [sub] = await subscriptions(agency.agencyId);
+      expect(sub).toMatchObject({ packageType: 'SEMIANNUAL', status: 'ACTIVE', transactionId: id });
+      const monthsApart = (sub.endDate.getUTCFullYear() - sub.startDate.getUTCFullYear()) * 12 + sub.endDate.getUTCMonth() - sub.startDate.getUTCMonth();
+      expect(monthsApart).toBe(6);
+    });
+
     it('delivers once however many times the same confirmation arrives', async () => {
       const agency = await ctx.agency(false);
       const { id, sessionId } = await start(agency, { purpose: 'SUBSCRIPTION', package_type: 'MONTHLY' });
@@ -293,14 +312,14 @@ describe.skipIf(!hasDb)('HesabPay (e2e)', () => {
 
     it('does not deliver when the confirmed amount or currency differs from what was requested', async () => {
       const agency = await ctx.agency(false);
-      const { id, sessionId } = await start(agency, { purpose: 'SUBSCRIPTION', package_type: 'YEARLY' }); // 9600 AFGHANI
+      const { id, sessionId } = await start(agency, { purpose: 'SUBSCRIPTION', package_type: 'YEARLY' }); // 6000 AFGHANI
       await confirm(sessionId, { amount: 1 }).expect(200);
-      await confirm(sessionId, { amount: 9600, currency: 'USD' }).expect(200);
+      await confirm(sessionId, { amount: 6000, currency: 'USD' }).expect(200);
       expect(await status(id)).toBe('PENDING');
       expect(await subscriptions(agency.agencyId)).toHaveLength(0);
 
       // The correct amount (any equivalent spelling, provider currency code) still goes through.
-      await confirm(sessionId, { amount: '9600.00', currency: 'AFN' }).expect(200);
+      await confirm(sessionId, { amount: '6000.00', currency: 'AFN' }).expect(200);
       expect(await status(id)).toBe('SUCCESS');
       expect(await subscriptions(agency.agencyId)).toHaveLength(1);
     });

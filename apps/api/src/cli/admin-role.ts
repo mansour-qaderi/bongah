@@ -1,5 +1,4 @@
-import { PrismaPg } from '@prisma/adapter-pg';
-import { PrismaClient } from '../generated/prisma/client.js';
+import { connectCliDb, CliDatabaseError } from './db.js';
 import { demoteAdmin, promoteToAdmin, RoleChangeError } from '../admin/admin.bootstrap.js';
 
 /**
@@ -23,21 +22,22 @@ async function main(): Promise<number> {
     return 2;
   }
 
-  const db = new PrismaClient({ adapter: new PrismaPg({ connectionString: url }) });
+  let db;
   try {
+    db = await connectCliDb(url);
     const result = command === 'promote' ? await promoteToAdmin(db, phone) : await demoteAdmin(db, phone);
     if (result.unchanged) console.log(`${result.phoneNumber}: already ${command === 'promote' ? 'an admin' : 'not an admin'}.`);
     else if (result.created) console.log(`${result.phoneNumber}: account created as admin. They sign in with this number as usual.`);
     else console.log(`${result.phoneNumber}: ${command === 'promote' ? 'is now an admin' : 'is no longer an admin'}.`);
     return 0;
   } catch (error) {
-    if (error instanceof RoleChangeError) {
+    if (error instanceof RoleChangeError || error instanceof CliDatabaseError) {
       console.error(error.message);
       return 1;
     }
     throw error;
   } finally {
-    await db.$disconnect();
+    await db?.$disconnect();
   }
 }
 

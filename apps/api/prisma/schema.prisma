@@ -97,6 +97,7 @@ enum PropertyStatus {
 enum SubscriptionPackage {
   MONTHLY
   QUARTERLY
+  SEMIANNUAL
   YEARLY
 
   @@map("subscription_package")
@@ -115,6 +116,8 @@ enum TransactionPurpose {
   FEATURED_AD
   MAP_LOCATION
   CONTACT_CREDITS
+  /// A bundle of featured-listing credits (quantity = how many), spent on listings later.
+  FEATURED_CREDITS
 
   @@map("transaction_purpose")
 }
@@ -245,6 +248,7 @@ enum BannerPlacement {
 enum PricingKey {
   SUBSCRIPTION_MONTHLY
   SUBSCRIPTION_QUARTERLY
+  SUBSCRIPTION_SEMIANNUAL
   SUBSCRIPTION_YEARLY
   LADDER
   FEATURED_AD
@@ -305,6 +309,19 @@ model User {
   enableDailyMotivation Boolean @default(true) @map("enable_daily_motivation")
   /// False until the user has been shown the welcome card once. Only ever goes false -> true.
   hasSeenWelcome        Boolean @default(false) @map("has_seen_welcome")
+  /// Gift listings left. A new account starts with one (set when it is created); the first listing it posts uses it
+  /// up, before the monthly free listing. Never below zero (CHECK in the migration). Accounts made before the gift,
+  /// and admin accounts, have none.
+  welcomeListingCredits Int     @default(0) @map("welcome_listing_credits")
+  /// Extra listings from the first-subscription bonus. A subscribed agency uses one after its month's allowance is
+  /// spent. Never below zero (CHECK in the migration).
+  bonusListingCredits   Int     @default(0) @map("bonus_listing_credits")
+  /// Featured-listing credits left: bought in a bundle, or given by the first-subscription bonus. Each one makes a
+  /// listing featured for the usual number of days. Never below zero (CHECK in the migration).
+  featuredCredits       Int     @default(0) @map("featured_credits")
+  /// When the first-subscription bonus was given. Null until then; set in the same transaction as the grant, so
+  /// it can only ever be given once. Accounts that subscribed before the bonus existed have it set by the migration.
+  firstSubscriptionBonusAt DateTime? @map("first_subscription_bonus_at") @db.Timestamptz(3)
   createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
 
@@ -422,6 +439,12 @@ model Property {
   /// created and to now() when the owner pays for a "Ladder" (نردبان) bump, so ordering by
   /// this one column is enough (Prisma cannot ORDER BY COALESCE). Null only on legacy rows.
   ladderedAt    DateTime?      @map("laddered_at") @db.Timestamptz(3)
+  /// True when this listing was paid for with the owner's welcome gift. It then does not count toward the monthly free
+  /// listing, which is why the gift is an extra listing and not a replacement for the monthly one.
+  usedWelcomeCredit Boolean    @default(false) @map("used_welcome_credit")
+  /// True when this listing was paid for with one of the owner's bonus listing credits (an agency past its monthly
+  /// allowance). It then does not count toward that allowance.
+  usedBonusCredit   Boolean    @default(false) @map("used_bonus_credit")
   /// Paid "featured" promotion: the badge shows while is_featured is true AND this is in the future.
   /// is_featured alone goes stale at expiry, so readers must check both (see toPropertyDto in src/property/property.mapper.ts).
   featuredUntil DateTime?      @map("featured_until") @db.Timestamptz(3)
@@ -467,6 +490,10 @@ model Subscription {
   /// The payment that bought this subscription (null for admin grants / free trials).
   /// UNIQUE: one payment can never create two subscriptions, whatever the application does.
   transactionId String?             @unique @map("transaction_id") @db.Uuid
+  /// Listings published under this plan (counted against the plan's own listing allowance, see
+  /// SUBSCRIPTION_PLAN_BENEFITS). Only ever goes up: archiving or deleting a listing gives nothing back.
+  /// CHECK >= 0 in the migration.
+  listingsUsed  Int                 @default(0) @map("listings_used")
 
   agency      Agency       @relation(fields: [agencyId], references: [id], onDelete: Restrict)
   transaction Transaction? @relation(fields: [transactionId], references: [id], onDelete: Restrict)

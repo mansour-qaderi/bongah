@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { SUBSCRIPTION_PACKAGES } from '@bongah/shared-types';
+import { FEATURED_BUNDLE_SIZES, SUBSCRIPTION_PACKAGES } from '@bongah/shared-types';
 
 /**
  * POST /hesabpay/payments. There is deliberately no `amount` or `currency`: what something
@@ -26,5 +26,19 @@ export const initiatePaymentSchema = z.discriminatedUnion('purpose', [
   z.strictObject({
     purpose: z.literal('CONTACT_CREDITS'),
   }),
+  // A bundle of featured-listing credits (3, 5, 10 or 20), spent on listings later. The server sets the price.
+  z.strictObject({
+    purpose: z.literal('FEATURED_CREDITS'),
+    bundle_size: z.custom<(typeof FEATURED_BUNDLE_SIZES)[number]>(
+      (value) => typeof value === 'number' && (FEATURED_BUNDLE_SIZES as readonly number[]).includes(value),
+      { message: `bundle_size must be one of ${FEATURED_BUNDLE_SIZES.join(', ')}` },
+    ),
+  }),
 ]);
 export type InitiatePaymentInput = z.output<typeof initiatePaymentSchema>;
+
+/** POST /hesabpay/featured-credits/use: spend one featured-listing credit on one of my listings. */
+export const useFeaturedCreditSchema = z.strictObject({
+  property_id: z.uuid(),
+});
+export type UseFeaturedCreditInput = z.output<typeof useFeaturedCreditSchema>;

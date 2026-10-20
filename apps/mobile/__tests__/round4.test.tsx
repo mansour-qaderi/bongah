@@ -759,7 +759,11 @@ describe('AccountScreen: the settings layout', () => {
     expect(text).toContain(prs.auth.signIn);
     expect(text).toContain(prs.account.about);
     expect(text).toContain(prs.account.feedback);
-    expect(text).not.toContain(prs.account.groupAccount);
+    // The "account" group's title is a text of its own. (The plans row, «ارتقای حساب و خرید اشتراک», has the word in a
+    // longer sentence, so a plain substring test would be fooled by it.)
+    expect(
+      tree.root.findAll(n => n.props.children === prs.account.groupAccount),
+    ).toHaveLength(0);
     expect(text).not.toContain(prs.account.morningMessages);
   });
 });

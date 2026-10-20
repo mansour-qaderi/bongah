@@ -115,11 +115,12 @@ export function parseNumberInput(text: string): number | null {
   return Number.isFinite(value) ? value : null;
 }
 
-const KABUL_OFFSET_MS = 4.5 * 60 * 60 * 1000;
+/** Kabul is UTC+4:30 all year (no daylight saving). */
+export const KABUL_OFFSET_MS = 4.5 * 60 * 60 * 1000;
 
 /**
  * Formats a timestamp as a numeric date in Kabul time (UTC+4:30), e.g. ۲۰۲۶/۱۰/۱۲.
- * This is the Gregorian calendar; the Solar Hijri calendar is not implemented.
+ * This is the Gregorian calendar. Sentences meant for readers use the Solar Hijri one: see `formatSolarDate`.
  */
 export function formatDate(iso: string): string {
   const time = Date.parse(iso);

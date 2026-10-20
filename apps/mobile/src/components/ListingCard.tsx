@@ -267,7 +267,8 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     gap: spacing.md,
   },
-  featured: { borderColor: colors.accentBright },
+  // A featured listing is framed in gold, thicker than the 1 px edge of the others, so it is found first in the list.
+  featured: { borderColor: colors.accentBright, borderWidth: 2.5 },
   top: { flexDirection: 'row', gap: spacing.md },
   pressed: { opacity: 0.85 },
   media: { width: THUMB, height: THUMB },

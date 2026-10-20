@@ -97,7 +97,7 @@ describe('priority', () => {
     expect(planRank(property())).toBe(0);
   });
 
-  it('puts subscribed listings first by tier, then featured, then the newest', () => {
+  it('puts featured listings first, then subscribed ones by tier, then the newest', () => {
     const list = [
       property({ id: 'free-new', created_at: '2026-10-10T00:00:00Z' }),
       property({ id: 'monthly', agency_plan: 'MONTHLY' }),
@@ -111,13 +111,30 @@ describe('priority', () => {
       property({ id: 'free-old', created_at: '2026-08-01T00:00:00Z' }),
     ];
     expect(sortByPriority(list).map(p => p.id)).toEqual([
+      'free-featured',
       'yearly',
       'quarterly',
       'monthly',
-      'free-featured',
       'free-new',
       'free-old',
     ]);
+  });
+
+  it('lets a featured listing of a short plan go ahead of an ordinary one of the longest plan', () => {
+    const featuredMonthly = property({
+      id: 'featured-monthly',
+      agency_plan: 'MONTHLY',
+      is_featured: true,
+    });
+    const yearly = property({ id: 'yearly', agency_plan: 'YEARLY' });
+    expect(comparePriority(featuredMonthly, yearly)).toBeLessThan(0);
+    // Among featured ones the longer plan still goes first.
+    const featuredYearly = {
+      ...yearly,
+      id: 'featured-yearly',
+      is_featured: true,
+    };
+    expect(comparePriority(featuredYearly, featuredMonthly)).toBeLessThan(0);
   });
 
   it('lets a ladder lift a listing within its tier, and breaks full ties by id', () => {

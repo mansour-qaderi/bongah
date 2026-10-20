@@ -7,6 +7,7 @@ import { queryClient } from '../src/api/hooks';
 import { initI18n } from '../src/i18n';
 import { formatNumber } from '../src/i18n/format';
 import prs from '../src/i18n/locales/prs.json';
+import { captureToasts } from '../test-utils/toasts';
 import { resetDeletedForTests } from '../src/listings/deleted';
 import { KV_KEYS, kv } from '../src/storage/kv';
 import {
@@ -18,6 +19,7 @@ import {
 } from '../test-utils';
 
 const fetchMock = jest.fn();
+let toasts: ReturnType<typeof captureToasts>;
 let mockAuth: Record<string, unknown> = {};
 
 jest.mock('../src/auth/AuthContext', () => ({
@@ -123,6 +125,7 @@ beforeAll(async () => {
   await initI18n();
 });
 beforeEach(async () => {
+  toasts = captureToasts();
   fetchMock.mockReset();
   (globalThis as unknown as { fetch: unknown }).fetch = fetchMock;
   await kv.remove(KV_KEYS.deletedListings);
@@ -133,6 +136,7 @@ beforeEach(async () => {
   };
 });
 afterEach(async () => {
+  toasts.restore();
   await ReactTestRenderer.act(async () => {
     mounted.splice(0).forEach(tree => tree.unmount());
   });
@@ -658,10 +662,7 @@ describe('MyListingsScreen', () => {
       });
       await settle();
       expect(allText(tree.root)).toContain('آگهی اول');
-      expect(
-        tree.root.findAll(node => node.props.accessibilityRole === 'alert')
-          .length,
-      ).toBeGreaterThan(0);
+      expect(toasts.messages).toHaveLength(1);
       expect(await kv.get(KV_KEYS.deletedListings)).toBeNull();
     });
 
@@ -674,10 +675,7 @@ describe('MyListingsScreen', () => {
         alertButton(alert, prs.my.markSold)?.onPress?.();
       });
       await settle();
-      expect(
-        tree.root.findAll(node => node.props.accessibilityRole === 'alert')
-          .length,
-      ).toBeGreaterThan(0);
+      expect(toasts.messages).toHaveLength(1);
       // Still a live listing: its menu still has the live-only actions.
       expect(await menuLabels(tree.root)).toContain(prs.my.markSold);
     });

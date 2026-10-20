@@ -6,6 +6,7 @@ import { errorMessage } from '../../api/errors';
 import { useAuth } from '../../auth/AuthContext';
 import AppText from '../../components/AppText';
 import Banner from '../../components/Banner';
+import { showToast } from '../../components/Toast';
 import Button from '../../components/Button';
 import { useFormat } from '../../i18n/useFormat';
 import { enablePush } from '../../push/registration';
@@ -28,7 +29,6 @@ export default function MorningMessagesCard({
   const { language } = useFormat();
   const { user, updateUser } = useAuth();
   const [saving, setSaving] = useState(false);
-  const [failure, setFailure] = useState<string | null>(null);
   const [blocked, setBlocked] = useState(false);
 
   // The latest user, for rolling back without overwriting a change that arrived while the request was out.
@@ -42,7 +42,6 @@ export default function MorningMessagesCard({
   const toggle = async (next: boolean) => {
     if (saving) return;
     setSaving(true);
-    setFailure(null);
     setBlocked(false);
     await updateUser({ ...user, enable_daily_motivation: next });
     try {
@@ -53,7 +52,7 @@ export default function MorningMessagesCard({
       if (latest.current) {
         await updateUser({ ...latest.current, enable_daily_motivation: !next });
       }
-      setFailure(errorMessage(error, t));
+      showToast(errorMessage(error, t));
       setSaving(false);
       return;
     }
@@ -82,7 +81,6 @@ export default function MorningMessagesCard({
           ios_backgroundColor={colors.border}
         />
       </View>
-      {failure ? <Banner kind="error" message={failure} /> : null}
       {blocked && enabled ? (
         <Banner kind="info" message={t('account.morningMessagesBlocked')}>
           <Button

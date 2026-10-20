@@ -77,7 +77,7 @@ export class TestContext {
     return { id: row.id, phone, token: await this.tokenFor(row.id, role) };
   }
 
-  /** Asks for an OTP the way the app does and returns the code (the mock SMS gateway hands it back in tests). */
+  /** Asks for an OTP the way the app does and returns the code (the mock OTP gateway hands it back in tests). */
   async otpFor(phone: string): Promise<string> {
     // A second code for the same number would hit the resend cooldown; the cooldown is not what's under test.
     await this.prisma.otpCode.updateMany({ where: { phoneNumber: phone }, data: { createdAt: new Date(Date.now() - 2 * 3_600_000) } });
@@ -113,7 +113,9 @@ export class TestContext {
   }
 
   /** A user with role AGENCY and an agency profile; optionally with a currently active subscription. */
-  async agency(withSubscription: boolean): Promise<TestUser & { agencyId: string }> {
+  async agency(
+    withSubscription: boolean | 'MONTHLY' | 'QUARTERLY' | 'SEMIANNUAL' | 'YEARLY',
+  ): Promise<TestUser & { agencyId: string }> {
     const user = await this.user(Role.AGENCY);
     const agency = await this.prisma.agency.create({
       data: {
@@ -127,7 +129,7 @@ export class TestContext {
       await this.prisma.subscription.create({
         data: {
           agencyId: agency.id,
-          packageType: 'MONTHLY',
+          packageType: withSubscription === true ? 'MONTHLY' : withSubscription,
           startDate: new Date(Date.now() - 86_400_000),
           endDate: new Date(Date.now() + 30 * 86_400_000),
         },

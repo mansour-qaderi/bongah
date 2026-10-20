@@ -22,6 +22,8 @@ interface Props extends TextInputProps {
   /** Something small right beside the label (an info button), on the label's own line. */
   labelAccessory?: React.ReactNode;
   error?: string | null;
+  /** The red outline without the sentence under the field: the screen says what is wrong in a toast. */
+  invalid?: boolean;
   /** For phone numbers, codes and URLs, which are typed left-to-right. */
   ltr?: boolean;
   /** A line under the field, e.g. the amount written out as money while it is typed. */
@@ -50,6 +52,7 @@ export default function TextField({
   label,
   labelAccessory,
   error,
+  invalid,
   ltr,
   helper,
   digits = 'persian',
@@ -111,7 +114,7 @@ export default function TextField({
     persian && styles.digitsFont,
     multiline && styles.multiline,
     ltr && ltrInput,
-    error ? styles.inputError : null,
+    error || invalid ? styles.inputError : null,
     style,
   ]) as TextStyle;
 

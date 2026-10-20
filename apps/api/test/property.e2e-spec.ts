@@ -153,6 +153,61 @@ describe.skipIf(!hasDb)('Properties (e2e)', () => {
     });
   });
 
+  describe('POST /properties: the welcome gift', () => {
+    const credits = async (user: TestUser) => (await ctx.prisma.user.findUniqueOrThrow({ where: { id: user.id } })).welcomeListingCredits;
+    const withGift = async () => {
+      const user = await ctx.user();
+      await ctx.prisma.user.update({ where: { id: user.id }, data: { welcomeListingCredits: 1 } });
+      return user;
+    };
+
+    it('pays for the first listing, and the month\'s free listing is still there afterwards', async () => {
+      const user = await withGift();
+      const first = await ctx.post('/properties', propertyBody(), user.token).expect(201);
+      expect(await credits(user)).toBe(0);
+      expect((await ctx.prisma.property.findUniqueOrThrow({ where: { id: first.body.id } })).usedWelcomeCredit).toBe(true);
+
+      const second = await ctx.post('/properties', propertyBody(), user.token).expect(201); // the monthly free one
+      expect((await ctx.prisma.property.findUniqueOrThrow({ where: { id: second.body.id } })).usedWelcomeCredit).toBe(false);
+      await ctx.post('/properties', propertyBody(), user.token).expect(403); // now both are used
+    });
+
+    it('is not spent by an invalid listing', async () => {
+      const user = await withGift();
+      await ctx.post('/properties', propertyBody({ price: -1 }), user.token).expect(400);
+      expect(await credits(user)).toBe(1);
+    });
+
+    it('can only be spent once however many requests arrive together', async () => {
+      const user = await withGift();
+      const results = await Promise.all(Array.from({ length: 5 }, () => ctx.post('/properties', propertyBody(), user.token)));
+      // One for the gift and one for the monthly free listing; the rest are refused.
+      expect(results.map((r) => r.status).sort()).toEqual([201, 201, 403, 403, 403]);
+      expect(await credits(user)).toBe(0);
+      expect(await ctx.prisma.property.count({ where: { userId: user.id, usedWelcomeCredit: true } })).toBe(1);
+    });
+
+    it('does not make a user with no gift any different', async () => {
+      const user = await ctx.user();
+      await ctx.post('/properties', propertyBody(), user.token).expect(201);
+      await ctx.post('/properties', propertyBody(), user.token).expect(403);
+      expect(await credits(user)).toBe(0);
+    });
+
+    it('is left alone for an admin, who has no limit to pay for', async () => {
+      const admin = await ctx.user(Role.ADMIN);
+      await ctx.prisma.user.update({ where: { id: admin.id }, data: { welcomeListingCredits: 1 } });
+      for (let i = 0; i < 4; i++) await ctx.post('/properties', propertyBody(), admin.token).expect(201);
+      expect(await credits(admin)).toBe(1);
+    });
+
+    it('is shown to the app on the user\'s own profile', async () => {
+      const user = await withGift();
+      const me = await ctx.get('/users/me', user.token).expect(200);
+      expect(me.body.welcome_listing_credits).toBe(1);
+    });
+  });
+
   describe('POST /properties: agencies need an active subscription', () => {
     it('refuses an AGENCY account that never registered an agency', async () => {
       const user = await ctx.user(Role.AGENCY);
@@ -230,7 +285,7 @@ describe.skipIf(!hasDb)('Properties (e2e)', () => {
       await bad({ price: 1e12 }, 'price');
     });
     it('rejects unknown enum values and the wrong currency spelling', async () => {
-      await bad({ type: 'VILLA' }, 'type');
+      await bad({ type: 'CASTLE' }, 'type');
       await bad({ deal_type: 'BUY' }, 'deal_type');
       await bad({ currency: 'AFN' }, 'currency');
     });
@@ -375,7 +430,7 @@ describe.skipIf(!hasDb)('Properties (e2e)', () => {
       ['a non-numeric price', 'min_price=abc&currency=USD', 'min_price'],
       ['hex numbers', 'limit=0x10', 'limit'],
       ['an unknown filter', 'provnce=Kabul', ''],
-      ['an unknown type', 'type=VILLA', 'type'],
+      ['an unknown type', 'type=CASTLE', 'type'],
     ])('rejects %s', async (_label, qs, field) => {
       const res = await ctx.get(`/properties?${qs}`).expect(400);
       expect(res.body.errors.map((e: { field: string }) => e.field)).toContain(field);

@@ -43,7 +43,7 @@ const agencyUser = {
 };
 const PRICING = {
   currency: 'AFGHANI',
-  subscription: { MONTHLY: 1000, QUARTERLY: 2700, YEARLY: 9600 },
+  subscription: { MONTHLY: 1000, QUARTERLY: 2700, SEMIANNUAL: 5000, YEARLY: 9600 },
   ladder: 50,
   featured_ad: 100,
   map_location: 30,

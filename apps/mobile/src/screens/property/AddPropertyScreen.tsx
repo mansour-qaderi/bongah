@@ -23,8 +23,13 @@ import {
   createPropertySchema,
   type CreatePropertyInput,
 } from '@bongah/validation';
-import { createProperty, updateProperty } from '../../api/endpoints';
-import { errorMessage, isSubscriptionRequired } from '../../api/errors';
+import { createProperty, getMe, updateProperty } from '../../api/endpoints';
+import {
+  errorMessage,
+  isListingLimitReached,
+  isSubscriptionRequired,
+  listingLimitMessage,
+} from '../../api/errors';
 import { queryKeys, usePropertyDetail } from '../../api/hooks';
 import { useAuth } from '../../auth/AuthContext';
 import AppText from '../../components/AppText';
@@ -90,6 +95,17 @@ const roundTo2 = (n: number) => Math.round(n * 100) / 100;
 const NO_ROOMS: readonly PropertyType[] = ['LAND', 'GARDEN', 'GARAGE', 'OTHER'];
 const hasRoomsFor = (type: PropertyType) => !NO_ROOMS.includes(type);
 
+/**
+ * Only a house, an apartment or an office is "unit 3 of a building". Asking it of land, a garden, a garage or a shop
+ * only confuses people (a garage is not "unit 3"), so the field is not there for them.
+ */
+export const UNIT_TYPES: readonly PropertyType[] = [
+  'HOUSE_HAWILI',
+  'APARTMENT',
+  'OFFICE',
+];
+export const hasUnitFor = (type: PropertyType) => UNIT_TYPES.includes(type);
+
 /** The place a pin found, written the way a person would say it: wide to narrow, one line. */
 const addressFrom = (place: {
   district: string;
@@ -120,7 +136,7 @@ const addressFrom = (place: {
 export default function AddPropertyScreen({ navigation, route }: Props) {
   const { t } = useTranslation();
   const { language } = useFormat();
-  const { status } = useAuth();
+  const { status, user, updateUser } = useAuth();
   const queryClient = useQueryClient();
   const propertyId = route.params?.propertyId;
   const editing = propertyId !== undefined;
@@ -287,6 +303,9 @@ export default function AddPropertyScreen({ navigation, route }: Props) {
     fillFrom(original);
   }, [original]);
 
+  /** A new account's gift listing is still unspent: the first listing posted uses it. */
+  const hasGift = (user?.welcome_listing_credits ?? 0) > 0;
+
   const mutation = useMutation({
     mutationFn: (data: CreatePropertyInput) =>
       editing ? updateProperty(propertyId, data) : createProperty(data),
@@ -299,14 +318,18 @@ export default function AddPropertyScreen({ navigation, route }: Props) {
         scrollToFirst(fields);
         return;
       }
-      // The listing needs a subscription: the banner at the top of the form has the button for it.
-      if (isSubscriptionRequired(error)) {
+      // A subscription is needed, or this month's free listing is used up: the banner at the top of the form says
+      // so and has the button that leads to the plans.
+      if (isSubscriptionRequired(error) || isListingLimitReached(error)) {
         scroller.current?.scrollTo({ y: 0, animated: true });
         return;
       }
       showToast(errorMessage(error, t));
     },
     onSuccess: async property => {
+      // A new listing may have spent the welcome gift or a bonus credit: ask the server for the account again so the
+      // balances (and the prompt) follow.
+      if (!editing) getMe().then(updateUser, () => undefined);
       await queryClient.invalidateQueries({ queryKey: queryKeys.properties });
       if (editing) stepAside(() => navigation.goBack());
       else
@@ -353,6 +376,7 @@ export default function AddPropertyScreen({ navigation, route }: Props) {
 
   const pinned = coordinate !== null;
   const hasRooms = hasRoomsFor(type);
+  const hasUnit = hasUnitFor(type);
 
   // The area typed so far, written back with its unit, so a mistyped zero is seen before it is sent. (The price
   // needs no such line: its field already shows the amount grouped in thousands.)
@@ -361,6 +385,12 @@ export default function AddPropertyScreen({ navigation, route }: Props) {
     typedArea === null
       ? undefined
       : `${formatNumber(typedArea)} ${t(`unit.${areaUnit}`)}`;
+  // The price typed so far, written back with its currency, like the area above: "۲۵,۰۰۰ افغانی" or "۲۵,۰۰۰ دالر".
+  const typedPrice = parseNumberInput(priceText);
+  const priceHelper =
+    typedPrice === null
+      ? undefined
+      : `${formatNumber(typedPrice)} ${t(`currency.${currency}`)}`;
   /** The ℹ beside the "مساحت" label: what a jerib is, and what the typed area comes to in jerib. */
   const areaInfo = (
     <JeribInfoButton
@@ -446,7 +476,8 @@ export default function AddPropertyScreen({ navigation, route }: Props) {
       title,
       description,
       type,
-      unit: unit.trim() || null,
+      // What was typed for a unit stays in the box while the type is changed, but only a type that has units sends it.
+      unit: hasUnit ? unit.trim() || null : null,
       deal_type: deal,
       price: price === null ? undefined : roundTo2(price),
       currency,
@@ -493,8 +524,9 @@ export default function AddPropertyScreen({ navigation, route }: Props) {
     }
     setErrors({});
     mutation.reset();
-    // A blank unit is not sent unless it clears one that was there: a server that has no such field yet (an older
-    // deployment) would refuse the whole listing over a field nobody filled in.
+    // A blank unit is not sent unless it clears one that was there (a listing changed to a type without units loses
+    // its unit): a server that has no such field yet (an older deployment) would refuse the whole listing over a
+    // field nobody filled in.
     const { unit: sentUnit, ...rest } = parsed.data;
     const clearsUnit = editing && Boolean(original?.unit);
     mutation.mutate(sentUnit || clearsUnit ? parsed.data : rest);
@@ -522,11 +554,20 @@ export default function AddPropertyScreen({ navigation, route }: Props) {
           <Button
             title={t('add.buySubscription')}
             variant="outline"
-            onPress={() =>
-              stepAside(() =>
-                navigation.navigate('Checkout', { tab: 'subscription' }),
-              )
-            }
+            onPress={() => stepAside(() => navigation.navigate('Upgrade'))}
+          />
+        </Banner>
+      ) : null}
+      {/* The welcome gift pays for this listing: say so before it is spent, not after. */}
+      {!editing && hasGift ? (
+        <Banner kind="promo" message={t('add.welcomeCreditPrompt')} />
+      ) : null}
+      {/* This month's free listing is used up: not a fault but an invitation, with the way to the plans. */}
+      {isListingLimitReached(mutation.error) ? (
+        <Banner kind="promo" message={listingLimitMessage(mutation.error, t)}>
+          <Button
+            title={t('add.upgrade')}
+            onPress={() => stepAside(() => navigation.navigate('Upgrade'))}
           />
         </Banner>
       ) : null}
@@ -571,20 +612,22 @@ export default function AddPropertyScreen({ navigation, route }: Props) {
             </AppText>
           ) : null}
         </View>
-        <View ref={anchor('unit')} collapsable={false}>
-          <TextField
-            label={`${t('add.unit')} (${t('common.optional')})`}
-            value={unit}
-            onChangeText={v => {
-              setUnit(v);
-              clearError('unit');
-            }}
-            placeholder={t('add.unitPlaceholder')}
-            helper={t('add.unitHelp')}
-            maxLength={PROPERTY_UNIT_MAX_LENGTH}
-            error={errors.unit}
-          />
-        </View>
+        {hasUnit ? (
+          <View ref={anchor('unit')} collapsable={false}>
+            <TextField
+              label={`${t('add.unit')} (${t('common.optional')})`}
+              value={unit}
+              onChangeText={v => {
+                setUnit(v);
+                clearError('unit');
+              }}
+              placeholder={t('add.unitPlaceholder')}
+              helper={t('add.unitHelp')}
+              maxLength={PROPERTY_UNIT_MAX_LENGTH}
+              error={errors.unit}
+            />
+          </View>
+        ) : null}
         <View ref={anchor('deal_type')} collapsable={false}>
           <AppText variant="label" color={colors.textSecondary}>
             {t('add.deal')}
@@ -624,6 +667,7 @@ export default function AddPropertyScreen({ navigation, route }: Props) {
             keyboardType="decimal-pad"
             placeholder={example(currency === 'USD' ? 25_000 : 2_500_000)}
             thousands
+            helper={priceHelper}
             error={errors.price}
           />
           <View style={styles.toggle}>

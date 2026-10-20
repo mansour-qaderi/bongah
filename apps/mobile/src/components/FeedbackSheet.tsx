@@ -16,13 +16,14 @@ import { useAuth } from '../auth/AuthContext';
 import { formatNumber } from '../i18n/format';
 import { colors, spacing } from '../theme';
 import AppText from './AppText';
-import Banner from './Banner';
 import BottomSheet from './BottomSheet';
 import Button from './Button';
 import { Chip } from './Chip';
 import { KeyboardAwareScrollView } from './KeyboardAware';
 import { EmptyView } from './States';
 import TextField from './TextField';
+import { showToast } from './Toast';
+import { useErrorToast } from './useErrorToast';
 
 interface Props {
   visible: boolean;
@@ -44,6 +45,10 @@ export default function FeedbackSheet({ visible, onClose, onSignIn }: Props) {
   const [problem, setProblem] = useState<string | null>(null);
 
   const mutation = useMutation({ mutationFn: sendFeedback });
+  useErrorToast(
+    mutation.error ? errorMessage(mutation.error, t) : null,
+    mutation.error,
+  );
 
   // Each time the sheet opens it starts clean (a sent message must not come back).
   useEffect(() => {
@@ -62,9 +67,11 @@ export default function FeedbackSheet({ visible, onClose, onSignIn }: Props) {
       app_version: APP_VERSION,
     });
     if (!parsed.success) {
-      setProblem(
-        t('feedback.tooShort', { min: formatNumber(FEEDBACK_MIN_LENGTH, 0) }),
-      );
+      const tooShort = t('feedback.tooShort', {
+        min: formatNumber(FEEDBACK_MIN_LENGTH, 0),
+      });
+      setProblem(tooShort);
+      showToast(tooShort);
       return;
     }
     setProblem(null);
@@ -97,9 +104,6 @@ export default function FeedbackSheet({ visible, onClose, onSignIn }: Props) {
     body = (
       <KeyboardAwareScrollView contentContainerStyle={styles.content}>
         <AppText color={colors.textMuted}>{t('feedback.intro')}</AppText>
-        {mutation.isError ? (
-          <Banner kind="error" message={errorMessage(mutation.error, t)} />
-        ) : null}
 
         <AppText variant="label" color={colors.textSecondary}>
           {t('feedback.categoryLabel')}
@@ -126,7 +130,7 @@ export default function FeedbackSheet({ visible, onClose, onSignIn }: Props) {
           placeholder={t('feedback.messagePlaceholder')}
           multiline
           maxLength={FEEDBACK_MAX_LENGTH}
-          error={problem}
+          invalid={problem !== null}
           helper={t('feedback.counter', {
             count: formatNumber(message.length, 0),
             max: formatNumber(FEEDBACK_MAX_LENGTH, 0),

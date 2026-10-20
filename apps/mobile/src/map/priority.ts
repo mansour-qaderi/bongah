@@ -4,7 +4,8 @@ import type { Property, SubscriptionPackage } from '@bongah/shared-types';
 const PLAN_RANK: Record<SubscriptionPackage, number> = {
   MONTHLY: 1,
   QUARTERLY: 2,
-  YEARLY: 3,
+  SEMIANNUAL: 3,
+  YEARLY: 4,
 };
 
 type Ranked = Pick<
@@ -22,14 +23,14 @@ const time = (iso: string | null | undefined): number => {
 
 /**
  * Which of two listings comes first where several share a spot (a cluster that cannot be pulled apart by
- * zooming). Paying decides: the longer the agency's current plan, the higher it goes; then a paid featured
- * promotion; then whoever laddered or posted most recently; the id breaks any last tie so the order is always
- * the same. Negative: `a` first.
+ * zooming). A running featured promotion ("آگهی ویژه") comes first, whoever posted it: it is what was paid for
+ * to be seen first. Then the longer the agency's current plan, the higher it goes; then whoever laddered or posted
+ * most recently; the id breaks any last tie so the order is always the same. Negative: `a` first.
  */
 export function comparePriority(a: Ranked, b: Ranked): number {
   return (
-    planRank(b) - planRank(a) ||
     Number(b.is_featured) - Number(a.is_featured) ||
+    planRank(b) - planRank(a) ||
     time(b.laddered_at ?? b.created_at) - time(a.laddered_at ?? a.created_at) ||
     (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)
   );

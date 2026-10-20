@@ -3,10 +3,12 @@ import {
   ActivityIndicator,
   Pressable,
   StyleSheet,
+  View,
   type StyleProp,
   type ViewStyle,
 } from 'react-native';
 import { colors, radius, spacing } from '../theme';
+import ActionIcon, { type ActionIconName } from './ActionIcon';
 import AppText from './AppText';
 
 type Variant = 'primary' | 'secondary' | 'outline' | 'danger';
@@ -17,6 +19,8 @@ interface Props {
   variant?: Variant;
   loading?: boolean;
   disabled?: boolean;
+  /** A glyph before the label, in the label's colour (send, check, refresh...). Hidden while the button is loading. */
+  icon?: ActionIconName;
   style?: StyleProp<ViewStyle>;
 }
 
@@ -42,6 +46,7 @@ export default function Button({
   variant = 'primary',
   loading = false,
   disabled = false,
+  icon,
   style,
 }: Props) {
   const inactive = disabled || loading;
@@ -65,15 +70,24 @@ export default function Button({
       {loading ? (
         <ActivityIndicator color={fg} />
       ) : (
-        <AppText variant="label" color={fg}>
-          {title}
-        </AppText>
+        <View style={styles.content}>
+          {icon ? <ActionIcon name={icon} color={fg} /> : null}
+          <AppText variant="label" color={fg}>
+            {title}
+          </AppText>
+        </View>
       )}
     </Pressable>
   );
 }
 
 const styles = StyleSheet.create({
+  content: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
+  },
   base: {
     minHeight: 48,
     borderRadius: radius.md,

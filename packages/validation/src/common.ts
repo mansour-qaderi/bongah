@@ -76,6 +76,27 @@ export const cleanText = (min: number, max: number) =>
     .transform((value) => value.replace(/\s+/g, ' ').trim())
     .pipe(z.string().min(min, `At least ${min} characters`).max(max, `At most ${max} characters`));
 
+/**
+ * Free text that keeps its line breaks (a listing's description). Each line is tidied the way `cleanText` tidies
+ * a name (runs of spaces and tabs become one space, the ends are trimmed), but the breaks between lines stay: a
+ * blank line separates paragraphs, any more than one blank line in a row collapses to one, and the ends of the whole
+ * text are trimmed. (`cleanText` turns every whitespace run, new lines included, into one space, which would
+ * flatten a written-out description into a single line.)
+ */
+export const multilineText = (min: number, max: number) =>
+  z
+    .string()
+    .transform((value) =>
+      value
+        .replace(/\r\n?/g, '\n')
+        .split('\n')
+        .map((line) => line.replace(/[^\S\n]+/g, ' ').trim())
+        .join('\n')
+        .replace(/\n{3,}/g, '\n\n')
+        .trim(),
+    )
+    .pipe(z.string().min(min, `At least ${min} characters`).max(max, `At most ${max} characters`));
+
 /** An http(s) URL. Plain z.url() would also accept javascript: and data: URLs. */
 export const httpUrl = z.url({ protocol: /^https?$/ }).max(2048);
 

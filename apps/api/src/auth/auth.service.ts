@@ -25,7 +25,8 @@ import type { JwtPayload } from './auth.types.js';
 import { accountBanned } from './guards/jwt-auth.guard.js';
 import { toUser } from '../users/user.mapper.js';
 import type { SendOtpResponse, VerifyOtpResponse } from './dto/auth-response.dto.js';
-import { SmsGateway } from './sms/sms-gateway.js';
+import { OtpGateway, readOtpDevFallback, readOtpProvider } from './otp/index.js';
+import { WELCOME_LISTING_CREDITS } from '../property/property.constants.js';
 import { readReferralSettings } from '../referral/referral.config.js';
 import { findReferrerId, grantSignupRewards } from '../referral/referral.signup.js';
 
@@ -37,13 +38,14 @@ export class AuthService {
   private readonly secret: string;
   private readonly accessTokenTtlSeconds: number;
   private readonly exposeDevOtp: boolean;
+  private readonly devFallback: boolean;
   private readonly maxRewardedInvites: number;
   private readonly referralContactCredits: number;
 
   constructor(
     private readonly prisma: PrismaService,
     private readonly jwt: JwtService,
-    private readonly sms: SmsGateway,
+    private readonly otp: OtpGateway,
     config: ConfigService,
   ) {
     const settings = readJwtSettings(config);
@@ -52,14 +54,17 @@ export class AuthService {
     const referral = readReferralSettings(config);
     this.maxRewardedInvites = referral.maxRewardedInvites;
     this.referralContactCredits = referral.contactCredits;
-    // Only the mock gateway outside production may hand the code back in the HTTP response.
-    this.exposeDevOtp =
-      config.get<string>('SMS_PROVIDER', 'mock') === 'mock' &&
-      config.get<string>('NODE_ENV') !== 'production';
+    // Only the mock gateway hands the code back in the HTTP response (the app then shows it): nothing is sent anywhere
+    // in mock mode, so without this nobody could ever read the code. In production the mock is a deliberate, warned-about
+    // choice (see AuthModule); the real WhatsApp gateway never returns the code.
+    this.exposeDevOtp = readOtpProvider(config).provider === 'mock';
+    // A real gateway that fails (credentials, template, a number Meta does not allow yet) must not lock a developer out
+    // of the app: where this is on, the code is handed back like in mock mode. Off in production unless asked for.
+    this.devFallback = readOtpDevFallback(config);
   }
 
   /**
-   * Creates a one-time code for the phone number and sends it by SMS.
+   * Creates a one-time code for the phone number and sends it to the user's WhatsApp.
    * Behaves identically for new and existing users so it can't be used to discover accounts.
    */
   async sendOtp(phone: string): Promise<SendOtpResponse> {
@@ -88,12 +93,7 @@ export class AuthService {
 
     const code = generateOtp();
 
-    // A new code replaces any earlier one: only the newest can ever be used.
     const otp = await this.prisma.$transaction(async (tx) => {
-      await tx.otpCode.updateMany({
-        where: { phoneNumber: phone, consumedAt: null },
-        data: { consumedAt: now },
-      });
       await tx.otpCode.deleteMany({
         where: { phoneNumber: phone, createdAt: { lt: new Date(now.getTime() - OTP_RETENTION_MS) } },
       });
@@ -106,20 +106,35 @@ export class AuthService {
       });
     });
 
+    let handedBack = this.exposeDevOtp;
     try {
-      await this.sms.send(phone, `کد تأیید بنگاه: ${code}\nBongah verification code: ${code}`);
+      await this.otp.send(phone, code);
     } catch (error) {
-      // Don't make the user wait out the cooldown (or burn hourly quota) for an SMS we never sent.
-      await this.prisma.otpCode.delete({ where: { id: otp.id } }).catch(() => undefined);
-      this.logger.error(`SMS gateway failed for ${maskPhone(phone)}`, error instanceof Error ? error.stack : error);
-      throw new ServiceUnavailableException('Could not send the verification code. Please try again.');
+      this.logger.error(`OTP gateway failed for ${maskPhone(phone)}`, error instanceof Error ? error.stack : error);
+      if (!this.devFallback) {
+        // Don't make the user wait out the cooldown (or burn hourly quota) for a code we never sent. Only the new code
+        // goes: the one the person may already hold from the last request stays valid, because it is only replaced
+        // once the new one is really on its way.
+        await this.prisma.otpCode.delete({ where: { id: otp.id } }).catch(() => undefined);
+        throw new ServiceUnavailableException('Could not send the verification code. Please try again.');
+      }
+      this.logger.warn(
+        `OTP_DEV_FALLBACK: the code for ${maskPhone(phone)} was not delivered; it is returned in the response instead.`,
+      );
+      handedBack = true;
     }
+
+    // A new code replaces any earlier one: only the newest can ever be used.
+    await this.prisma.otpCode.updateMany({
+      where: { phoneNumber: phone, consumedAt: null, id: { not: otp.id } },
+      data: { consumedAt: now },
+    });
 
     return {
       message: 'Verification code sent.',
       expires_in: OTP_TTL_SECONDS,
       resend_after: OTP_RESEND_COOLDOWN_SECONDS,
-      ...(this.exposeDevOtp ? { dev_otp: code } : {}),
+      ...(handedBack ? { dev_otp: code } : {}),
     };
   }
 
@@ -198,7 +213,12 @@ export class AuthService {
       // The account and the rewards it earns are created together or not at all.
       return await this.prisma.$transaction(async (tx) => {
         const user = await tx.user.create({
-          data: { phoneNumber: phone, role: Role.USER, referredById: referrerId },
+          data: {
+            phoneNumber: phone,
+            role: Role.USER,
+            referredById: referrerId,
+            welcomeListingCredits: WELCOME_LISTING_CREDITS,
+          },
         });
         if (referrerId) {
           await grantSignupRewards(tx, {

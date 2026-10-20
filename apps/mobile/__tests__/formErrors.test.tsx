@@ -221,6 +221,15 @@ async function fillBasics(root: ReactTestRenderer.ReactTestInstance) {
   await type(root, prs.add.area, '120');
   await addRooms(root);
 }
+/** The same as `fillForm` for a type with no rooms to count (land, a garden, a garage). */
+async function fillFormWithoutRooms(root: ReactTestRenderer.ReactTestInstance) {
+  await type(root, prs.add.titleField, 'گاراج بزرگ');
+  await type(root, prs.add.price, '1200000');
+  await type(root, prs.add.area, '120');
+  await type(root, prs.add.address, WRITTEN_ADDRESS);
+  await press(root, prs.home.selectProvince);
+  await press(root, 'کابل');
+}
 const posted = () =>
   callsTo(fetchMock).find(c => c.method === 'POST' && c.path === '/properties');
 
@@ -534,17 +543,6 @@ describe('AddPropertyScreen: what is wrong is said where it is wrong', () => {
       { status: 500, body: { message: 'boom' } },
       prs.errors.unknown,
     ],
-    [
-      'the listing limit is reached',
-      {
-        status: 403,
-        body: {
-          code: 'FREE_LISTING_LIMIT_REACHED',
-          resets_at: '2026-11-01T00:00:00Z',
-        },
-      },
-      null,
-    ],
   ] as const)(
     'tells it in a toast, not a banner, when %s',
     async (_name, reply, sentence) => {
@@ -565,9 +563,7 @@ describe('AddPropertyScreen: what is wrong is said where it is wrong', () => {
       await fillForm(tree.root);
       await press(tree.root, prs.add.submit);
       await settle();
-      const toast = allText(toastOf(tree.root));
-      if (sentence) expect(toast).toBe(sentence);
-      else expect(toast).toContain('۱');
+      expect(allText(toastOf(tree.root))).toBe(sentence);
       noGenericBanner(tree.root);
       // nothing but the toast says it: no error banner in the form
       expect(
@@ -690,5 +686,354 @@ describe('the form and the API agree on what a property type is', () => {
       await settle();
       expect(posted()?.body.type).toBe(wire);
     }
+  });
+});
+
+describe('the unit box only asks about buildings', () => {
+  const UNIT_LABEL = `${prs.add.unit} (${prs.common.optional})`;
+  const hasUnitBox = (root: ReactTestRenderer.ReactTestInstance) =>
+    root.findAll(
+      n =>
+        typeof n.type !== 'string' && n.props.accessibilityLabel === UNIT_LABEL,
+    ).length > 0;
+  const open = async () => {
+    answerGeocoder(KABUL_SPOT, {
+      'POST /properties': { status: 201, body: listing() },
+    });
+    const tree = await render(screenElement(AddPropertyScreen, navigation()));
+    await settle();
+    return tree;
+  };
+
+  it.each([
+    ['HOUSE_HAWILI', true],
+    ['APARTMENT', true],
+    ['OFFICE', true],
+    ['SHOP', false],
+    ['LAND', false],
+    ['GARDEN', false],
+    ['VILLA', false],
+    ['GARAGE', false],
+    ['OTHER', false],
+  ] as const)('%s: unit box shown = %s', async (kind, shown) => {
+    const tree = await open();
+    await press(tree.root, (prs.propertyType as Record<string, string>)[kind]);
+    expect(hasUnitBox(tree.root)).toBe(shown);
+    expect(allText(tree.root).includes(prs.add.unitHelp)).toBe(shown);
+  });
+
+  it('is there from the start (a house is the first type) and goes when a garage is chosen', async () => {
+    const tree = await open();
+    expect(hasUnitBox(tree.root)).toBe(true);
+    await press(tree.root, prs.propertyType.GARAGE);
+    expect(hasUnitBox(tree.root)).toBe(false);
+  });
+
+  it('keeps what was typed while another type is looked at, but only a building sends it', async () => {
+    const tree = await open();
+    await press(tree.root, prs.propertyType.APARTMENT);
+    await type(tree.root, UNIT_LABEL, 'واحد سوم');
+    await press(tree.root, prs.propertyType.GARAGE);
+    await press(tree.root, prs.propertyType.APARTMENT);
+    expect(inputLabelled(tree.root, UNIT_LABEL).props.value).toBe('واحد سوم');
+
+    // back to a garage and send: no unit in the post
+    await press(tree.root, prs.propertyType.GARAGE);
+    await fillFormWithoutRooms(tree.root);
+    await press(tree.root, prs.add.submit);
+    await settle();
+    expect(posted()?.body.type).toBe('GARAGE');
+    expect('unit' in (posted()!.body as object)).toBe(false);
+  });
+
+  it('sends the unit for an apartment', async () => {
+    const tree = await open();
+    await press(tree.root, prs.propertyType.APARTMENT);
+    await type(tree.root, UNIT_LABEL, 'واحد سوم');
+    await fillForm(tree.root);
+    await press(tree.root, prs.add.submit);
+    await settle();
+    expect(posted()?.body.unit).toBe('واحد سوم');
+  });
+
+  it('a listing that had a unit loses it when it is changed to a type without units', async () => {
+    const existing = listing({ type: 'APARTMENT', unit: 'واحد ۳' });
+    answerGeocoder(KABUL_SPOT, {
+      [`GET /properties/${existing.id}`]: { status: 200, body: existing },
+      [`PATCH /properties/${existing.id}`]: { status: 200, body: existing },
+    });
+    const tree = await render(
+      screenElement(AddPropertyScreen, navigation(), {
+        params: { propertyId: existing.id },
+      }),
+    );
+    await settle();
+    expect(inputLabelled(tree.root, UNIT_LABEL).props.value).toBe('واحد ۳');
+    await press(tree.root, prs.propertyType.GARAGE);
+    await press(tree.root, prs.add.save);
+    await settle();
+    const patch = callsTo(fetchMock).find(c => c.method === 'PATCH');
+    expect(patch?.body.type).toBe('GARAGE');
+    expect(patch?.body.unit).toBeNull();
+  });
+});
+
+describe('the price is written back under its box, with its currency', () => {
+  const helperOf = (root: ReactTestRenderer.ReactTestInstance) => allText(root);
+  const open = async () => {
+    answerGeocoder(KABUL_SPOT, {});
+    const tree = await render(screenElement(AddPropertyScreen, navigation()));
+    await settle();
+    return tree;
+  };
+
+  it('says nothing while the box is empty', async () => {
+    const tree = await open();
+    expect(helperOf(tree.root)).not.toContain(prs.currency.AFGHANI + ' ۰');
+    expect(helperOf(tree.root)).not.toMatch(/[۰-۹,]+ (افغانی|دالر)/);
+  });
+
+  it('writes the amount in Persian digits, grouped, with the currency word, and follows the currency', async () => {
+    const tree = await open();
+    await type(tree.root, prs.add.price, '25000');
+    expect(helperOf(tree.root)).toContain(`۲۵,۰۰۰ ${prs.currency.AFGHANI}`);
+    await press(tree.root, prs.currency.USD);
+    expect(helperOf(tree.root)).toContain(`۲۵,۰۰۰ ${prs.currency.USD}`);
+    expect(helperOf(tree.root)).not.toContain(`۲۵,۰۰۰ ${prs.currency.AFGHANI}`);
+  });
+
+  it('grows with every digit', async () => {
+    const tree = await open();
+    await type(tree.root, prs.add.price, '3254123');
+    expect(helperOf(tree.root)).toContain(`۳,۲۵۴,۱۲۳ ${prs.currency.AFGHANI}`);
+  });
+
+  it('looks like the area line: same kind of text under its box', async () => {
+    const tree = await open();
+    await type(tree.root, prs.add.price, '25000');
+    await type(tree.root, prs.add.area, '200');
+    const text = helperOf(tree.root);
+    expect(text).toContain(`۲۰۰ ${prs.unit.sqm}`);
+    expect(text).toContain(`۲۵,۰۰۰ ${prs.currency.AFGHANI}`);
+  });
+});
+
+describe('the description goes out as typed and is read back as typed', () => {
+  const written = 'خانه دو منزله\n\n  دارای حیاط بزرگ  \nنزدیک مکتب';
+  it('is in the post exactly, line breaks kept', async () => {
+    answerGeocoder(KABUL_SPOT, {
+      'POST /properties': { status: 201, body: listing() },
+    });
+    const tree = await render(screenElement(AddPropertyScreen, navigation()));
+    await settle();
+    await fillForm(tree.root);
+    await type(tree.root, prs.add.descriptionField, written);
+    await press(tree.root, prs.add.submit);
+    await settle();
+    expect(posted()?.body.description).toBe(
+      'خانه دو منزله\n\nدارای حیاط بزرگ\nنزدیک مکتب',
+    );
+  });
+
+  it('is in the post as an empty string when nothing was written', async () => {
+    answerGeocoder(KABUL_SPOT, {
+      'POST /properties': { status: 201, body: listing() },
+    });
+    const tree = await render(screenElement(AddPropertyScreen, navigation()));
+    await settle();
+    await fillForm(tree.root);
+    await press(tree.root, prs.add.submit);
+    await settle();
+    expect(posted()?.body.description).toBe('');
+  });
+
+  it('comes back into the edit form, and an untouched save sends it unchanged', async () => {
+    const text = 'خط اول\n\nخط سوم';
+    const existing = listing({ description: text });
+    answerGeocoder(KABUL_SPOT, {
+      [`GET /properties/${existing.id}`]: { status: 200, body: existing },
+      [`PATCH /properties/${existing.id}`]: { status: 200, body: existing },
+    });
+    const tree = await render(
+      screenElement(AddPropertyScreen, navigation(), {
+        params: { propertyId: existing.id },
+      }),
+    );
+    await settle();
+    expect(inputLabelled(tree.root, prs.add.descriptionField).props.value).toBe(
+      text,
+    );
+    await press(tree.root, prs.add.save);
+    await settle();
+    const patch = callsTo(fetchMock).find(c => c.method === 'PATCH');
+    expect(patch?.body.description).toBe(text);
+  });
+});
+
+describe("when this month's free listing is used up", () => {
+  const LIMIT = {
+    status: 403,
+    body: {
+      code: 'FREE_LISTING_LIMIT_REACHED',
+      resets_at: '2026-11-01T00:00:00Z',
+    },
+  };
+  let now: jest.SpyInstance;
+  beforeEach(() => {
+    // The 19th of Aqrab-to-be: 27 Mehr 1405, so the renewal date is in the same Solar Hijri year.
+    now = jest.spyOn(Date, 'now').mockReturnValue(Date.UTC(2026, 9, 19, 12));
+  });
+  afterEach(() => now.mockRestore());
+
+  const submitToLimit = async (nav = navigation()) => {
+    answerGeocoder(KABUL_SPOT, { 'POST /properties': LIMIT });
+    const tree = await render(screenElement(AddPropertyScreen, nav));
+    await settle();
+    await fillForm(tree.root);
+    await press(tree.root, prs.add.submit);
+    await settle();
+    return tree;
+  };
+
+  it('says it in the words asked for, with the Solar Hijri date and no Gregorian one', async () => {
+    const tree = await submitToLimit();
+    const text = allText(tree.root);
+    expect(text).toContain(
+      'سقف آگهی‌های رایگان این ماه شما به پایان رسیده است (امکان ثبت بعدی: ۱۰ عقرب).',
+    );
+    expect(text).not.toMatch(
+      /2026|۲۰۲۶|\d{4}\/\d{2}\/\d{2}|[۰-۹]{4}\/[۰-۹]{2}\/[۰-۹]{2}/,
+    );
+    expect(text).not.toContain(prs.add.limitReached.split('{{')[0]);
+  });
+
+  it('is an invitation, not a red error: no alert, no toast', async () => {
+    const tree = await submitToLimit();
+    expect(
+      tree.root.findAll(
+        n =>
+          n.props.accessibilityRole === 'alert' && typeof n.type === 'string',
+      ),
+    ).toHaveLength(0);
+    expect(toastOf(tree.root)).toBeUndefined();
+    for (const sentence of GENERIC)
+      expect(allText(tree.root)).not.toContain(sentence);
+  });
+
+  it('has the upgrade button on it, and the button leads to the plans', async () => {
+    const nav = navigation();
+    const tree = await submitToLimit(nav);
+    expect(allText(tree.root)).toContain('ارتقای حساب / خرید نردبان');
+    await press(tree.root, prs.add.upgrade);
+    await act(async () => {
+      await new Promise<void>(resolve => setTimeout(() => resolve(), 600));
+    });
+    expect(nav.navigate).toHaveBeenCalledWith('Upgrade');
+  });
+
+  it('writes the year too when the renewal falls in another one', async () => {
+    now.mockReturnValue(Date.UTC(2027, 2, 10)); // 19 Esfand 1405
+    answerGeocoder(KABUL_SPOT, {
+      'POST /properties': {
+        status: 403,
+        body: {
+          code: 'FREE_LISTING_LIMIT_REACHED',
+          resets_at: '2027-04-01T00:00:00Z', // 12 Hamal 1406
+        },
+      },
+    });
+    const tree = await render(screenElement(AddPropertyScreen, navigation()));
+    await settle();
+    await fillForm(tree.root);
+    await press(tree.root, prs.add.submit);
+    await settle();
+    expect(allText(tree.root)).toContain('(امکان ثبت بعدی: ۱۲ حمل ۱۴۰۶)');
+  });
+
+  it('stops before the brackets when the server gave no date', async () => {
+    answerGeocoder(KABUL_SPOT, {
+      'POST /properties': {
+        status: 403,
+        body: { code: 'FREE_LISTING_LIMIT_REACHED' },
+      },
+    });
+    const tree = await render(screenElement(AddPropertyScreen, navigation()));
+    await settle();
+    await fillForm(tree.root);
+    await press(tree.root, prs.add.submit);
+    await settle();
+    expect(allText(tree.root)).toContain(prs.add.limitBannerNoDate);
+    expect(allText(tree.root)).not.toContain('()');
+  });
+});
+
+describe('the welcome gift on the listing form', () => {
+  const gifted = { ...user, welcome_listing_credits: 1 };
+  const PROMPT = 'با ثبت این آگهی، امتیاز هدیه ثبت اول شما مصرف خواهد شد.';
+
+  it('says, before posting, that the first listing uses the gift', async () => {
+    mockAuth = { status: 'signedIn', user: gifted };
+    answerGeocoder(KABUL_SPOT, {});
+    const tree = await render(screenElement(AddPropertyScreen, navigation()));
+    await settle();
+    expect(allText(tree.root)).toContain(PROMPT);
+  });
+
+  it('says nothing once the gift is spent, or for an account that never had one', async () => {
+    for (const account of [{ ...user, welcome_listing_credits: 0 }, user]) {
+      mockAuth = { status: 'signedIn', user: account };
+      answerGeocoder(KABUL_SPOT, {});
+      const tree = await render(screenElement(AddPropertyScreen, navigation()));
+      await settle();
+      expect(allText(tree.root)).not.toContain(PROMPT);
+    }
+  });
+
+  it('says nothing when editing a listing that is already posted', async () => {
+    mockAuth = { status: 'signedIn', user: gifted };
+    const existing = listing();
+    answerGeocoder(KABUL_SPOT, {
+      [`GET /properties/${existing.id}`]: { status: 200, body: existing },
+    });
+    const tree = await render(
+      screenElement(AddPropertyScreen, navigation(), {
+        params: { propertyId: existing.id },
+      }),
+    );
+    await settle();
+    expect(allText(tree.root)).not.toContain(PROMPT);
+  });
+
+  it('asks the server for the account again after posting, so the gift count follows', async () => {
+    const updateUser = jest.fn(async () => undefined);
+    const session = { status: 'signedIn', user: gifted, updateUser };
+    mockAuth = session as unknown as typeof mockAuth;
+    answerGeocoder(KABUL_SPOT, {
+      'POST /properties': { status: 201, body: listing() },
+      'GET /users/me': { body: { ...gifted, welcome_listing_credits: 0 } },
+    });
+    const tree = await render(screenElement(AddPropertyScreen, navigation()));
+    await settle();
+    await fillForm(tree.root);
+    await press(tree.root, prs.add.submit);
+    await settle();
+    expect(callsTo(fetchMock).some(c => c.path === '/users/me')).toBe(true);
+    expect(updateUser).toHaveBeenCalledWith(
+      expect.objectContaining({ welcome_listing_credits: 0 }),
+    );
+  });
+
+  it('asks for the account again after a new listing even with no gift, because a bonus credit may have been spent', async () => {
+    const updateUser = jest.fn(async () => undefined);
+    mockAuth = { status: 'signedIn', user, updateUser } as unknown as typeof mockAuth;
+    answerGeocoder(KABUL_SPOT, {
+      'POST /properties': { status: 201, body: listing() },
+    });
+    const tree = await render(screenElement(AddPropertyScreen, navigation()));
+    await settle();
+    await fillForm(tree.root);
+    await press(tree.root, prs.add.submit);
+    await settle();
+    expect(callsTo(fetchMock).some(c => c.path === '/users/me')).toBe(true);
   });
 });

@@ -8,8 +8,8 @@ import type { useContactActions } from '../contact/useContactActions';
 import { formatNumber } from '../i18n/format';
 import { colors, radius, spacing } from '../theme';
 import AppText from './AppText';
-import Banner from './Banner';
 import Button from './Button';
+import { useErrorToast } from './useErrorToast';
 
 type Actions = ReturnType<typeof useContactActions>;
 
@@ -42,15 +42,14 @@ export default function ContactActionBar({
   const caption = signedIn
     ? allowanceText(actions.quota, t)
     : t('property.contactSignIn');
+  useErrorToast(
+    actions.error ? errorMessage(actions.error, t) : null,
+    actions.error,
+  );
+  useErrorToast(actions.openFailed ? t('contact.openFailed') : null);
 
   return (
     <SafeAreaView edges={['bottom', 'left', 'right']} style={styles.bar}>
-      {actions.error ? (
-        <Banner kind="error" message={errorMessage(actions.error, t)} />
-      ) : null}
-      {actions.openFailed ? (
-        <Banner kind="error" message={t('contact.openFailed')} />
-      ) : null}
       {caption ? (
         <AppText
           variant="caption"

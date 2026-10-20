@@ -59,6 +59,10 @@ interface Props {
  */
 export const MARKER_TAP_GRACE_MS = 300;
 
+/** Whether a featured listing is among what the marker stands for. */
+const hasFeatured = (cluster: Cluster<MapItem>): boolean =>
+  cluster.items.some(i => i.kind === 'property' && i.property.is_featured);
+
 /** The most markers drawn at once. Each one is a native view, so this keeps panning smooth. */
 const MAX_MARKERS = 120;
 /** From here on, markers carry their price (or name): the map is close enough that there is room for it. */
@@ -125,11 +129,14 @@ export default function PropertyMap({
     const visible = view.bounds
       ? clusters.filter(c => inBounds(c.lat, c.lng, view.bounds as Bounds))
       : clusters;
-    // The chosen one is drawn last, so it sits on top of anything crowding it.
+    // Later is on top. The chosen one is drawn last, so it sits on top of anything crowding it; just before it
+    // come the featured ones (and piles holding one), so a paid listing is never hidden under an ordinary marker
+    // and is the last to be dropped when more than MAX_MARKERS are on screen.
     const chosen = (c: Cluster<MapItem>) =>
       c.items.length === 1 && c.items[0].key === selectedKey;
     return [
-      ...visible.filter(c => !chosen(c)),
+      ...visible.filter(c => !chosen(c) && !hasFeatured(c)),
+      ...visible.filter(c => !chosen(c) && hasFeatured(c)),
       ...visible.filter(chosen),
     ].slice(-MAX_MARKERS);
   }, [clusters, view.bounds, selectedKey]);
@@ -171,6 +178,7 @@ export default function PropertyMap({
               <ClusterMarker
                 count={count}
                 onlyProperties={cluster.items.every(i => i.kind === 'property')}
+                hasFeatured={hasFeatured(cluster)}
               />
             </Marker>
           );

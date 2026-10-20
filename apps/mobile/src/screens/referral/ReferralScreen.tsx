@@ -12,6 +12,7 @@ import { useReferralSummary } from '../../api/hooks';
 import { useAuth } from '../../auth/AuthContext';
 import AppText from '../../components/AppText';
 import Banner from '../../components/Banner';
+import { useErrorToast } from '../../components/useErrorToast';
 import Button from '../../components/Button';
 import { Screen } from '../../components/Screen';
 import { EmptyView, ErrorView, LoadingView } from '../../components/States';
@@ -116,6 +117,8 @@ function CodeCard({ data }: { data: ReferralSummary }) {
   const [shareFailed, setShareFailed] = useState(false);
   const { copy, copied, failed } = useCopy();
   const link = referralLink(data);
+  useErrorToast(shareFailed ? t('referral.shareFailed') : null, shareFailed);
+  useErrorToast(failed ? t('referral.copyFailed') : null, failed);
 
   const share = async () => {
     setShareFailed(false);
@@ -146,14 +149,6 @@ function CodeCard({ data }: { data: ReferralSummary }) {
       >
         {link}
       </AppText>
-      {shareFailed || failed ? (
-        <Banner
-          kind="error"
-          message={
-            failed ? t('referral.copyFailed') : t('referral.shareFailed')
-          }
-        />
-      ) : null}
       <View style={styles.codeButtons}>
         <Button
           title={copied ? t('referral.copied') : t('referral.copy')}

@@ -51,14 +51,12 @@ describe.skipIf(!hasDb)('Map location rules (e2e)', () => {
       });
     });
 
-    it('requires the written place while there is no pin, naming each missing part', async () => {
+    it('requires the written address while there is no pin (district and neighbourhood are optional)', async () => {
       const user = await ctx.user();
       const res = await ctx
         .post('/properties', propertyBody({ district: undefined, neighborhood: undefined, address: undefined }), user.token)
         .expect(400);
-      expect(res.body.errors.map((e: { field: string }) => e.field)).toEqual(
-        expect.arrayContaining(['district', 'neighborhood', 'address']),
-      );
+      expect(res.body.errors.map((e: { field: string }) => e.field)).toEqual(['address']);
     });
 
     it('lets a regular user with no token pin a listing: the pin is free', async () => {

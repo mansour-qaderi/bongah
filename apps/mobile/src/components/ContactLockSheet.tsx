@@ -15,7 +15,8 @@ import type { ContactQuota, PropertyContact } from '@bongah/shared-types';
 import { unlockContact } from '../api/endpoints';
 import { errorMessage } from '../api/errors';
 import { usePricing, useReferralSummary } from '../api/hooks';
-import { formatDate, formatNumber } from '../i18n/format';
+import { formatNumber } from '../i18n/format';
+import { formatSolarDate } from '../i18n/solarHijri';
 import { useFormat } from '../i18n/useFormat';
 import { usePaymentFlow } from '../payments/usePaymentFlow';
 import { colors, radius, spacing } from '../theme';
@@ -23,6 +24,8 @@ import AppText from './AppText';
 import Banner from './Banner';
 import Button from './Button';
 import PaymentProgress from './PaymentProgress';
+import { ToastHost } from './Toast';
+import { useErrorToast } from './useErrorToast';
 
 interface Props {
   /** The listing whose number was asked for. */
@@ -83,6 +86,12 @@ function SheetBody({
     },
   });
 
+  useErrorToast(
+    flow.startError ? errorMessage(flow.startError, t) : null,
+    flow.startError,
+  );
+  useErrorToast(spend.error ? errorMessage(spend.error, t) : null, spend.error);
+
   const prices = pricing.data;
   const credits = quota?.credits ?? 0;
 
@@ -118,7 +127,7 @@ function SheetBody({
                 <AppText color={colors.textMuted}>
                   {t('contact.limitBody', {
                     limit: formatNumber(quota.free_limit, 0),
-                    date: formatDate(quota.resets_at),
+                    date: formatSolarDate(quota.resets_at, t),
                   })}
                 </AppText>
               ) : null}
@@ -137,12 +146,6 @@ function SheetBody({
                       })}
                     </AppText>
                   ) : null}
-                  {spend.isError ? (
-                    <Banner
-                      kind="error"
-                      message={errorMessage(spend.error, t)}
-                    />
-                  ) : null}
                   <Button
                     title={t('contact.useCredit')}
                     loading={spend.isPending}
@@ -157,12 +160,6 @@ function SheetBody({
               <AppText variant="heading" style={styles.section}>
                 {t('contact.buyTitle')}
               </AppText>
-              {flow.startError ? (
-                <Banner
-                  kind="error"
-                  message={errorMessage(flow.startError, t)}
-                />
-              ) : null}
               {pricing.isPending ? (
                 <ActivityIndicator color={colors.primary} />
               ) : !prices ? (
@@ -213,6 +210,8 @@ function SheetBody({
           )}
         </ScrollView>
       </SafeAreaView>
+      {/* The sheet is a modal: a toast has to be drawn inside it to be seen over it. */}
+      <ToastHost />
     </View>
   );
 }

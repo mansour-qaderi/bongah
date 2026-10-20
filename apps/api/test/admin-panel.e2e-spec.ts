@@ -230,7 +230,7 @@ describe.skipIf(!hasDb)('Admin panel: agencies, listings, payments, banners, pri
         id: paidId,
         status: 'SUCCESS',
         purpose: 'SUBSCRIPTION',
-        amount: 1000,
+        amount: 900,
         currency: 'AFGHANI',
         agency_name: 'Test Agency',
         user: { id: agency.id },
@@ -443,10 +443,10 @@ describe.skipIf(!hasDb)('Admin panel: agencies, listings, payments, banners, pri
       const res = await ctx.get('/admin/pricing', admin.token).expect(200);
       const list = res.body as PricingEntry[];
       expect(list.map((e) => e.key).sort()).toEqual(
-        ['CONTACT_CREDITS', 'FEATURED_AD', 'LADDER', 'MAP_LOCATION', 'SUBSCRIPTION_MONTHLY', 'SUBSCRIPTION_QUARTERLY', 'SUBSCRIPTION_YEARLY'],
+        ['CONTACT_CREDITS', 'FEATURED_AD', 'LADDER', 'MAP_LOCATION', 'SUBSCRIPTION_MONTHLY', 'SUBSCRIPTION_QUARTERLY', 'SUBSCRIPTION_SEMIANNUAL', 'SUBSCRIPTION_YEARLY'],
       );
       expect(entry(list, 'LADDER')).toMatchObject({ price: 50, default_price: 50, overridden: false, quantity: null, updated_at: null });
-      expect(entry(list, 'FEATURED_AD')).toMatchObject({ price: 100.5, quantity: 7, default_quantity: 7, overridden: false });
+      expect(entry(list, 'FEATURED_AD')).toMatchObject({ price: 100, quantity: 7, default_quantity: 7, overridden: false });
       expect(entry(list, 'CONTACT_CREDITS')).toMatchObject({ price: 40, quantity: 10 });
     });
 
@@ -548,7 +548,7 @@ describe.skipIf(!hasDb)('Admin panel: agencies, listings, payments, banners, pri
     it('moves by exactly what happens: revenue, payments, users, listings, moderation', async () => {
       const before = await overview();
 
-      // Revenue: one confirmed 1000-afghani subscription, one confirmed 50 ladder, one unpaid payment.
+      // Revenue: one confirmed 900-afghani subscription, one confirmed 50 ladder, one unpaid payment.
       const agency = await ctx.agency(false);
       const owner = await ctx.user();
       const listing = await ctx.listing(owner);
@@ -568,19 +568,19 @@ describe.skipIf(!hasDb)('Admin panel: agencies, listings, payments, banners, pri
       const signedIn = await ctx.signUp();
 
       const after = await overview();
-      expect(afn(after, 'all_time') - afn(before, 'all_time')).toBe(1050);
-      expect(afn(after, 'in_range') - afn(before, 'in_range')).toBe(1050);
+      expect(afn(after, 'all_time') - afn(before, 'all_time')).toBe(950);
+      expect(afn(after, 'in_range') - afn(before, 'in_range')).toBe(950);
       expect(after.payments.succeeded - before.payments.succeeded).toBe(2);
       expect(after.payments.pending - before.payments.pending).toBe(2);
       expect(after.payments.pending_over_one_hour - before.payments.pending_over_one_hour).toBe(1);
 
       const purposeTotal = (o: AdminOverview, purpose: string) =>
         o.revenue.by_purpose.find((p) => p.purpose === purpose && p.currency === 'AFGHANI')?.total ?? 0;
-      expect(purposeTotal(after, 'SUBSCRIPTION') - purposeTotal(before, 'SUBSCRIPTION')).toBe(1000);
+      expect(purposeTotal(after, 'SUBSCRIPTION') - purposeTotal(before, 'SUBSCRIPTION')).toBe(900);
       expect(purposeTotal(after, 'LADDER') - purposeTotal(before, 'LADDER')).toBe(50);
       const today = after.range.to;
       const day = (o: AdminOverview) => o.revenue.daily.find((d) => d.day === today && d.currency === 'AFGHANI')?.total ?? 0;
-      expect(day(after) - day(before)).toBe(1050);
+      expect(day(after) - day(before)).toBe(950);
 
       expect(after.users.total - before.users.total).toBe(5); // agency owner, listing owner, reporter, banned, signed-up
       expect(after.users.banned - before.users.banned).toBe(1);

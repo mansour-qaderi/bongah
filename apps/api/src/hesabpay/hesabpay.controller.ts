@@ -24,8 +24,14 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard.js';
 import type { Paginated, PaymentSummary, Receipt } from '@bongah/shared-types';
 import { paginationQuerySchema, type PaginationQuery } from '@bongah/validation';
 import { ZodValidationPipe } from '../common/pipes/zod-validation.pipe.js';
-import { initiatePaymentSchema, type InitiatePaymentDto } from './dto/initiate-payment.dto.js';
+import {
+  initiatePaymentSchema,
+  useFeaturedCreditSchema,
+  type InitiatePaymentDto,
+  type UseFeaturedCreditDto,
+} from './dto/initiate-payment.dto.js';
 import type {
+  FeaturedCreditUsedDto,
   PaymentInitiatedDto,
   PaymentStatusDto,
   PricingDto,
@@ -53,6 +59,18 @@ export class HesabpayController {
     @Body(new ZodValidationPipe(initiatePaymentSchema)) body: InitiatePaymentDto,
   ): Promise<PaymentInitiatedDto> {
     return this.hesabpay.initiate(user.id, body);
+  }
+
+  /** Spends one featured-listing credit (bought in a bundle or given as a bonus) on one of my listings. */
+  @Post('featured-credits/use')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(JwtAuthGuard)
+  @Throttle({ default: { limit: 20, ttl: 60_000 } })
+  useFeaturedCredit(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body(new ZodValidationPipe(useFeaturedCreditSchema)) body: UseFeaturedCreditDto,
+  ): Promise<FeaturedCreditUsedDto> {
+    return this.hesabpay.useFeaturedCredit(user.id, body);
   }
 
   /** Current prices (public). */

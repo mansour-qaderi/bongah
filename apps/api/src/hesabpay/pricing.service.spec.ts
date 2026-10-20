@@ -1,3 +1,4 @@
+import { SUBSCRIPTION_PLAN_BENEFITS } from '@bongah/shared-types';
 import { PricingKey } from '../generated/prisma/client.js';
 import type { HesabPaySettings } from './hesabpay.config.js';
 import { PricingService } from './pricing.service.js';
@@ -7,7 +8,8 @@ const settings = {
   featuredAdDays: 7,
   contactCreditsPerPack: 10,
   prices: {
-    subscription: { MONTHLY: '1000', QUARTERLY: '2700', YEARLY: '9600' },
+    subscription: { MONTHLY: '900', QUARTERLY: '2400', SEMIANNUAL: '3900', YEARLY: '6000' },
+    subscriptionListMonthly: '1000',
     ladder: '50',
     featuredAd: '100.50',
     mapLocation: '30',
@@ -34,14 +36,32 @@ describe('PricingService', () => {
     expect(effective.CONTACT_CREDITS).toEqual({ price: '40', quantity: 10 });
     expect(pricing.toWire(effective)).toEqual({
       currency: 'AFGHANI',
-      subscription: { MONTHLY: 1000, QUARTERLY: 2700, YEARLY: 9600 },
+      subscription: { MONTHLY: 900, QUARTERLY: 2400, SEMIANNUAL: 3900, YEARLY: 6000 },
+      subscription_list: { MONTHLY: 1000, QUARTERLY: 3000, SEMIANNUAL: 6000, YEARLY: 12000 },
       ladder: 50,
       featured_ad: 100.5,
       map_location: 30,
       featured_ad_days: 7,
       contact_credits: 40,
       contact_credits_per_pack: 10,
+      featured_bundles: [
+        { size: 3, price: 271.35, list_price: 301.5, discount_percent: 10 },
+        { size: 5, price: 402, list_price: 502.5, discount_percent: 20 },
+        { size: 10, price: 653.25, list_price: 1005, discount_percent: 35 },
+        { size: 20, price: 1105.5, list_price: 2010, discount_percent: 45 },
+      ],
+      plans: SUBSCRIPTION_PLAN_BENEFITS,
     });
+  });
+
+  it('prices the featured bundles from an overridden single price', async () => {
+    const pricing = service([{ key: PricingKey.FEATURED_AD, price: 200, quantity: 3 }]);
+    expect(pricing.toWire(await pricing.effective()).featured_bundles).toEqual([
+      { size: 3, price: 540, list_price: 600, discount_percent: 10 },
+      { size: 5, price: 800, list_price: 1000, discount_percent: 20 },
+      { size: 10, price: 1300, list_price: 2000, discount_percent: 35 },
+      { size: 20, price: 2200, list_price: 4000, discount_percent: 45 },
+    ]);
   });
 
   it('puts an override on top: its price, and its quantity where it has one', async () => {
@@ -66,7 +86,7 @@ describe('PricingService', () => {
 
   it('lists every product with whether it was changed', async () => {
     const list = await service([{ key: PricingKey.FEATURED_AD, price: 200, quantity: 3 }]).list();
-    expect(list.map((entry) => entry.key)).toHaveLength(7);
+    expect(list.map((entry) => entry.key)).toHaveLength(8);
     expect(list.find((e) => e.key === 'FEATURED_AD')).toMatchObject({
       price: 200,
       quantity: 3,

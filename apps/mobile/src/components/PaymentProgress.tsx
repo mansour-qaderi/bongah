@@ -6,6 +6,7 @@ import { useFormat } from '../i18n/useFormat';
 import { colors, spacing } from '../theme';
 import AppText from './AppText';
 import Banner from './Banner';
+import { useErrorToast } from './useErrorToast';
 import Button from './Button';
 
 /**
@@ -23,6 +24,10 @@ export default function PaymentProgress({
   const { t } = useTranslation();
   const format = useFormat();
   const { payment, status, timedOut } = flow;
+  useErrorToast(
+    flow.openFailed ? t('checkout.openFailed') : null,
+    flow.openFailed,
+  );
   if (!payment) return null;
 
   return (
@@ -45,9 +50,6 @@ export default function PaymentProgress({
       <AppText variant="heading" style={styles.amount}>
         {t('checkout.amount')}: {format.price(payment.amount, payment.currency)}
       </AppText>
-      {flow.openFailed ? (
-        <Banner kind="error" message={t('checkout.openFailed')} />
-      ) : null}
 
       {status === 'SUCCESS' ? (
         <Button title={t('common.done')} onPress={onDone} />

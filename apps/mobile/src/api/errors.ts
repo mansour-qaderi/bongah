@@ -1,6 +1,7 @@
 import type { TFunction } from 'i18next';
 import type { ContactLimitReachedBody } from '@bongah/shared-types';
-import { formatDate, formatNumber } from '../i18n/format';
+import { formatNumber } from '../i18n/format';
+import { formatSolarDate } from '../i18n/solarHijri';
 import { ApiError } from './client';
 
 interface Options {
@@ -13,7 +14,7 @@ interface Options {
 /**
  * Turns anything thrown by the API layer into a sentence in the user's language.
  * The server's English `message` is never shown. The 502/503 mappings are specific to this
- * API: 503 is "SMS could not be sent" (send-otp) and 502 is "payment provider down" (HesabPay).
+ * API: 503 is "the verification code could not be sent to WhatsApp" (send-otp) and 502 is "payment provider down" (HesabPay).
  */
 export function errorMessage(
   error: unknown,
@@ -27,8 +28,23 @@ export function errorMessage(
   switch (error.code) {
     case 'FREE_LISTING_LIMIT_REACHED':
       return t('add.limitReached', {
-        date: error.body.resets_at ? formatDate(error.body.resets_at) : '',
+        date: error.body.resets_at
+          ? formatSolarDate(error.body.resets_at, t)
+          : '',
       });
+    case 'AGENCY_LISTING_LIMIT_REACHED':
+      // The plan's own listings are used up (there is no "next month": a new plan brings new ones). An older API
+      // still counts per month and says when that month ends.
+      return error.body.resets_at
+        ? t('add.agencyLimitReached', {
+            limit: formatNumber(error.body.limit ?? 0, 0),
+            date: formatSolarDate(error.body.resets_at, t),
+          })
+        : t('add.agencyQuotaReached', {
+            limit: formatNumber(error.body.limit ?? 0, 0),
+          });
+    case 'NO_FEATURED_CREDITS':
+      return t('errors.noFeaturedCredits');
     case 'SUBSCRIPTION_REQUIRED':
       return t('add.subscriptionRequired');
     case 'AGENCY_PROFILE_REQUIRED':
@@ -75,12 +91,15 @@ export function errorMessage(
       return t('errors.notFound');
     case 429: {
       const seconds = formatNumber(Math.ceil(error.body.retry_after ?? 60), 0);
-      return t(options.sendingCode ? 'errors.otpRateLimited' : 'errors.rateLimited', { seconds });
+      return t(
+        options.sendingCode ? 'errors.otpRateLimited' : 'errors.rateLimited',
+        { seconds },
+      );
     }
     case 502:
       return t('errors.paymentProvider');
     case 503:
-      return t('errors.smsFailed');
+      return t('errors.otpSendFailed');
     default:
       return t('errors.unknown');
   }
@@ -89,6 +108,24 @@ export function errorMessage(
 /** Sign-up was refused only because the referral code does not exist (the OTP is still usable). */
 export const isInvalidReferralCode = (error: unknown): boolean =>
   error instanceof ApiError && error.code === 'INVALID_REFERRAL_CODE';
+
+/**
+ * This month's free listing is used up. The post form answers it with an invitation to upgrade (see
+ * `listingLimitMessage`), not with a red error.
+ */
+export const isListingLimitReached = (error: unknown): error is ApiError =>
+  error instanceof ApiError && error.code === 'FREE_LISTING_LIMIT_REACHED';
+
+/**
+ * "This month's free listings are used up (next one possible: ۱۰ عقرب)." The date is when the server says the
+ * allowance renews, as a Solar Hijri date; without one the sentence simply stops before the brackets.
+ */
+export function listingLimitMessage(error: ApiError, t: TFunction): string {
+  const resets = error.body.resets_at;
+  return resets
+    ? t('add.limitBanner', { date: formatSolarDate(resets, t) })
+    : t('add.limitBannerNoDate');
+}
 
 /** The quota/subscription failures that have a clear next step (buy a subscription). */
 export const isSubscriptionRequired = (error: unknown): boolean =>

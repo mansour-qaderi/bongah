@@ -1,4 +1,5 @@
 import { Logger } from '@nestjs/common';
+import { LAUNCH_GIFTS_ONCE_PER_ACCOUNT, SUBSCRIPTION_PLAN_BENEFITS } from '@bongah/shared-types';
 import {
   ContactCreditSource,
   MapLocationTokenSource,
@@ -45,6 +46,8 @@ export async function fulfil(
       });
     case TransactionPurpose.CONTACT_CREDITS:
       return grantPurchasedContactCredits(db, payment);
+    case TransactionPurpose.FEATURED_CREDITS:
+      return grantPurchasedFeaturedCredits(db, payment);
   }
 }
 
@@ -61,6 +64,45 @@ async function grantPurchasedContactCredits(db: Prisma.TransactionClient, paymen
     amount: payment.quantity,
     transactionId: payment.id,
   });
+}
+
+async function grantPurchasedFeaturedCredits(db: Prisma.TransactionClient, payment: Transaction): Promise<void> {
+  // The bundle size was recorded when the payment started, like a credit pack's size. This runs only for the delivery
+  // that flipped the payment to SUCCESS, so one payment can only ever add one bundle.
+  if (!payment.quantity) {
+    throw new Error(`Featured-credits payment ${payment.id} has no quantity recorded.`);
+  }
+  await db.user.update({ where: { id: payment.userId }, data: { featuredCredits: { increment: payment.quantity } } });
+}
+
+/**
+ * The launch gifts of the plan that was bought: extra listing credits and free featured-listing credits (the numbers
+ * are the plan's, see SUBSCRIPTION_PLAN_BENEFITS). By default they are given once per account, with its first
+ * subscription: one conditional UPDATE both checks that they have never been given and gives them, so two
+ * subscriptions confirmed at the same moment (or a repeated webhook) still pay them out once.
+ * (LAUNCH_GIFTS_ONCE_PER_ACCOUNT = false gives them with every purchase.)
+ */
+async function grantLaunchGifts(
+  db: Prisma.TransactionClient,
+  userId: string,
+  packageType: keyof typeof SUBSCRIPTION_PLAN_BENEFITS,
+  now: Date,
+): Promise<void> {
+  const gifts = SUBSCRIPTION_PLAN_BENEFITS[packageType];
+  const granted = LAUNCH_GIFTS_ONCE_PER_ACCOUNT
+    ? await db.$executeRaw`
+        UPDATE users
+           SET bonus_listing_credits = bonus_listing_credits + ${gifts.gift_listings},
+               featured_credits = featured_credits + ${gifts.gift_featured},
+               first_subscription_bonus_at = ${now}
+         WHERE id = ${userId}::uuid AND first_subscription_bonus_at IS NULL`
+    : await db.$executeRaw`
+        UPDATE users
+           SET bonus_listing_credits = bonus_listing_credits + ${gifts.gift_listings},
+               featured_credits = featured_credits + ${gifts.gift_featured},
+               first_subscription_bonus_at = COALESCE(first_subscription_bonus_at, ${now})
+         WHERE id = ${userId}::uuid`;
+  if (granted === 1) logger.log(`Launch gifts of the ${packageType} plan given to user ${userId}`);
 }
 
 async function activateSubscription(
@@ -93,6 +135,8 @@ async function activateSubscription(
       transactionId: payment.id, // UNIQUE: this payment can only ever buy one subscription
     },
   });
+
+  await grantLaunchGifts(db, payment.userId, packageType, now);
 }
 
 async function ladderProperty(

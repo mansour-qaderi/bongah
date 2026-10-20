@@ -9,8 +9,10 @@ import {
   useRedeemLadderToken,
   useReferralSummary,
 } from '../api/hooks';
+import { useSafeAuth } from '../auth/useSafeAuth';
 import { formatDate, formatNumber } from '../i18n/format';
 import { useFormat } from '../i18n/useFormat';
+import { useFeaturedCreditSpend } from '../payments/useFeaturedCreditSpend';
 import { usePaymentFlow } from '../payments/usePaymentFlow';
 import { colors, radius, spacing } from '../theme';
 import AppText from './AppText';
@@ -19,6 +21,8 @@ import Button from './Button';
 import OptionCard from './OptionCard';
 import PaymentProgress from './PaymentProgress';
 import { ErrorView, LoadingView } from './States';
+import { showToast, ToastHost } from './Toast';
+import { useErrorToast } from './useErrorToast';
 
 type Promotion = 'LADDER' | 'FEATURED_AD';
 type Promotable = Pick<
@@ -68,6 +72,18 @@ function SheetBody({
   // A free ladder earned by inviting friends. Only counted when the server says so.
   const referral = useReferralSummary(true);
   const redeem = useRedeemLadderToken();
+  const spend = useFeaturedCreditSpend();
+  // Credits for featured listings: bought in a bundle, or the first-subscription bonus.
+  const credits = useSafeAuth()?.user?.featured_credits ?? 0;
+  useErrorToast(
+    flow.startError ? errorMessage(flow.startError, t) : null,
+    flow.startError,
+  );
+  useErrorToast(
+    redeem.error ? errorMessage(redeem.error, t) : null,
+    redeem.error,
+  );
+  useErrorToast(spend.error ? errorMessage(spend.error, t) : null, spend.error);
   const freeTokens = referral.data?.stats.ladder_tokens_available ?? 0;
   const [choice, setChoice] = useState<Promotion>('LADDER');
 
@@ -139,12 +155,6 @@ function SheetBody({
             />
           ) : (
             <>
-              {flow.startError ? (
-                <Banner
-                  kind="error"
-                  message={errorMessage(flow.startError, t)}
-                />
-              ) : null}
               <AppText variant="label" style={styles.help}>
                 {t('promotion.choose')}
               </AppText>
@@ -169,16 +179,36 @@ function SheetBody({
                       count: formatNumber(freeTokens, 0),
                     })}
                   </AppText>
-                  {redeem.isError ? (
-                    <Banner
-                      kind="error"
-                      message={errorMessage(redeem.error, t)}
-                    />
-                  ) : null}
                   <Button
                     title={t('promotion.useFreeToken')}
                     loading={redeem.isPending}
                     onPress={() => redeem.mutate(property.id)}
+                  />
+                </View>
+              ) : null}
+              {choice === 'FEATURED_AD' && credits > 0 ? (
+                <View style={styles.freeToken}>
+                  <AppText variant="label" color={colors.success}>
+                    {t('checkout.featuredCredits', {
+                      count: formatNumber(credits, 0),
+                    })}
+                  </AppText>
+                  <Button
+                    title={t('checkout.useCredit')}
+                    loading={spend.isPending}
+                    onPress={() =>
+                      spend.mutate(property.id, {
+                        onSuccess: used => {
+                          showToast(
+                            t('checkout.creditUsed', {
+                              count: formatNumber(used.featured_credits, 0),
+                            }),
+                            'success',
+                          );
+                          onClose();
+                        },
+                      })
+                    }
                   />
                 </View>
               ) : null}
@@ -197,6 +227,8 @@ function SheetBody({
           )}
         </ScrollView>
       </SafeAreaView>
+      {/* The sheet is a modal: a toast has to be drawn inside it to be seen over it. */}
+      <ToastHost />
     </View>
   );
 }
