@@ -429,6 +429,7 @@ export default function ChatScreen({ navigation, route }: Props) {
             {attachOpen ? (
               <View style={styles.attach}>
                 <Button
+                  icon="camera"
                   title={t('chat.attachPhoto')}
                   variant="secondary"
                   style={styles.attachButton}
@@ -436,6 +437,7 @@ export default function ChatScreen({ navigation, route }: Props) {
                 />
                 <View style={styles.attachButton}>
                   <Button
+                    icon="pin"
                     title={t('chat.attachLocation')}
                     variant="secondary"
                     disabled={!advanced}
@@ -478,6 +480,7 @@ export default function ChatScreen({ navigation, route }: Props) {
                 style={styles.input}
               />
               <Button
+                icon="send"
                 title={t('chat.send')}
                 disabled={text.trim() === ''}
                 onPress={sendText}
@@ -516,12 +519,14 @@ export default function ChatScreen({ navigation, route }: Props) {
             />
             <View style={styles.sheetButtons}>
               <Button
+                icon="close"
                 title={t('common.cancel')}
                 variant="outline"
                 onPress={closePicker}
                 style={styles.attachButton}
               />
               <Button
+                icon="send"
                 title={t('chat.locationSend')}
                 disabled={!pin}
                 onPress={sendPin}

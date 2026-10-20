@@ -36,6 +36,22 @@ describe('normalizePlaceName', () => {
   });
 });
 
+describe('updatePropertySchema: mortgage duration and price terms', () => {
+  it('takes them alone, and clears them with null', () => {
+    expect(updatePropertySchema.safeParse({ mortgage_months: 12 }).success).toBe(true);
+    expect(updatePropertySchema.safeParse({ mortgage_months: null, price_terms: null }).success).toBe(true);
+    expect(updatePropertySchema.safeParse({ price_terms: 'NEGOTIABLE' }).success).toBe(true);
+  });
+
+  it('refuses a duration sent with a deal that has none (a duration alone is for the service to check)', () => {
+    const r = updatePropertySchema.safeParse({ deal_type: 'RENT', mortgage_months: 12 });
+    expect(r.success).toBe(false);
+    expect(fields(r)).toContain('mortgage_months');
+    expect(updatePropertySchema.safeParse({ deal_type: 'MORTGAGE_GROWI', mortgage_months: 12 }).success).toBe(true);
+    expect(updatePropertySchema.safeParse({ deal_type: 'RENT', mortgage_months: null }).success).toBe(true);
+  });
+});
+
 describe('createPropertySchema', () => {
   it('accepts a valid property and normalises text', () => {
     const r = createPropertySchema.parse({ ...valid, title: '  Nice   house ', province: 'كابل' });
@@ -78,6 +94,34 @@ describe('createPropertySchema', () => {
     expect(listPropertiesQuerySchema.safeParse({ types: `LAND,${type}` }).success).toBe(false);
   });
 
+  it('takes a mortgage duration only on a mortgage, in whole months from 1 to 600', () => {
+    const mortgage = { ...valid, deal_type: 'MORTGAGE_GROWI' };
+    expect(createPropertySchema.safeParse({ ...mortgage, mortgage_months: 24 }).success).toBe(true);
+    expect(createPropertySchema.safeParse({ ...mortgage, mortgage_months: 600 }).success).toBe(true);
+    expect(createPropertySchema.safeParse(mortgage).success).toBe(true); // the duration may be left out
+    for (const mortgage_months of [0, 601, 1.5, -3, '12']) {
+      const r = createPropertySchema.safeParse({ ...mortgage, mortgage_months });
+      expect(r.success).toBe(false);
+      expect(fields(r)).toContain('mortgage_months');
+    }
+    for (const deal_type of ['SALE', 'RENT']) {
+      const r = createPropertySchema.safeParse({ ...valid, deal_type, mortgage_months: 12 });
+      expect(r.success).toBe(false);
+      expect(fields(r)).toContain('mortgage_months');
+    }
+    // null is "none", also on a sale.
+    expect(createPropertySchema.safeParse({ ...valid, mortgage_months: null }).success).toBe(true);
+  });
+
+  it('takes the price terms FIXED or NEGOTIABLE, or none', () => {
+    for (const price_terms of ['FIXED', 'NEGOTIABLE', null]) {
+      expect(createPropertySchema.safeParse({ ...valid, price_terms }).success).toBe(true);
+    }
+    const r = createPropertySchema.safeParse({ ...valid, price_terms: 'fixed' });
+    expect(r.success).toBe(false);
+    expect(fields(r)).toContain('price_terms');
+  });
+
   it('treats the map pin as optional but never half a pin', () => {
     const { lat: _lat, lng: _lng, ...noPin } = valid;
     expect(createPropertySchema.safeParse(noPin).success).toBe(true);
@@ -105,10 +149,20 @@ describe('createPropertySchema', () => {
     expect(createPropertySchema.safeParse({ ...bare, lat: 34.5, lng: 69.1, neighborhood: 'x' }).success).toBe(false);
   });
 
-  it('treats the description as optional', () => {
+  it('requires a description to publish: missing, empty or blank is refused, line breaks are kept', () => {
     const { description: _desc, ...noDescription } = valid;
-    expect(createPropertySchema.safeParse(noDescription).success).toBe(true);
-    expect(createPropertySchema.safeParse({ ...valid, description: '' }).success).toBe(true);
+    expect(createPropertySchema.safeParse(noDescription).success).toBe(false);
+    expect(createPropertySchema.safeParse({ ...valid, description: '' }).success).toBe(false);
+    expect(createPropertySchema.safeParse({ ...valid, description: '  \n \t ' }).success).toBe(false);
+    const kept = createPropertySchema.parse({ ...valid, description: 'خانه نو\n\nنزدیک بازار' });
+    expect(kept.description).toBe('خانه نو\n\nنزدیک بازار');
+  });
+
+  it('lets an update leave the description out but not blank it', () => {
+    expect(updatePropertySchema.safeParse({ price: 5 }).success).toBe(true);
+    expect(updatePropertySchema.safeParse({ description: 'متن تازه' }).success).toBe(true);
+    expect(updatePropertySchema.safeParse({ description: '' }).success).toBe(false);
+    expect(updatePropertySchema.safeParse({ description: '   ' }).success).toBe(false);
   });
 
   it('allows null/absent rooms and leaves images undefined (the service defaults it)', () => {

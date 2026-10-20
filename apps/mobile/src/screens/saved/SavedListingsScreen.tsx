@@ -83,6 +83,7 @@ export default function SavedListingsScreen({ navigation }: Props) {
             {t('saved.emptyHint')}
           </AppText>
           <Button
+            icon="search"
             title={t('saved.browse')}
             variant="outline"
             onPress={() => navigation.navigate('Tabs', { screen: 'Home' })}

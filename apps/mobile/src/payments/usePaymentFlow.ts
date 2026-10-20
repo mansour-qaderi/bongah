@@ -56,7 +56,7 @@ export function usePaymentFlow() {
   const status = poll.data?.status ?? payment?.status;
   useEffect(() => {
     if (status === 'SUCCESS') {
-      // A new subscription / laddered / featured listing changes what the lists and the agency
+      // A new subscription / featured listing changes what the lists and the agency
       // dashboard show (the dashboard's key sits under `properties`)...
       queryClient.invalidateQueries({ queryKey: queryKeys.properties });
       // ...a contact credits payment adds credits to the allowance...

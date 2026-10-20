@@ -10,11 +10,11 @@ import { useCopy } from '../../share/useCopy';
 import { colors, radius, spacing } from '../../theme';
 
 /**
- * The invitation banner on the Account tab: "دعوت از دوستان و دریافت نردبان رایگان" in solid gold with dark ink (white
+ * The invitation banner on the Account tab: "دعوت از دوستان و دریافت نردبان" in solid gold with dark ink (white
  * on gold fails contrast), the person's own invitation link, and two buttons: copy it, or send it through the
  * phone's share sheet. The link is the server's `share_url` when it sends one, otherwise built from the person's
  * unique code (see share/referralLink.ts). Tapping the top of the banner opens the full referral screen (the
- * friends who joined, the free ladders earned). While the code is loading, or if it cannot be loaded, only the top
+ * friends who joined, the rewards earned). While the code is loading, or if it cannot be loaded, only the top
  * shows; the referral screen it opens has the retry.
  */
 export default function ReferralBanner({ onOpen }: { onOpen: () => void }) {
@@ -37,7 +37,7 @@ export default function ReferralBanner({ onOpen }: { onOpen: () => void }) {
     <View style={styles.banner} testID="referral-banner">
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel={t('account.invite')}
+        accessibilityLabel={t('account.inviteLadder')}
         onPress={onOpen}
         style={({ pressed }) => [styles.top, pressed && styles.pressed]}
       >
@@ -46,10 +46,10 @@ export default function ReferralBanner({ onOpen }: { onOpen: () => void }) {
         </View>
         <View style={styles.topText}>
           <AppText variant="section" color={colors.textOnAccent}>
-            {t('account.invite')}
+            {t('account.inviteLadder')}
           </AppText>
           <AppText variant="caption" color={colors.textOnAccent}>
-            {t('account.inviteHint')}
+            {t('account.inviteLadderHint')}
           </AppText>
         </View>
         <Icon

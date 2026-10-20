@@ -32,6 +32,7 @@ export default function ChatListScreen({ navigation }: Props) {
     return (
       <EmptyView message={t('chat.signInHint')}>
         <Button
+          icon="login"
           title={t('auth.signIn')}
           onPress={() => navigation.navigate('Auth')}
         />

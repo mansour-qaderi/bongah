@@ -10,7 +10,7 @@ export type AuthStackParamList = {
     /** Canonical invite code typed on the phone screen, if any. */
     referralCode?: string;
   };
-  /** `referralApplied`: the account was created with an invite code, so both got a free ladder. */
+  /** `referralApplied`: the account was created with an invite code, so both got a reward. */
   ProfileSetup: { referralApplied?: boolean } | undefined;
 };
 
@@ -32,17 +32,13 @@ export type RootStackParamList = {
   Dashboard: undefined;
   /** Without a `propertyId` it posts a new listing; with one it edits that listing. */
   AddProperty: { propertyId?: string } | undefined;
-  /** `propertyId` + `purpose` preselect a promotion (from a listing's "promote" button). */
-  Checkout:
-    | {
-        tab?: 'subscription' | 'promotion';
-        propertyId?: string;
-        purpose?: 'LADDER' | 'FEATURED_AD';
-      }
-    | undefined;
+  /** Featured-frame packs («کادر ویژه برای آگهی», 1/3/5/10/20) and nothing else. Subscriptions are on `Upgrade`. */
+  Checkout: undefined;
   /** The subscription plans for agencies, with their discounts, and the way to pay. Reached from Account and the limit banners. */
   Upgrade: undefined;
-  /** My invite code, who joined with it and the free ladders I earned. */
+  /** What I have left: listings I can publish, featured frames, ladders; with the ways to top them up. */
+  Balance: undefined;
+  /** My invite code, who joined with it and the rewards I earned. */
   Referral: undefined;
   /** One conversation. The snapshot supplies the header and listing card; messages are live. */
   Chat: { conversation: ChatConversation };

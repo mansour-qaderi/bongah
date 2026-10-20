@@ -1,5 +1,8 @@
 import type { TFunction } from 'i18next';
-import type { ContactLimitReachedBody } from '@bongah/shared-types';
+import {
+  LADDERS_PER_FRAME,
+  type ContactLimitReachedBody,
+} from '@bongah/shared-types';
 import { formatNumber } from '../i18n/format';
 import { formatSolarDate } from '../i18n/solarHijri';
 import { ApiError } from './client';
@@ -44,15 +47,19 @@ export function errorMessage(
             limit: formatNumber(error.body.limit ?? 0, 0),
           });
     case 'NO_FEATURED_CREDITS':
-      return t('errors.noFeaturedCredits');
+      return t('frame.noCredits');
+    case 'NOT_ENOUGH_LADDERS':
+      return t('ladder.notEnough', {
+        total: formatNumber(error.body.needed ?? LADDERS_PER_FRAME, 0),
+      });
+    case 'LISTING_QUOTA_NOT_EXHAUSTED':
+      return t('ladder.notExhausted');
     case 'SUBSCRIPTION_REQUIRED':
       return t('add.subscriptionRequired');
     case 'AGENCY_PROFILE_REQUIRED':
       return t('add.agencyProfileRequired');
     case 'INVALID_REFERRAL_CODE':
       return t('auth.referralInvalid');
-    case 'NO_LADDER_TOKEN':
-      return t('referral.noToken');
     case 'CONTACT_LIMIT_REACHED':
       return t('contact.limitReached');
     case 'CONTACT_ALREADY_UNLIMITED':
@@ -130,6 +137,15 @@ export function listingLimitMessage(error: ApiError, t: TFunction): string {
 /** The quota/subscription failures that have a clear next step (buy a subscription). */
 export const isSubscriptionRequired = (error: unknown): boolean =>
   error instanceof ApiError && error.code === 'SUBSCRIPTION_REQUIRED';
+
+/**
+ * The listing allowance is used up, whichever kind of account hit it: a regular user's free listing of the month or an
+ * office's plan. Both can be topped up with seven ladders.
+ */
+export const isAnyListingLimit = (error: unknown): boolean =>
+  error instanceof ApiError &&
+  (error.code === 'FREE_LISTING_LIMIT_REACHED' ||
+    error.code === 'AGENCY_LISTING_LIMIT_REACHED');
 
 /** Today's free reveals are used up and the request did not (or could not) pay with a credit. */
 export const isContactLimitReached = (

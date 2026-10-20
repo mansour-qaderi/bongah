@@ -52,17 +52,19 @@ export default function PaymentProgress({
       </AppText>
 
       {status === 'SUCCESS' ? (
-        <Button title={t('common.done')} onPress={onDone} />
+        <Button icon="check" title={t('common.done')} onPress={onDone} />
       ) : status === 'FAILED' ? (
-        <Button title={t('common.retry')} onPress={flow.reset} />
+        <Button icon="refresh" title={t('common.retry')} onPress={flow.reset} />
       ) : (
         <>
           <Button
+            icon="refresh"
             title={t('checkout.checkStatus')}
             loading={flow.checking}
             onPress={flow.check}
           />
           <Button
+            icon="arrow"
             title={t('checkout.reopen')}
             variant="secondary"
             onPress={flow.reopen}

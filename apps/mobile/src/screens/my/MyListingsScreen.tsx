@@ -98,6 +98,7 @@ export default function MyListingsScreen({ navigation }: Props) {
     return (
       <EmptyView message={t('my.signInHint')}>
         <Button
+          icon="login"
           title={t('auth.signIn')}
           onPress={() => navigation.navigate('Auth')}
         />
@@ -122,8 +123,8 @@ export default function MyListingsScreen({ navigation }: Props) {
     ]);
 
   /**
-   * Every listing shows two buttons, Edit and Share, and a "more" button whose sheet holds the rest. An active
-   * listing can be promoted, marked traded, switched off or deleted; one that is not active (traded or switched
+   * Every listing shows two buttons, Edit and a "more" button whose sheet holds the rest, Share first. An active
+   * listing can also be promoted, marked traded, switched off or deleted; one that is not active (traded or switched
    * off) can be switched back on or deleted. While one action runs, the "more" button shows a spinner and the
    * listing's other buttons wait, so two changes can never race.
    */
@@ -143,15 +144,16 @@ export default function MyListingsScreen({ navigation }: Props) {
         onPress: () =>
           navigation.navigate('AddProperty', { propertyId: property.id }),
       },
-      {
-        label: t('property.share'),
-        icon: 'share',
-        disabled: busy,
-        onPress: () => {
-          share(property);
-        },
-      },
     ];
+    // Share lives in the "more" sheet, as its first line.
+    const shareAction: ListingAction = {
+      label: t('property.share'),
+      icon: 'share',
+      disabled: busy,
+      onPress: () => {
+        share(property);
+      },
+    };
     const remove: ListingAction = {
       label: t('common.delete'),
       icon: 'trash',
@@ -170,6 +172,7 @@ export default function MyListingsScreen({ navigation }: Props) {
       return {
         actions: primary,
         menu: [
+          shareAction,
           {
             label: t('my.promote'),
             icon: 'arrowUp',
@@ -210,6 +213,7 @@ export default function MyListingsScreen({ navigation }: Props) {
     return {
       actions: primary,
       menu: [
+        shareAction,
         {
           label: t('my.activate'),
           icon: 'toggleOn',
@@ -247,6 +251,7 @@ export default function MyListingsScreen({ navigation }: Props) {
           {t('my.emptyHint')}
         </AppText>
         <Button
+          icon="plus"
           title={t('my.newListing')}
           onPress={() => navigation.navigate('AddProperty')}
         />

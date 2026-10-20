@@ -51,7 +51,7 @@ export default function ProfileSetupScreen({ navigation, route }: Props) {
         {t('auth.profileHint')}
       </AppText>
       {route?.params?.referralApplied ? (
-        <Banner kind="success" message={t('auth.referralApplied')} />
+        <Banner kind="success" message={t('auth.referralAppliedLadder')} />
       ) : null}
       <TextField
         label={t('auth.fullName')}
@@ -67,8 +67,14 @@ export default function ProfileSetupScreen({ navigation, route }: Props) {
         invalid={fieldError !== null}
         onSubmitEditing={save}
       />
-      <Button title={t('common.save')} onPress={save} loading={loading} />
       <Button
+        icon="check"
+        title={t('common.save')}
+        onPress={save}
+        loading={loading}
+      />
+      <Button
+        icon="arrow"
         title={t('auth.skip')}
         variant="outline"
         onPress={() => closeAuth(navigation)}

@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
+  ActivityIndicator,
   FlatList,
   Image,
   Pressable,
@@ -33,8 +34,10 @@ import { Screen } from '../../components/Screen';
 import { ErrorView, LoadingView } from '../../components/States';
 import { formatPhone } from '../../i18n/format';
 import { useFormat } from '../../i18n/useFormat';
+import { useApproxLocation } from '../../map/useApproxLocation';
 import type { RootStackParamList } from '../../navigation/types';
 import { colors, fonts, spacing, surfaces } from '../../theme';
+import { durationLabel } from './mortgage';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'PropertyDetails'>;
 
@@ -128,6 +131,22 @@ function PropertyBody({
   const revealed = actions.contact;
 
   const place = propertyPlace(property, format.province);
+  // Where the map shows the listing: its pin, or (when it was posted with a written address only) the place that
+  // address comes to.
+  const where = useApproxLocation(property);
+  // The location card says what the line under the title does not: the neighbourhood, the district and the written
+  // address, each only when that line has not said it already.
+  const addressLine = [
+    property.neighborhood,
+    property.district,
+    property.address,
+  ]
+    .map(part => part?.trim() ?? '')
+    .filter(
+      (part, index, all) =>
+        part && !place.includes(part) && all.indexOf(part) === index,
+    )
+    .join('، ');
 
   return (
     <Screen edges={isOwner ? ['left', 'right', 'bottom'] : ['left', 'right']}>
@@ -200,15 +219,39 @@ function PropertyBody({
             </View>
           ) : null}
           <View style={styles.priceBox}>
+            {/* What the price is for: the monthly rent, the sale price, the amount of a mortgage. */}
             <AppText variant="caption" color={colors.textMuted}>
-              {t('add.price')}
+              {t(`dealPrice.${property.deal_type}`)}
             </AppText>
             <Price
               amount={property.price}
               currency={property.currency}
               variant="pageTitle"
               color={colors.primary}
+              testID="price"
             />
+            {property.price_terms || property.mortgage_months ? (
+              <View style={styles.terms}>
+                {property.mortgage_months ? (
+                  <AppText
+                    variant="bodySm"
+                    color={colors.textSecondary}
+                    testID="mortgage-duration"
+                  >
+                    {`${t('mortgage.forDuration')}: ${durationLabel(
+                      property.mortgage_months,
+                      t,
+                    )}`}
+                  </AppText>
+                ) : null}
+                {property.price_terms ? (
+                  <Badge
+                    label={t(`priceTerms.${property.price_terms}`)}
+                    tone={badgeTones.neutral}
+                  />
+                ) : null}
+              </View>
+            ) : null}
           </View>
         </View>
 
@@ -249,22 +292,32 @@ function PropertyBody({
 
         <View style={[styles.section, styles.card]}>
           <AppText variant="section">{t('property.location')}</AppText>
-          <AppText variant="bodySm">
-            {[
-              format.province(property.province),
-              property.district,
-              property.neighborhood,
-            ]
-              .filter(Boolean)
-              .join('، ')}
-          </AppText>
-          <AppText variant="bodySm" color={colors.textMuted}>
-            {property.address}
-          </AppText>
-          {property.lat !== null && property.lng !== null ? (
-            <PropertyLocationMap
-              at={{ latitude: property.lat, longitude: property.lng }}
-            />
+          {/* The province and district are already under the title; here only the address the owner wrote. */}
+          {addressLine ? (
+            <AppText variant="bodySm" testID="address">
+              {addressLine}
+            </AppText>
+          ) : null}
+          {where.status === 'pinned' ? (
+            <PropertyLocationMap at={where.coordinate} />
+          ) : where.status === 'approximate' ? (
+            <>
+              <PropertyLocationMap at={where.coordinate} zoom={where.zoom} />
+              <AppText
+                variant="caption"
+                color={colors.textMuted}
+                testID="approx-note"
+              >
+                {t('property.approxLocation')}
+              </AppText>
+            </>
+          ) : where.status === 'finding' ? (
+            <View style={styles.finding}>
+              <ActivityIndicator size="small" color={colors.primary} />
+              <AppText variant="caption" color={colors.textMuted}>
+                {t('property.finding')}
+              </AppText>
+            </View>
           ) : (
             <AppText variant="caption" color={colors.textMuted}>
               {t('map.noExact')}
@@ -297,6 +350,7 @@ function PropertyBody({
               {t('property.yourListing')}
             </AppText>
             <Button
+              icon="up"
               title={t('property.promote')}
               variant="secondary"
               onPress={() => setPromoting(true)}
@@ -351,6 +405,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.md,
   },
+  terms: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    gap: spacing.sm,
+    marginTop: spacing.xs,
+  },
+  finding: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   card: {
     ...surfaces.card,
     marginHorizontal: spacing.lg,

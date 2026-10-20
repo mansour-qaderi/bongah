@@ -49,7 +49,12 @@ const PHONE = '+93701234567';
 const L1 = '11111111-1111-4111-8111-111111111111';
 const PRICING = {
   currency: 'AFGHANI',
-  subscription: { MONTHLY: 1000, QUARTERLY: 2700, SEMIANNUAL: 5000, YEARLY: 9600 },
+  subscription: {
+    MONTHLY: 1000,
+    QUARTERLY: 2700,
+    SEMIANNUAL: 5000,
+    YEARLY: 9600,
+  },
   ladder: 50,
   featured_ad: 100,
   map_location: 30,
@@ -85,14 +90,14 @@ const summary = (overrides: Record<string, unknown> = {}) => ({
   ],
   rewards: [
     {
-      type: 'LADDER_TOKEN',
+      type: 'BONUS_LISTING',
       reason: 'REFERRER_BONUS',
       amount: 1,
       created_at: '2026-10-12T08:00:00Z',
       used_at: null,
     },
     {
-      type: 'LADDER_TOKEN',
+      type: 'BONUS_LISTING',
       reason: 'REFEREE_BONUS',
       amount: 1,
       created_at: '2026-10-01T08:00:00Z',
@@ -187,8 +192,7 @@ describe('ReferralScreen', () => {
     expect(text).toContain('ABCD2345'); // shown as is, never in Persian digits
     for (const [label, value] of [
       [prs.referral.statInvited, 3],
-      [prs.referral.statEarned, 2],
-      [prs.referral.statAvailable, 1],
+      [prs.referral.statRewarded, 2],
     ] as const) {
       expect(text).toContain(label);
       expect(text).toContain(formatNumber(value, 0));
@@ -206,8 +210,8 @@ describe('ReferralScreen', () => {
     );
     expect(text).toContain(prs.referral.rewardGranted);
     expect(text).toContain(prs.referral.rewardNotGranted);
-    // Rewards: what, why, and whether it was used.
-    expect(text).toContain(prs.referral.rewardType.LADDER_TOKEN);
+    // Rewards: what, why, and whether it was used. (A free ladder cannot be used in the app any more, so it is not listed.)
+    expect(text).toContain(prs.referral.rewardType.BONUS_LISTING);
     expect(text).toContain(prs.referral.rewardReason.REFERRER_BONUS);
     expect(text).toContain(prs.referral.rewardReason.REFEREE_BONUS);
     expect(text).toContain(prs.referral.available);
@@ -217,8 +221,8 @@ describe('ReferralScreen', () => {
         formatDate('2026-10-05T08:00:00Z'),
       ),
     );
-    // A token to spend: say where.
-    expect(text).toContain(prs.referral.howToUse);
+    expect(text).not.toContain(prs.referral.rewardType.LADDER_TOKEN);
+    expect(text).not.toContain(prs.referral.howToUse);
     expect(text).not.toContain(prs.referral.capReached.slice(0, 12));
   });
 
@@ -375,7 +379,7 @@ describe('AccountScreen invite button', () => {
   it('opens the referral screen', async () => {
     const nav = navigation();
     const tree = await render(screenElement(AccountScreen, nav));
-    await press(tree.root, prs.account.invite);
+    await press(tree.root, prs.account.inviteLadder);
     expect(nav.navigate).toHaveBeenCalledWith('Referral');
   });
 
@@ -384,8 +388,8 @@ describe('AccountScreen invite button', () => {
     const tree = await render(screenElement(AccountScreen));
     await settle();
     const text = allText(tree.root);
-    expect(prs.account.invite).toBe('دعوت از دوستان و دریافت نردبان رایگان');
-    expect(text).toContain(prs.account.invite);
+    expect(prs.account.inviteLadder).toBe('دعوت از دوستان و دریافت نردبان');
+    expect(text).toContain(prs.account.inviteLadder);
     expect(text).toContain('https://bongah.example/invite/ABCD2345');
     expect(text).toContain(prs.referral.copy);
     expect(text).toContain(prs.referral.share);
@@ -450,14 +454,14 @@ describe('AccountScreen invite button', () => {
     const tree = await render(screenElement(AccountScreen));
     await settle();
     const text = allText(tree.root);
-    expect(text).toContain(prs.account.invite);
+    expect(text).toContain(prs.account.inviteLadder);
     expect(text).not.toContain(prs.referral.copy);
   });
 
   it('is not shown to a signed-out visitor', async () => {
     mockAuth = { status: 'signedOut', user: null };
     const tree = await render(screenElement(AccountScreen));
-    expect(allText(tree.root)).not.toContain(prs.account.invite);
+    expect(allText(tree.root)).not.toContain(prs.account.inviteLadder);
   });
 });
 
@@ -649,16 +653,16 @@ describe('ProfileSetupScreen', () => {
         referralApplied: true,
       }),
     );
-    expect(allText(tree.root)).toContain(prs.auth.referralApplied);
+    expect(allText(tree.root)).toContain(prs.auth.referralAppliedLadder);
   });
 
   it('shows nothing about invites otherwise', async () => {
     const tree = await render(screenElement(ProfileSetupScreen));
-    expect(allText(tree.root)).not.toContain(prs.auth.referralApplied);
+    expect(allText(tree.root)).not.toContain(prs.auth.referralAppliedLadder);
   });
 });
 
-describe('PromotionSheet free ladder tokens', () => {
+describe('PromotionSheet no longer sells or spends a ladder', () => {
   const property = {
     id: L1,
     title: 'خانه حویلی',
@@ -669,98 +673,21 @@ describe('PromotionSheet free ladder tokens', () => {
     render(
       withQuery(<PromotionSheet property={property} onClose={jest.fn()} />),
     );
-  const REDEEMED = (left: number) => ({
-    body: {
-      property_id: L1,
-      laddered_at: '2026-10-13T10:00:00Z',
-      ladder_tokens_available: left,
-    },
-  });
 
-  it('offers a free ladder when I have one, and spends it on this listing', async () => {
+  it('offers the featured frame only, even for someone who holds free ladders, and never asks for the referral figures', async () => {
     mockApi(fetchMock, {
       'GET /hesabpay/pricing': { body: PRICING },
       'GET /referrals/me': { body: summary() },
-      'POST /rewards/ladder-tokens/redeem': REDEEMED(0),
-    });
-    const tree = await open();
-    await settle();
-    expect(allText(tree.root)).toContain(
-      prs.promotion.freeTokens.replace('{{count}}', formatNumber(1, 0)),
-    );
-
-    await press(tree.root, prs.promotion.useFreeToken);
-    await settle();
-    expect(posts('/rewards/ladder-tokens/redeem')[0].body).toEqual({
-      property_id: L1,
-    });
-    // No payment was started.
-    expect(posts('/hesabpay/payments')).toHaveLength(0);
-    expect(allText(tree.root)).toContain(
-      prs.promotion.freeTokenDone.replace('{{count}}', formatNumber(0, 0)),
-    );
-    // Listing lists and the referral figures are refreshed.
-    expect(
-      callsTo(fetchMock).filter(c => c.path === '/referrals/me').length,
-    ).toBeGreaterThanOrEqual(1);
-  });
-
-  it('does not offer it when I have none', async () => {
-    mockApi(fetchMock, {
-      'GET /hesabpay/pricing': { body: PRICING },
-      'GET /referrals/me': {
-        body: summary({
-          stats: { ...summary().stats, ladder_tokens_available: 0 },
-        }),
-      },
     });
     const tree = await open();
     await settle();
     const text = allText(tree.root);
+    expect(text).toContain(prs.frame.title);
+    expect(text).not.toContain('نردبان');
     expect(text).not.toContain(prs.promotion.useFreeToken);
-    expect(text).toContain(prs.checkout.pay); // the paid way is unchanged
-  });
-
-  it('does not offer it for a featured ad: a free ladder is only a ladder', async () => {
-    mockApi(fetchMock, {
-      'GET /hesabpay/pricing': { body: PRICING },
-      'GET /referrals/me': { body: summary() },
-    });
-    const tree = await open();
-    await settle();
-    await press(tree.root, prs.checkout.featured);
-    expect(allText(tree.root)).not.toContain(prs.promotion.useFreeToken);
-    await press(tree.root, prs.checkout.ladder);
-    expect(allText(tree.root)).toContain(prs.promotion.useFreeToken);
-  });
-
-  it('still lets me pay when the referral figures cannot be loaded', async () => {
-    mockApi(fetchMock, {
-      'GET /hesabpay/pricing': { body: PRICING },
-      'GET /referrals/me': { status: 500, body: {} },
-    });
-    const tree = await open();
-    await settle();
-    expect(allText(tree.root)).not.toContain(prs.promotion.useFreeToken);
+    expect(
+      callsTo(fetchMock).filter(c => c.path === '/referrals/me'),
+    ).toHaveLength(0);
     expect(pressableWith(tree.root, prs.checkout.pay)).toBeTruthy();
-  });
-
-  it('explains when the token was already spent elsewhere', async () => {
-    mockApi(fetchMock, {
-      'GET /hesabpay/pricing': { body: PRICING },
-      'GET /referrals/me': { body: summary() },
-      'POST /rewards/ladder-tokens/redeem': {
-        status: 409,
-        body: { code: 'NO_LADDER_TOKEN' },
-      },
-    });
-    const tree = await open();
-    await settle();
-    await press(tree.root, prs.promotion.useFreeToken);
-    await settle();
-    expect(toasts.messages).toContain(prs.referral.noToken);
-    expect(allText(tree.root)).not.toContain(
-      prs.promotion.freeTokenDone.slice(0, 10),
-    );
   });
 });

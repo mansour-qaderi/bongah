@@ -171,6 +171,7 @@ describe('a description keeps its line breaks (shared schema)', () => {
     area_sqm: 100,
     province: 'کابل',
     address: 'سرک چهارم',
+    description: 'خانه نو',
   };
   const described = (description: string) => {
     const r = createPropertySchema.safeParse({ ...base, description });
@@ -188,9 +189,9 @@ describe('a description keeps its line breaks (shared schema)', () => {
   it('keeps the half-space inside Persian words', () => {
     expect(described('خانه‌های نو\nمیز‌ها')).toBe('خانه‌های نو\nمیز‌ها');
   });
-  it('still accepts nothing at all, and still has its limit', () => {
-    expect(described('')).toBe('');
-    expect(described(' \n \t ')).toBe('');
+  it('no longer accepts nothing at all, and still has its limit', () => {
+    expect(described('')).toMatch(/At least 1/);
+    expect(described(' \n \t ')).toMatch(/At least 1/);
     expect(described('ا'.repeat(5001))).toMatch(/At most 5000/);
     expect(described('ا'.repeat(5000))).toHaveLength(5000);
   });

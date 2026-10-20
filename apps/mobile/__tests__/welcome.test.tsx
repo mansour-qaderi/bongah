@@ -23,7 +23,9 @@ let toasts: ReturnType<typeof captureToasts>;
 // The Account tab also shows the invite banner, which asks for the referral summary. These tests are about the
 // morning-messages switch, so that request is left out of what they count.
 const switchCalls = () =>
-  callsTo(fetchMock).filter(call => call.path !== '/referrals/me');
+  callsTo(fetchMock).filter(
+    call => call.path !== '/referrals/me' && call.path !== '/wallet',
+  );
 
 // A signed-in session whose user can be replaced, like the real AuthProvider's.
 jest.mock('../src/auth/AuthContext', () => {

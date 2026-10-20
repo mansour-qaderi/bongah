@@ -8,6 +8,7 @@ import prs from '../src/i18n/locales/prs.json';
 import { MAP_ATTRIBUTION_URL } from '../src/config';
 import {
   allText,
+  callsTo,
   mockApi,
   pressableWith,
   render as renderTree,
@@ -99,7 +100,7 @@ describe('AccountScreen dashboard', () => {
     expect(text).toContain(prs.account.settings);
     expect(text).toContain(prs.account.morningMessages);
     expect(text).toContain(prs.account.language);
-    expect(text).toContain(prs.account.invite);
+    expect(text).toContain(prs.account.inviteLadder);
     // The phone is a number: Persian digits, never Western ones, outside the map credit.
     const withoutCredit = text.split(prs.home.mapCredits)[0];
     expect(withoutCredit).not.toMatch(/[0-9]/);
@@ -179,7 +180,7 @@ describe('AccountScreen dashboard', () => {
 
   it('opens the referral screen from the invite card', async () => {
     const { tree, nav } = await mount();
-    await press(tree.root, prs.account.invite);
+    await press(tree.root, prs.account.inviteLadder);
     expect(nav.navigate).toHaveBeenCalledWith('Referral');
   });
 
@@ -189,7 +190,7 @@ describe('AccountScreen dashboard', () => {
     const text = allText(tree.root);
     expect(text).toContain(prs.welcome.title);
     expect(text).toContain(prs.account.guestHint);
-    expect(text).not.toContain(prs.account.invite);
+    expect(text).not.toContain(prs.account.inviteLadder);
     expect(text).not.toContain(prs.account.morningMessages);
     expect(text).not.toContain(prs.auth.signOut);
     await press(tree.root, prs.auth.signIn);
@@ -202,5 +203,66 @@ describe('AccountScreen dashboard', () => {
     await press(tree.root, prs.home.mapCredits);
     expect(open).toHaveBeenCalledWith(MAP_ATTRIBUTION_URL);
     open.mockRestore();
+  });
+});
+
+describe('AccountScreen balance line', () => {
+  const rowOf = (tree: ReactTestRenderer.ReactTestRenderer) =>
+    pressableWith(tree.root, prs.account.balanceTitle);
+
+  it('is a plain menu line, not a card of its own: «موجودی شما» with the subtitle «مشاهده سهمیه آگهی، کادرهای ویژه و نردبان‌ها»', async () => {
+    expect(prs.account.balanceTitle).toBe('موجودی شما');
+    expect(prs.account.balanceHint).toBe(
+      'مشاهده سهمیه آگهی، کادرهای ویژه و نردبان‌ها',
+    );
+    const { tree } = await mount();
+    const text = allText(tree.root);
+    expect(text).toContain(prs.account.balanceTitle);
+    expect(text).toContain(prs.account.balanceHint);
+    // The standalone card (and the counts it showed) is gone.
+    expect(tree.root.findAllByProps({ testID: 'balance-card' })).toHaveLength(
+      0,
+    );
+    expect(text).not.toContain(
+      prs.account.balanceLadders.replace('{{count}}', ''),
+    );
+  });
+
+  it('is the second line of the upgrade group, right under «ارتقای حساب و خرید اشتراک», with the same row design', async () => {
+    const { tree } = await mount();
+    const group = tree.root.findAll(
+      node =>
+        typeof node.type === 'string' && node.props.testID === 'upgrade-group',
+    )[0];
+    const text = allText(group);
+    expect(text.indexOf(prs.nav.upgrade)).toBeGreaterThan(-1);
+    expect(text.indexOf(prs.account.balanceTitle)).toBeGreaterThan(
+      text.indexOf(prs.nav.upgrade),
+    );
+    expect(text).toContain(prs.account.balanceHint);
+    // Same kind of line as the feedback and about lines: a pressable row with a label and a hint.
+    const feedback = pressableWith(tree.root, prs.account.feedback);
+    expect(rowOf(tree).props.accessibilityRole).toBe(
+      feedback.props.accessibilityRole,
+    );
+    expect(rowOf(tree).type).toBe(feedback.type);
+  });
+
+  it('opens the balance screen', async () => {
+    const { tree, nav } = await mount();
+    await press(tree.root, prs.account.balanceTitle);
+    expect(nav.navigate).toHaveBeenCalledWith('Balance');
+  });
+
+  it('asks the server for nothing itself: the numbers live on the balance screen', async () => {
+    mockApi(fetchMock, {});
+    await mount();
+    expect(callsTo(fetchMock).map(c => c.path)).not.toContain('/wallet');
+  });
+
+  it('is not shown to a signed-out visitor', async () => {
+    mockAuth = { status: 'signedOut', user: null };
+    const { tree } = await mount();
+    expect(allText(tree.root)).not.toContain(prs.account.balanceTitle);
   });
 });

@@ -9,6 +9,7 @@ import AddPropertyScreen from '../screens/property/AddPropertyScreen';
 import PropertyDetailsScreen from '../screens/property/PropertyDetailsScreen';
 import CheckoutScreen from '../screens/payments/CheckoutScreen';
 import UpgradeScreen from '../screens/payments/UpgradeScreen';
+import BalanceScreen from '../screens/account/BalanceScreen';
 import ReferralScreen from '../screens/referral/ReferralScreen';
 import SavedListingsScreen from '../screens/saved/SavedListingsScreen';
 import SplashScreen from '../screens/splash/SplashScreen';
@@ -78,6 +79,11 @@ export default function RootNavigator() {
         name="Upgrade"
         component={UpgradeScreen}
         options={{ title: t('nav.upgrade') }}
+      />
+      <Stack.Screen
+        name="Balance"
+        component={BalanceScreen}
+        options={{ title: t('account.balanceTitle') }}
       />
       <Stack.Screen
         name="Referral"

@@ -213,6 +213,7 @@ describe('the unit: the shared validation', () => {
     bathrooms: 2,
     province: 'کابل',
     address: 'کابل، شهر نو',
+    description: 'خانه نو',
   };
 
   it('accepts a listing with no unit, a null unit, and a written unit', () => {

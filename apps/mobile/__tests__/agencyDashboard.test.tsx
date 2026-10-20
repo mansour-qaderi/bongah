@@ -43,7 +43,12 @@ const agencyUser = {
 };
 const PRICING = {
   currency: 'AFGHANI',
-  subscription: { MONTHLY: 1000, QUARTERLY: 2700, SEMIANNUAL: 5000, YEARLY: 9600 },
+  subscription: {
+    MONTHLY: 1000,
+    QUARTERLY: 2700,
+    SEMIANNUAL: 5000,
+    YEARLY: 9600,
+  },
   ladder: 50,
   featured_ad: 100,
   map_location: 30,
@@ -234,9 +239,7 @@ describe('AgencyDashboardScreen', () => {
     expect(text).toContain(prs.dashboard.subscriptionInactive);
     expect(text).not.toContain(prs.dashboard.renew); // no running plan to renew
     await press(tree.root, prs.dashboard.subscribe);
-    expect(nav.navigate).toHaveBeenCalledWith('Checkout', {
-      tab: 'subscription',
-    });
+    expect(nav.navigate).toHaveBeenCalledWith('Upgrade');
   });
 
   it('has quick actions to post a property and to manage the listings', async () => {
@@ -311,10 +314,10 @@ describe('AgencyDashboardScreen', () => {
     await settle();
     expect(allText(tree.root)).toContain(prs.promotion.title);
 
-    await press(tree.root, prs.checkout.pay); // "Ladder" is preselected
+    await press(tree.root, prs.checkout.pay); // the featured frame is the only offer
     await settle();
     expect(posts('/hesabpay/payments')[0].body).toEqual({
-      purpose: 'LADDER',
+      purpose: 'FEATURED_AD',
       property_id: L2,
     });
     expect(openUrl).toHaveBeenCalledWith('https://pay.example/x');
@@ -340,7 +343,7 @@ describe('PromotionSheet', () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it('offers both promotions at the server’s prices', async () => {
+  it('offers the featured frame only, at the server’s price, with the top-of-list sentence and no ladder', async () => {
     mockApi(fetchMock, payRoutes('PENDING'));
     const tree = await render(
       withQuery(<PromotionSheet property={property} onClose={jest.fn()} />),
@@ -348,10 +351,13 @@ describe('PromotionSheet', () => {
     await settle();
     const text = allText(tree.root);
     expect(text).toContain('خانه حویلی');
-    expect(text).toContain(prs.checkout.ladder);
-    expect(text).toContain(prs.checkout.featured);
-    expect(text).toContain(formatCurrency(50));
+    expect(text).toContain(prs.frame.title);
     expect(text).toContain(formatCurrency(100));
+    expect(text).toContain(
+      '۷ روز با نشان و کادر ویژه به بالای فهرست نمایش داده می‌شود',
+    );
+    expect(text).not.toContain('نردبان');
+    expect(text).not.toContain(formatCurrency(50));
   });
 
   it('buys a featured ad with only the purpose and the listing id (the server sets the price)', async () => {
@@ -360,7 +366,6 @@ describe('PromotionSheet', () => {
       withQuery(<PromotionSheet property={property} onClose={jest.fn()} />),
     );
     await settle();
-    await press(tree.root, prs.checkout.featured);
     await press(tree.root, prs.checkout.pay);
     await settle();
 
@@ -405,7 +410,7 @@ describe('PromotionSheet', () => {
 
     await press(tree.root, prs.common.retry);
     await settle();
-    expect(allText(tree.root)).toContain(prs.promotion.choose); // back to choosing
+    expect(allText(tree.root)).toContain(prs.frame.title); // back to the offer
   });
 
   it('reports a refused payment (not your listing, provider down) in the person’s language', async () => {
@@ -545,7 +550,7 @@ describe('PropertyDetailsScreen: view counting', () => {
     await settle();
     await press(tree.root, prs.property.promote);
     await settle();
-    expect(allText(tree.root)).toContain(prs.promotion.choose);
+    expect(allText(tree.root)).toContain(prs.frame.title);
     expect(nav.navigate).not.toHaveBeenCalled();
   });
 });

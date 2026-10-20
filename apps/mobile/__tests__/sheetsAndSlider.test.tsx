@@ -271,6 +271,14 @@ describe('FilterSheet', () => {
       '',
     );
 
+  const unitWords = (tree: ReactTestRenderer.ReactTestRenderer) =>
+    tree.root
+      .findAll(
+        node =>
+          node.props.testID === 'field-unit' && typeof node.type === 'string',
+      )
+      .map(node => allText(node));
+
   it('slides up with compact chips, a price range and an apply button', async () => {
     const { tree } = await open();
     const text = allText(tree.root);
@@ -290,8 +298,13 @@ describe('FilterSheet', () => {
     expect(text).not.toContain(prs.home.priceFromTo.split('{{from}}')[0] + ' ');
     const hint = (label: string) =>
       inputLabelled(tree.root, label).props.placeholder as string;
-    expect(hint(prs.home.minPrice)).toBe('۱۰۰۰');
-    expect(hint(prs.home.maxPrice)).toBe('۱۰۰۰۰۰۰');
+    // The hint is the example amount; the currency is the word written beside it, inside the box («افغانی»).
+    expect(hint(prs.home.minPrice)).toBe(`${prs.home.minPrice} ۱,۰۰۰`);
+    expect(hint(prs.home.maxPrice)).toBe(`${prs.home.maxPrice} ۱,۰۰۰,۰۰۰`);
+    expect(unitWords(tree)).toEqual([
+      prs.currency.AFGHANI,
+      prs.currency.AFGHANI,
+    ]);
     for (const input of tree.root.findAllByType(TextInput)) {
       expect(String(input.props.placeholder ?? '')).not.toBe('۰');
     }
@@ -302,9 +315,12 @@ describe('FilterSheet', () => {
   it('changes the price examples with the currency', async () => {
     const { tree } = await open();
     await tap(tree, prs.currency.USD);
-    expect(inputLabelled(tree.root, prs.home.minPrice).props.placeholder).toBe(
-      '۱۰۰۰',
-    );
+    const hint = (label: string) =>
+      inputLabelled(tree.root, label).props.placeholder as string;
+    // «حداقل ۱,۰۰۰» and «حداکثر ۱۰,۰۰۰», each with «دالر» beside it.
+    expect(hint(prs.home.minPrice)).toBe(`${prs.home.minPrice} ۱,۰۰۰`);
+    expect(hint(prs.home.maxPrice)).toBe(`${prs.home.maxPrice} ۱۰,۰۰۰`);
+    expect(unitWords(tree)).toEqual([prs.currency.USD, prs.currency.USD]);
   });
 
   it('says the range in words only for the ends that are set', async () => {

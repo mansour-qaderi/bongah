@@ -8,7 +8,7 @@ import {
 } from '@nestjs/common';
 import { SUBSCRIPTION_PLAN_BENEFITS } from '@bongah/shared-types';
 import { findActiveSubscription } from '../agencies/subscription.js';
-import { Prisma, PropertyStatus, Role } from '../generated/prisma/client.js';
+import { DealType, Prisma, PropertyStatus, Role } from '../generated/prisma/client.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import type { CreatePropertyDto } from './dto/create-property.dto.js';
 import type { ListPropertiesDto, PaginationDto } from './dto/list-properties.dto.js';
@@ -202,12 +202,14 @@ export class PropertyService {
         neighborhood,
         address,
         unit,
+        mortgage_months,
+        price_terms,
         ...rest
       } = input;
       const created = await tx.property.create({
         data: {
           ...rest,
-          description: description ?? '',
+          description,
           district: district ?? '',
           neighborhood: neighborhood ?? null,
           address: address ?? '',
@@ -215,6 +217,8 @@ export class PropertyService {
           agencyId,
           unit: unit || null,
           dealType: deal_type,
+          mortgageMonths: mortgage_months ?? null,
+          priceTerms: price_terms ?? null,
           areaSqm: area_sqm,
           bedrooms: bedrooms ?? null,
           bathrooms: bathrooms ?? null,
@@ -239,11 +243,12 @@ export class PropertyService {
    */
   async update(userId: string, id: string, input: UpdatePropertyDto): Promise<PropertyDto> {
     const now = new Date();
-    const { deal_type, area_sqm, unit, ...rest } = input;
+    const { deal_type, area_sqm, unit, mortgage_months, price_terms, ...rest } = input;
 
     const row = await this.prisma.$transaction(async (tx) => {
-      const locked = await tx.$queryRaw<{ user_id: string; removed_by_admin_at: Date | null }[]>`
-        SELECT user_id, removed_by_admin_at FROM properties WHERE id = ${id}::uuid FOR UPDATE`;
+      const locked = await tx.$queryRaw<
+        { user_id: string; removed_by_admin_at: Date | null; deal_type: DealType }[]
+      >`SELECT user_id, removed_by_admin_at, deal_type FROM properties WHERE id = ${id}::uuid FOR UPDATE`;
       if (locked.length === 0) throw new NotFoundException('Property not found.');
       const actorRole = await this.assertCanModify(tx, userId, locked[0].user_id);
       // A listing an admin took down stays down: only an admin can touch it (restore it, say).
@@ -254,10 +259,23 @@ export class PropertyService {
         });
       }
 
+      // A mortgage duration belongs to a mortgage listing: the deal after this edit decides. Moving a listing to
+      // another deal drops the duration it had; naming one for a deal that has none is refused.
+      const dealAfter = deal_type ?? locked[0].deal_type;
+      if (mortgage_months != null && dealAfter !== DealType.MORTGAGE_GROWI) {
+        throw new BadRequestException({
+          message: 'A duration is only for a mortgage listing.',
+          errors: [{ field: 'mortgage_months', message: 'A duration is only for a mortgage listing' }],
+        });
+      }
+      const clearsMonths = dealAfter !== DealType.MORTGAGE_GROWI;
+
       return tx.property.update({
         where: { id },
         data: {
           ...rest,
+          ...(price_terms !== undefined ? { priceTerms: price_terms } : {}),
+          ...(mortgage_months !== undefined || clearsMonths ? { mortgageMonths: clearsMonths ? null : mortgage_months } : {}),
           // A blank unit clears it, like null does.
           ...(unit !== undefined ? { unit: unit || null } : {}),
           ...(deal_type !== undefined ? { dealType: deal_type } : {}),

@@ -19,7 +19,12 @@ interface Props {
  * The card shown once, on a new account's first visit: a welcome, thanks, and a line of gratitude. Presentational
  * only: WelcomeGate decides when it appears and what closing it does.
  */
-export default function WelcomeModal({ visible, quote, onStart, onClose }: Props) {
+export default function WelcomeModal({
+  visible,
+  quote,
+  onStart,
+  onClose,
+}: Props) {
   const { t } = useTranslation();
   return (
     <Modal
@@ -46,16 +51,29 @@ export default function WelcomeModal({ visible, quote, onStart, onClose }: Props
           </AppText>
 
           <View style={styles.quoteBox} testID="welcome-quote">
-            <AppText variant="heading" color={colors.primaryDark} style={styles.center}>
+            <AppText
+              variant="heading"
+              color={colors.primaryDark}
+              style={styles.center}
+            >
               {quote}
             </AppText>
           </View>
 
-          <AppText variant="caption" color={colors.textMuted} style={styles.center}>
+          <AppText
+            variant="caption"
+            color={colors.textMuted}
+            style={styles.center}
+          >
             {t('welcome.notifyHint')}
           </AppText>
 
-          <Button title={t('welcome.start')} onPress={onStart} style={styles.start} />
+          <Button
+            icon="arrow"
+            title={t('welcome.start')}
+            onPress={onStart}
+            style={styles.start}
+          />
           <Pressable
             accessibilityRole="button"
             onPress={onClose}

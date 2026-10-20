@@ -227,7 +227,8 @@ async function addRooms(root: ReactTestRenderer.ReactTestInstance) {
 /** Fills in everything the form requires when there is no pin: the one written address included. */
 async function fillForm(root: ReactTestRenderer.ReactTestInstance) {
   await type(root, prs.add.titleField, 'آپارتمان سه‌خوابه');
-  await type(root, prs.add.price, '1200000');
+  await type(root, prs.add.descriptionLabel, 'خانه نو با دو اتاق خواب');
+  await type(root, prs.dealPrice.SALE, '1200000');
   await type(root, prs.add.area, '120');
   await addRooms(root);
   await type(root, prs.add.address, WRITTEN_ADDRESS);
@@ -237,7 +238,8 @@ async function fillForm(root: ReactTestRenderer.ReactTestInstance) {
 /** The same, up to and including the basics and the rooms, but no address at all: the pin is meant to supply it. */
 async function fillBasics(root: ReactTestRenderer.ReactTestInstance) {
   await type(root, prs.add.titleField, 'آپارتمان سه‌خوابه');
-  await type(root, prs.add.price, '1200000');
+  await type(root, prs.add.descriptionLabel, 'خانه نو با دو اتاق خواب');
+  await type(root, prs.dealPrice.SALE, '1200000');
   await type(root, prs.add.area, '120');
   await addRooms(root);
 }
@@ -305,7 +307,8 @@ describe('AddPropertyScreen: location is free and has two ways in', () => {
     const tree = await render(screenElement(AddPropertyScreen, navigation()));
     await settle();
     await type(tree.root, prs.add.titleField, 'آپارتمان سه‌خوابه');
-    await type(tree.root, prs.add.price, '1200000');
+    await type(tree.root, prs.add.descriptionLabel, 'خانه نو با دو اتاق خواب');
+    await type(tree.root, prs.dealPrice.SALE, '1200000');
     await type(tree.root, prs.add.area, '120');
     await type(tree.root, prs.add.address, WRITTEN_ADDRESS);
     await press(tree.root, prs.home.selectProvince);
@@ -337,7 +340,8 @@ describe('AddPropertyScreen: location is free and has two ways in', () => {
     await press(tree.root, prs.propertyType.LAND);
     expect(allText(tree.root)).not.toContain(prs.add.bedrooms);
     await type(tree.root, prs.add.titleField, 'زمین رهایشی');
-    await type(tree.root, prs.add.price, '900000');
+    await type(tree.root, prs.add.descriptionLabel, 'خانه نو با دو اتاق خواب');
+    await type(tree.root, prs.dealPrice.SALE, '900000');
     await type(tree.root, prs.add.area, '300');
     await type(tree.root, prs.add.address, WRITTEN_ADDRESS);
     await press(tree.root, prs.home.selectProvince);
@@ -518,12 +522,17 @@ describe('AddPropertyScreen: the form itself', () => {
     expect(allText(tree.root)).not.toContain(prs.add.bedrooms);
   });
 
-  it('treats the description as optional', async () => {
+  it('needs a description: without one nothing is posted, with one it is', async () => {
     answerGeocoder(KABUL_SPOT, routes);
     const tree = await render(screenElement(AddPropertyScreen, navigation()));
     await settle();
-    expect(allText(tree.root)).toContain(prs.add.descriptionField);
-    await fillForm(tree.root); // fillForm leaves the description empty
+    expect(allText(tree.root)).toContain(prs.add.descriptionLabel);
+    await fillForm(tree.root);
+    await type(tree.root, prs.add.descriptionLabel, '');
+    await press(tree.root, prs.add.submit);
+    await settle();
+    expect(posted()).toBeUndefined();
+    await type(tree.root, prs.add.descriptionLabel, 'خانه نو با دو اتاق خواب');
     await press(tree.root, prs.add.submit);
     await settle();
     expect(posted()).toBeDefined();
@@ -558,10 +567,13 @@ describe('AddPropertyScreen: a sliding sheet with friendly hints', () => {
     const footer = tree.root.findAll(
       n =>
         typeof n.type === 'string' &&
-        StyleSheet.flatten(n.props.style)?.borderTopWidth === 1 &&
+        n.props.testID === 'sheet-footer' &&
         allText(n).includes(prs.add.submit),
     );
     expect(footer.length).toBeGreaterThan(0);
+    // No rule above the button: the footer is told apart by space, not by a line.
+    const edge = StyleSheet.flatten(footer[0].props.style);
+    expect(edge?.borderTopWidth ?? 0).toBe(0);
   });
 
   it('closes by sliding away first and only then leaves the route', async () => {
@@ -654,15 +666,16 @@ describe('AddPropertyScreen: a sliding sheet with friendly hints', () => {
     const { root } = tree;
     for (const label of [
       prs.add.titleField,
-      prs.add.price,
+      prs.dealPrice.SALE,
       prs.add.area,
-      prs.add.descriptionField,
+      prs.add.descriptionLabel,
     ]) {
       expect(placeholderOf(root, label)).toBeTruthy();
     }
-    expect(placeholderOf(root, prs.add.price)).toBe('۲,۵۰۰,۰۰۰');
+    expect(placeholderOf(root, prs.dealPrice.SALE)).toBe('۲,۵۰۰,۰۰۰');
+    // Only the number is the hint; the unit is chosen in the tabs beside the field.
     expect(placeholderOf(root, prs.add.area)).toBe('۲۰۰');
-    expect(placeholderOf(root, prs.add.descriptionField)).toBe(
+    expect(placeholderOf(root, prs.add.descriptionLabel)).toBe(
       prs.add.descriptionPlaceholder,
     );
     expect(placeholderOf(root, prs.add.address)).toBe(
@@ -677,7 +690,7 @@ describe('AddPropertyScreen: a sliding sheet with friendly hints', () => {
   it('shows a dollar example once dollars are chosen, and a jerib example for jerib', async () => {
     const { tree } = await open();
     await press(tree.root, prs.currency.USD);
-    expect(placeholderOf(tree.root, prs.add.price)).toBe('۲۵,۰۰۰');
+    expect(placeholderOf(tree.root, prs.dealPrice.SALE)).toBe('۲۵,۰۰۰');
     await pressTab(tree.root, prs.unit.jerib);
     expect(placeholderOf(tree.root, prs.add.area)).toBe('۲');
   });
@@ -721,6 +734,8 @@ describe('AddPropertyScreen: editing my listing', () => {
     expect(geocoderCalls()).toHaveLength(0); // loading a pin is not placing one
 
     await type(tree.root, prs.add.titleField, 'آپارتمان تازه');
+
+    await type(tree.root, prs.add.descriptionLabel, 'خانه نو با دو اتاق خواب');
     await press(tree.root, prs.add.save);
     await settle();
     const patch = callsTo(fetchMock).find(c => c.method === 'PATCH');

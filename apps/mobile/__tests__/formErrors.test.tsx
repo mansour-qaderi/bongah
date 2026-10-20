@@ -207,7 +207,8 @@ async function addRooms(root: ReactTestRenderer.ReactTestInstance) {
 /** Fills in everything the form requires when there is no pin: the one written address included. */
 async function fillForm(root: ReactTestRenderer.ReactTestInstance) {
   await type(root, prs.add.titleField, 'آپارتمان سه‌خوابه');
-  await type(root, prs.add.price, '1200000');
+  await type(root, prs.add.descriptionLabel, 'خانه نو با دو اتاق خواب');
+  await type(root, prs.dealPrice.SALE, '1200000');
   await type(root, prs.add.area, '120');
   await addRooms(root);
   await type(root, prs.add.address, WRITTEN_ADDRESS);
@@ -217,14 +218,16 @@ async function fillForm(root: ReactTestRenderer.ReactTestInstance) {
 /** The same, up to and including the basics and the rooms, but no address at all: the pin is meant to supply it. */
 async function fillBasics(root: ReactTestRenderer.ReactTestInstance) {
   await type(root, prs.add.titleField, 'آپارتمان سه‌خوابه');
-  await type(root, prs.add.price, '1200000');
+  await type(root, prs.add.descriptionLabel, 'خانه نو با دو اتاق خواب');
+  await type(root, prs.dealPrice.SALE, '1200000');
   await type(root, prs.add.area, '120');
   await addRooms(root);
 }
 /** The same as `fillForm` for a type with no rooms to count (land, a garden, a garage). */
 async function fillFormWithoutRooms(root: ReactTestRenderer.ReactTestInstance) {
   await type(root, prs.add.titleField, 'گاراج بزرگ');
-  await type(root, prs.add.price, '1200000');
+  await type(root, prs.add.descriptionLabel, 'خانه نو با دو اتاق خواب');
+  await type(root, prs.dealPrice.SALE, '1200000');
   await type(root, prs.add.area, '120');
   await type(root, prs.add.address, WRITTEN_ADDRESS);
   await press(root, prs.home.selectProvince);
@@ -457,7 +460,7 @@ describe('AddPropertyScreen: what is wrong is said where it is wrong', () => {
   it('says what a good price looks like, not just that it is wrong', async () => {
     const tree = await open();
     await fillForm(tree.root);
-    await type(tree.root, prs.add.price, '0');
+    await type(tree.root, prs.dealPrice.SALE, '0');
     await press(tree.root, prs.add.submit);
     await settle();
     expect(allText(tree.root)).toContain(prs.add.error.price);
@@ -639,6 +642,7 @@ describe('the form and the API agree on what a property type is', () => {
       area_sqm: 100,
       province: 'کابل',
       address: 'سرک چهارم',
+      description: 'خانه نو',
     };
     for (const type of PROPERTY_TYPES) {
       expect(createPropertySchema.safeParse({ ...base, type }).success).toBe(
@@ -795,7 +799,7 @@ describe('the price is written back under its box, with its currency', () => {
 
   it('writes the amount in Persian digits, grouped, with the currency word, and follows the currency', async () => {
     const tree = await open();
-    await type(tree.root, prs.add.price, '25000');
+    await type(tree.root, prs.dealPrice.SALE, '25000');
     expect(helperOf(tree.root)).toContain(`۲۵,۰۰۰ ${prs.currency.AFGHANI}`);
     await press(tree.root, prs.currency.USD);
     expect(helperOf(tree.root)).toContain(`۲۵,۰۰۰ ${prs.currency.USD}`);
@@ -804,13 +808,13 @@ describe('the price is written back under its box, with its currency', () => {
 
   it('grows with every digit', async () => {
     const tree = await open();
-    await type(tree.root, prs.add.price, '3254123');
+    await type(tree.root, prs.dealPrice.SALE, '3254123');
     expect(helperOf(tree.root)).toContain(`۳,۲۵۴,۱۲۳ ${prs.currency.AFGHANI}`);
   });
 
   it('looks like the area line: same kind of text under its box', async () => {
     const tree = await open();
-    await type(tree.root, prs.add.price, '25000');
+    await type(tree.root, prs.dealPrice.SALE, '25000');
     await type(tree.root, prs.add.area, '200');
     const text = helperOf(tree.root);
     expect(text).toContain(`۲۰۰ ${prs.unit.sqm}`);
@@ -827,7 +831,7 @@ describe('the description goes out as typed and is read back as typed', () => {
     const tree = await render(screenElement(AddPropertyScreen, navigation()));
     await settle();
     await fillForm(tree.root);
-    await type(tree.root, prs.add.descriptionField, written);
+    await type(tree.root, prs.add.descriptionLabel, written);
     await press(tree.root, prs.add.submit);
     await settle();
     expect(posted()?.body.description).toBe(
@@ -835,16 +839,38 @@ describe('the description goes out as typed and is read back as typed', () => {
     );
   });
 
-  it('is in the post as an empty string when nothing was written', async () => {
+  it('is required: a form with no description (or only blanks) is not posted, and says so under its box', async () => {
     answerGeocoder(KABUL_SPOT, {
       'POST /properties': { status: 201, body: listing() },
     });
     const tree = await render(screenElement(AddPropertyScreen, navigation()));
     await settle();
     await fillForm(tree.root);
-    await press(tree.root, prs.add.submit);
+    // fillForm writes one; take it back out, then try again with only spaces.
+    for (const text of ['', '   \n  ']) {
+      await type(tree.root, prs.add.descriptionLabel, text);
+      await press(tree.root, prs.add.submit);
+      await settle();
+      expect(posted()).toBeUndefined();
+      expect(allText(toastOf(tree.root))).toContain(
+        `${prs.add.descriptionLabel}: ${prs.add.required}`,
+      );
+    }
+  });
+
+  it('marks the box with a red asterisk and no longer calls it optional', async () => {
+    const tree = await render(screenElement(AddPropertyScreen, navigation()));
     await settle();
-    expect(posted()?.body.description).toBe('');
+    const label = tree.root
+      .findAll(
+        n => typeof n.type === 'string' && n.props.testID === 'label-row',
+      )
+      .find(row => allText(row).includes(prs.add.descriptionLabel));
+    expect(label).toBeDefined();
+    expect(allText(label!)).toMatch(
+      new RegExp(`${prs.add.descriptionLabel}\\s+\\*`),
+    );
+    expect(allText(label!)).not.toContain(prs.common.optional);
   });
 
   it('comes back into the edit form, and an untouched save sends it unchanged', async () => {
@@ -860,7 +886,7 @@ describe('the description goes out as typed and is read back as typed', () => {
       }),
     );
     await settle();
-    expect(inputLabelled(tree.root, prs.add.descriptionField).props.value).toBe(
+    expect(inputLabelled(tree.root, prs.add.descriptionLabel).props.value).toBe(
       text,
     );
     await press(tree.root, prs.add.save);
@@ -923,8 +949,9 @@ describe("when this month's free listing is used up", () => {
   it('has the upgrade button on it, and the button leads to the plans', async () => {
     const nav = navigation();
     const tree = await submitToLimit(nav);
-    expect(allText(tree.root)).toContain('ارتقای حساب / خرید نردبان');
-    await press(tree.root, prs.add.upgrade);
+    expect(allText(tree.root)).toContain(prs.add.upgradeAccount);
+    expect(allText(tree.root)).not.toContain('نردبان');
+    await press(tree.root, prs.add.upgradeAccount);
     await act(async () => {
       await new Promise<void>(resolve => setTimeout(() => resolve(), 600));
     });
@@ -1025,7 +1052,11 @@ describe('the welcome gift on the listing form', () => {
 
   it('asks for the account again after a new listing even with no gift, because a bonus credit may have been spent', async () => {
     const updateUser = jest.fn(async () => undefined);
-    mockAuth = { status: 'signedIn', user, updateUser } as unknown as typeof mockAuth;
+    mockAuth = {
+      status: 'signedIn',
+      user,
+      updateUser,
+    } as unknown as typeof mockAuth;
     answerGeocoder(KABUL_SPOT, {
       'POST /properties': { status: 201, body: listing() },
     });

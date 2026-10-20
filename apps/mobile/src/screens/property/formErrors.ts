@@ -16,6 +16,8 @@ export const FORM_FIELDS = [
   'deal_type',
   'price',
   'currency',
+  'mortgage_months',
+  'price_terms',
   'area_sqm',
   'bedrooms',
   'bathrooms',
@@ -35,13 +37,15 @@ const LABEL_KEYS = {
   deal_type: 'add.deal',
   price: 'add.price',
   currency: 'add.currency',
+  mortgage_months: 'mortgage.label',
+  price_terms: 'priceTerms.label',
   area_sqm: 'add.area',
   bedrooms: 'add.bedrooms',
   bathrooms: 'add.bathrooms',
   location: 'add.location',
   province: 'add.province',
   address: 'add.address',
-  description: 'add.descriptionField',
+  description: 'add.descriptionLabel',
   images: 'add.images',
 } as const satisfies Record<FormField, string>;
 
@@ -61,6 +65,8 @@ export function formFieldFor(name: string): FormField | null {
     case 'title':
     case 'price':
     case 'currency':
+    case 'mortgage_months':
+    case 'price_terms':
     case 'bedrooms':
     case 'bathrooms':
     case 'province':
@@ -114,6 +120,10 @@ export function fieldMessage(
       return t('add.error.price');
     case 'currency':
       return t('add.error.currency');
+    case 'mortgage_months':
+      return t('mortgage.error');
+    case 'price_terms':
+      return t('priceTerms.error');
     case 'area_sqm':
       return t('add.error.area');
     case 'bedrooms':

@@ -165,6 +165,7 @@ export default function OtpScreen({ navigation, route }: Props) {
 
       {referralRejected ? (
         <Button
+          icon="arrow"
           title={t('auth.continueWithoutReferral')}
           variant="outline"
           onPress={() => submit(true)}

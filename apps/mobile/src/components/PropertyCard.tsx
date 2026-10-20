@@ -9,6 +9,7 @@ import { colors, spacing, surfaces } from '../theme';
 import AppText from './AppText';
 import Badge, { badgeTones, DealBadge } from './Badge';
 import BookmarkButton from './BookmarkButton';
+import CircleIconButton from './CircleIconButton';
 import Icon from './Icon';
 import Price from './Price';
 import PropertyFacts, { propertyPlace } from './PropertyFacts';
@@ -29,7 +30,10 @@ const MEDIA_HEIGHT = 188;
  * - body, top to bottom: the title (the biggest text on the card), the price (the figure with its ؋ sign), the place
  *   with a pin icon, and the facts as a grid, two to a row: the kind and the area above, the bedrooms and the
  *   bathrooms below, each with its own icon. My Listings and the details page show the same four in the same grid;
- * - footer: one share button that opens the phone's share sheet (WhatsApp included).
+ * - the corner of the picture at the other edge holds two round buttons, one under the other, in the same white disc:
+ *   the bookmark ribbon, and Share, which opens the phone's share sheet (WhatsApp included);
+ * - the foot of the card is the listing's description (a few lines, cut with an ellipsis). A listing with no description
+ *   shows nothing there at all: the section collapses.
  */
 export default function PropertyCard({ property, onPress }: Props) {
   const { t } = useTranslation();
@@ -38,6 +42,7 @@ export default function PropertyCard({ property, onPress }: Props) {
   const image = property.images[0];
 
   const place = propertyPlace(property, format.province);
+  const description = property.description?.trim() ?? '';
 
   return (
     <View style={[styles.card, property.is_featured && styles.featured]}>
@@ -107,29 +112,34 @@ export default function PropertyCard({ property, onPress }: Props) {
               </AppText>
             </View>
           ) : null}
-          <PropertyFacts property={property} withType layout="grid" />
+          <PropertyFacts
+            property={property}
+            withType
+            layout="grid"
+            divider={false}
+          />
+          {description ? (
+            <AppText
+              variant="bodySm"
+              color={colors.textSecondary}
+              numberOfLines={3}
+              style={styles.description}
+              testID="card-description"
+            >
+              {description}
+            </AppText>
+          ) : null}
         </View>
       </Pressable>
 
-      <BookmarkButton
-        propertyId={property.id}
-        title={property.title}
-        style={styles.bookmark}
-      />
-
-      <View style={styles.footer}>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={`${t('property.share')}: ${property.title}`}
+      <View style={styles.corner}>
+        <BookmarkButton propertyId={property.id} title={property.title} />
+        <CircleIconButton
+          testID={`share-${property.id}`}
+          icon="share"
+          label={`${t('property.share')}: ${property.title}`}
           onPress={() => share(property)}
-          hitSlop={6}
-          style={({ pressed }) => [styles.share, pressed && styles.pressed]}
-        >
-          <Icon name="share" size={18} color={colors.primary} weight={1.9} />
-          <AppText variant="label" color={colors.primary}>
-            {t('property.share')}
-          </AppText>
-        </Pressable>
+        />
       </View>
     </View>
   );
@@ -161,22 +171,16 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
     alignItems: 'flex-start',
   },
-  bookmark: { position: 'absolute', top: spacing.md, end: spacing.md },
-  body: { padding: spacing.lg, paddingBottom: spacing.md, gap: spacing.sm },
+  // Top of the picture at the end edge: the bookmark, and the share button under it.
+  corner: {
+    position: 'absolute',
+    top: spacing.md,
+    end: spacing.md,
+    gap: spacing.sm,
+  },
+  body: { padding: spacing.lg, gap: spacing.sm },
   price: { lineHeight: 34 },
   place: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
   placeText: { flexShrink: 1 },
-  footer: {
-    flexDirection: 'row',
-    justifyContent: 'flex-start',
-    paddingHorizontal: spacing.lg,
-    borderTopWidth: 1,
-    borderTopColor: colors.border,
-  },
-  share: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-    minHeight: 44,
-  },
+  description: { marginTop: spacing.xs },
 });

@@ -1,5 +1,5 @@
 import React from 'react';
-import { StyleSheet, View } from 'react-native';
+import { Share, StyleSheet, View } from 'react-native';
 import ReactTestRenderer from 'react-test-renderer';
 import i18next from 'i18next';
 import type { Property } from '@bongah/shared-types';
@@ -169,7 +169,7 @@ describe('PropertyCard hierarchy', () => {
     expect(allText(facts)).not.toContain(prs.property.bathrooms);
   });
 
-  it('keeps the badges on the picture at the start edge and gives the other edge to the bookmark', async () => {
+  it('keeps the badges on the picture at the start edge and gives the other edge to the bookmark and Share, one under the other', async () => {
     const { tree } = await card(property({ is_featured: true }));
     const badges = hosts(
       tree.root,
@@ -179,9 +179,95 @@ describe('PropertyCard hierarchy', () => {
     )[0];
     expect(allText(badges)).toContain(prs.property.featured);
     expect(styleOf(badges).end).toBeUndefined();
+    // Both live in one corner box pinned to the end edge of the picture: the innermost absolute box holding both.
+    const corners = hosts(
+      tree.root,
+      n =>
+        styleOf(n).position === 'absolute' &&
+        n.findAll(m => m.props.testID === 'bookmark-p1').length > 0 &&
+        n.findAll(m => m.props.testID === 'share-p1').length > 0,
+    );
+    const corner = corners[corners.length - 1];
+    expect(styleOf(corner).end).toBeDefined();
+    expect(styleOf(corner).start).toBeUndefined();
+    // The bookmark first, Share under it (a column: no row direction).
+    expect(styleOf(corner).flexDirection ?? 'column').toBe('column');
+    const text = JSON.stringify(
+      corner.findAll(m => typeof m.type === 'string').map(m => m.props.testID),
+    );
+    expect(text.indexOf('bookmark-p1')).toBeGreaterThan(-1);
+    expect(text.indexOf('bookmark-p1')).toBeLessThan(text.indexOf('share-p1'));
+  });
+
+  it('draws Share as a round icon in the same white disc as the bookmark, with no words on it', async () => {
+    const { tree } = await card();
     const bookmark = hosts(tree.root, n => n.props.testID === 'bookmark-p1')[0];
-    expect(styleOf(bookmark).position).toBe('absolute');
-    expect(styleOf(bookmark).end).toBeDefined();
+    const share = hosts(tree.root, n => n.props.testID === 'share-p1')[0];
+    for (const key of [
+      'width',
+      'height',
+      'borderRadius',
+      'borderWidth',
+      'borderColor',
+      'backgroundColor',
+    ]) {
+      expect(styleOf(share)[key]).toBe(styleOf(bookmark)[key]);
+    }
+    expect(share.props.accessibilityLabel).toBe(
+      `${prs.property.share}: خانه سه خوابه در شهر نو`,
+    );
+    expect(allText(share)).toBe('');
+    expect(share.findAll(n => n.props.name === 'share').length).toBeGreaterThan(
+      0,
+    );
+    // The old pill at the foot of the card is gone: the word «اشتراک‌گذاری» is not on the card at all.
+    expect(allText(tree.root)).not.toContain(prs.property.share);
+  });
+
+  it('opens the share sheet from the corner icon', async () => {
+    const shareSpy = jest
+      .spyOn(Share, 'share')
+      .mockResolvedValue({ action: 'dismissedAction' } as never);
+    const { tree } = await card();
+    const share = tree.root.findAll(
+      n =>
+        n.props.testID === 'share-p1' && typeof n.props.onPress === 'function',
+    )[0];
+    await act(async () => {
+      share.props.onPress();
+    });
+    expect(shareSpy).toHaveBeenCalledTimes(1);
+    shareSpy.mockRestore();
+  });
+
+  it('shows the description where the share button used to be: last on the card, a few lines at most', async () => {
+    const text =
+      'خانه دو منزله با حیاط بزرگ و آب و برق شهری، نزدیک مکتب و بازار.';
+    const { tree } = await card(property({ description: `  ${text}  ` }));
+    const desc = hosts(
+      tree.root,
+      n => n.props.testID === 'card-description',
+    )[0];
+    expect(desc.props.children).toBe(text);
+    expect(desc.props.numberOfLines).toBe(3);
+    // After the facts, in reading order.
+    const all = allText(tree.root);
+    expect(all.indexOf(text)).toBeGreaterThan(all.indexOf('۲۵۳ متر مربع'));
+  });
+
+  it('collapses the description section when there is none, missing or only blanks', async () => {
+    for (const description of ['', '   ', '\n \t']) {
+      const { tree } = await card(property({ description }));
+      expect(
+        hosts(tree.root, n => n.props.testID === 'card-description'),
+      ).toHaveLength(0);
+    }
+    const { tree } = await card(
+      property({ description: undefined as unknown as string }),
+    );
+    expect(
+      hosts(tree.root, n => n.props.testID === 'card-description'),
+    ).toHaveLength(0);
   });
 });
 
@@ -294,57 +380,47 @@ describe('ListingCard badges', () => {
     );
   const statusOf = (tree: ReactTestRenderer.ReactTestRenderer) =>
     hosts(tree.root, n => n.props.testID === 'listing-status')[0];
+  const tagsOf = (tree: ReactTestRenderer.ReactTestRenderer) =>
+    hosts(tree.root, n => n.props.testID === 'listing-tags')[0];
 
-  it("puts the status in the card's top-left corner, clear of the picture and the title", async () => {
+  it("puts the status pill in the picture's own top corner, at the far (left, in RTL) edge", async () => {
     const tree = await card(property(), ['https://img.example/a.jpg']);
     const status = statusOf(tree);
     expect(allText(status)).toContain(prs.status.ACTIVE);
-    // Laid over the card's own corner: absolute, at its top and far (left, in RTL) edge.
     const style = styleOf(status);
     expect(style.position).toBe('absolute');
     expect(style.top).toBeGreaterThan(0);
     expect(style.end).toBeGreaterThan(0);
     expect(style.start).toBeUndefined();
-    // It is not inside the box of the picture (nor of the title column): it belongs to the card itself.
+    // It sits on the picture's box, which holds nothing of the title.
     const picture = tree.root.findAll(
       n => n.props.source?.uri === 'https://img.example/a.jpg',
     )[0];
     const pictureBox = picture.parent!;
-    expect(pictureBox.findAll(n => n === status)).toHaveLength(0);
+    expect(pictureBox.findAll(n => n === status)).toHaveLength(1);
     expect(allText(pictureBox)).not.toContain('خانه سه خوابه در شهر نو');
   });
 
-  it('keeps room beside the title for the status pill, so a long title never runs under it', async () => {
-    const tree = await card(property());
-    const title = hosts(
-      tree.root,
-      n => n.props.children === 'خانه سه خوابه در شهر نو',
-    );
-    expect(title).toHaveLength(1);
-    expect(styleOf(title[0]).paddingEnd).toBeGreaterThanOrEqual(80);
-  });
-
-  it('names the deal in a plain tag, with no dot, under the address', async () => {
+  it('names the deal in its tag, in the top row of the card (the far-end column, with the buttons under it), before the facts', async () => {
     const tree = await card(property({ deal_type: 'SALE' }));
-    const row = hosts(tree.root, n => n.props.testID === 'listing-badges')[0];
+    const row = tagsOf(tree);
     expect(allText(row)).toContain(prs.dealType.SALE);
-    // a pill holding the word and nothing else: no 6 x 6 round dot inside it
-    const dots = hosts(
-      row,
-      n => styleOf(n).width === 6 && styleOf(n).height === 6,
-    );
-    expect(dots).toHaveLength(0);
-    // after the place line, in reading order
+    // The tag is part of the top row beside the picture and the title, not a line of its own below them.
+    const top = hosts(tree.root, n => n.props.testID === 'listing-top')[0];
+    expect(allText(top)).toContain(prs.dealType.SALE);
+    expect(allText(top)).toContain('خانه سه خوابه در شهر نو');
+    // And it comes before the facts grid in reading order.
     const text = allText(tree.root);
-    expect(text.indexOf(prs.dealType.SALE)).toBeGreaterThan(text.indexOf('؋'));
+    expect(text.indexOf(prs.dealType.SALE)).toBeLessThan(
+      text.lastIndexOf(prs.propertyType.HOUSE_HAWILI),
+    );
   });
 
   it.each(['SALE', 'RENT', 'MORTGAGE_GROWI'] as const)(
     'shows the %s tag, not the other two',
     async deal => {
       const tree = await card(property({ deal_type: deal }));
-      const row = hosts(tree.root, n => n.props.testID === 'listing-badges')[0];
-      const text = allText(row);
+      const text = allText(tagsOf(tree));
       for (const other of ['SALE', 'RENT', 'MORTGAGE_GROWI'] as const) {
         if (other === deal) expect(text).toContain(prs.dealType[other]);
         else expect(text).not.toContain(prs.dealType[other]);
@@ -371,16 +447,12 @@ describe('ListingCard badges', () => {
 
   it('shows the "featured" badge beside the deal tag, and only for a featured listing', async () => {
     const plain = await card(property({ is_featured: false }));
-    expect(
-      allText(hosts(plain.root, n => n.props.testID === 'listing-badges')[0]),
-    ).not.toContain(prs.property.featured);
+    expect(allText(tagsOf(plain))).not.toContain(prs.property.featured);
     const featured = await card(
       property({ is_featured: true, featured_until: '2026-12-01T00:00:00Z' }),
     );
-    const row = hosts(
-      featured.root,
-      n => n.props.testID === 'listing-badges',
-    )[0];
+    const row = tagsOf(featured);
+    expect(allText(row)).toContain(prs.dealType.SALE);
     expect(allText(row)).toContain(prs.property.featured);
   });
 

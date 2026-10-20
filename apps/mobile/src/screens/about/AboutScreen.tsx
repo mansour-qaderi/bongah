@@ -93,6 +93,7 @@ export default function AboutScreen({ navigation }: Props) {
       <Card>
         <AppText color={colors.textSecondary}>{t('about.contactNote')}</AppText>
         <Button
+          icon="send"
           title={t('about.sendFeedback')}
           variant="outline"
           onPress={() => setFeedbackOpen(true)}

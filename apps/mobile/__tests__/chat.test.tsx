@@ -1056,9 +1056,8 @@ describe('TemplatesScreen', () => {
     expect(allText(tree.root)).toContain(prs.templates.lockedTitle);
     expect(requests('GET', '/chat/templates')).toHaveLength(0);
     await press(tree.root, prs.templates.subscribe);
-    expect(nav.navigate).toHaveBeenCalledWith('Checkout', {
-      tab: 'subscription',
-    });
+    // Subscriptions are bought on the account upgrade screen; the checkout screen sells only featured frames.
+    expect(nav.navigate).toHaveBeenCalledWith('Upgrade');
   });
 
   it('lists the saved replies, marks the automatic one and shows the count', async () => {

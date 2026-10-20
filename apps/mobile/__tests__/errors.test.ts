@@ -41,8 +41,9 @@ describe('errorMessage', () => {
     expect(
       errorMessage(http(400, { code: 'INVALID_REFERRAL_CODE' }), i18n.t),
     ).toBe(prs.auth.referralInvalid);
+    // The free ladder is gone from the app, so its code has no message of its own any more.
     expect(errorMessage(http(409, { code: 'NO_LADDER_TOKEN' }), i18n.t)).toBe(
-      prs.referral.noToken,
+      prs.errors.unknown,
     );
     const limit = errorMessage(
       http(403, {

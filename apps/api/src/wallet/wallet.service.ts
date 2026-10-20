@@ -7,6 +7,7 @@ import { HesabpayService } from '../hesabpay/hesabpay.service.js';
 import { MapLocationService } from '../map-location/map-location.service.js';
 import { accountPerkReason } from '../perks/perks.access.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { readListingQuota } from '../property/property.quota.js';
 
 const RECENT_PAYMENTS = 5;
 
@@ -23,17 +24,23 @@ export class WalletService {
     const now = new Date();
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
-      select: { role: true, agency: { select: { id: true } } },
+      select: {
+        role: true,
+        welcomeListingCredits: true,
+        bonusListingCredits: true,
+        agency: { select: { id: true } },
+      },
     });
     if (!user) throw new UnauthorizedException();
 
-    const [subscription, map, credits, perk, ladder, recent] = await Promise.all([
+    const [subscription, map, credits, perk, ladder, recent, listingQuota] = await Promise.all([
       user.agency ? this.subscriptionOf(user.agency.id, now) : Promise.resolve(null),
       this.mapLocation.getStatus(userId),
       contactCreditBalance(this.prisma, userId),
       accountPerkReason(this.prisma, userId, user.role, now),
       this.prisma.reward.count({ where: { userId, type: RewardType.LADDER_TOKEN, consumedAt: null } }),
       this.hesabpay.listPayments(userId, { page: 1, limit: RECENT_PAYMENTS }),
+      readListingQuota(this.prisma, userId, user, now),
     ]);
 
     return {
@@ -43,6 +50,7 @@ export class WalletService {
       contact_credits: credits.total,
       contact_unlimited: perk !== null,
       ladder_tokens: ladder,
+      listing_quota: listingQuota,
       recent_payments: recent.data,
     };
   }

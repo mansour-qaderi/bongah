@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { AuthModule } from '../auth/auth.module.js';
+import { HesabpayModule } from '../hesabpay/hesabpay.module.js';
 import { PromotionModule } from '../promotion/promotion.module.js';
 import { ReferralController } from './referral.controller.js';
 import { ReferralService } from './referral.service.js';
@@ -12,7 +13,7 @@ import { RewardsService } from './rewards.service.js';
  * AuthModule (for the guard) and the reverse import would be circular.
  */
 @Module({
-  imports: [AuthModule, PromotionModule],
+  imports: [AuthModule, PromotionModule, HesabpayModule],
   controllers: [ReferralController, RewardsController],
   providers: [ReferralService, RewardsService],
 })

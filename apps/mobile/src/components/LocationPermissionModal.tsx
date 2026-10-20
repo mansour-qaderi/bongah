@@ -73,6 +73,7 @@ export default function LocationPermissionModal({
           </AppText>
           <View style={styles.actions}>
             <Button
+              icon="sliders"
               title={t('account.openSettings')}
               onPress={onOpenSettings}
             />

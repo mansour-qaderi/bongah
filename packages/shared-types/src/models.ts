@@ -10,9 +10,11 @@ import type {
   MapLocationUnlimitedReason,
   MessageType,
   Language,
+  LadderSpendPurpose,
   PerkReason,
   PlanBenefits,
   PricingKey,
+  PriceTerms,
   PropertyStatus,
   PropertyType,
   QuoteCategory,
@@ -108,6 +110,10 @@ export interface Property {
   /** Which unit of a building it is ("واحد ۳"), as the owner wrote it. Null when the owner did not say. */
   unit?: string | null;
   deal_type: DealType;
+  /** How long a mortgage (گروی) runs, in months. Only a MORTGAGE_GROWI listing has one; null when not given. */
+  mortgage_months?: number | null;
+  /** Whether the price is final (مقطوع) or open to an offer (جورآمد). Null when the owner did not say. */
+  price_terms?: PriceTerms | null;
   /** Up to 2 decimals. Safe as a JSON number (the column holds at most 14 digits). */
   price: number;
   currency: Currency;
@@ -323,6 +329,8 @@ export interface ApiErrorBody {
   resets_at?: string;
   /** The allowance that was used up (the 403 limit errors). */
   limit?: number;
+  /** Ladders the refused spend needed (the 409 NOT_ENOUGH_LADDERS error). */
+  needed?: number;
 }
 
 // ───────────── Referrals & rewards ─────────────
@@ -368,10 +376,15 @@ export interface ReferralSummary {
   rewards: RewardItem[];
 }
 
-export interface RedeemLadderTokenResponse {
-  property_id: string;
-  laddered_at: string;
-  ladder_tokens_available: number;
+/** POST /rewards/ladders/spend: what the ladders bought, and what is left. */
+export interface SpendLaddersResponse {
+  purpose: LadderSpendPurpose;
+  /** Unspent ladders after this spend. */
+  ladders_available: number;
+  /** FEATURED_FRAME: when the listing's frame ends. Null for a listing quota. */
+  featured_until: string | null;
+  /** LISTING_QUOTA: the listings still available on top of the free ones, after this spend. Null for a frame. */
+  extra_listings: number | null;
 }
 
 // ───────────── Contact reveals ─────────────
@@ -574,6 +587,21 @@ export interface WalletSubscription {
   queued: QueuedSubscription[];
 }
 
+/** How many listings the signed-in user can still publish, as GET /wallet reports it. */
+export interface ListingQuota {
+  /**
+   * What the period allows: a regular user's free listings for the Kabul month, an office's listings in the running
+   * plan. 0 for an office with no running plan; null when there is no limit (an admin).
+   */
+  limit: number | null;
+  /** How many of `limit` are already used. */
+  used: number;
+  /** Gift listings on top of `limit` (the welcome gift, or the first-subscription bonus) that are still unspent. */
+  extra: number;
+  /** When the allowance refills (a regular user's next Kabul month); null when it does not refill on a date. */
+  resets_at: string | null;
+}
+
 /** GET /wallet: everything the signed-in user has bought or earned, in one call. */
 export interface Wallet {
   /** The server's clock when this was computed, so a countdown does not depend on the phone's clock. */
@@ -584,6 +612,8 @@ export interface Wallet {
   contact_credits: number;
   contact_unlimited: boolean;
   ladder_tokens: number;
+  /** Listings still available to publish. Absent from servers that predate it. */
+  listing_quota?: ListingQuota;
   /** The five newest payments. */
   recent_payments: PaymentSummary[];
 }

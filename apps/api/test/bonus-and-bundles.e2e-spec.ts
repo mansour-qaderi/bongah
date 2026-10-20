@@ -33,10 +33,11 @@ describe.skipIf(!hasDb)('Launch gifts, plan listing allowances, featured bundles
       expect(plans.YEARLY).toMatchObject({ listings: 60, gift_listings: 15, gift_featured: 12 });
     });
 
-    it('offers 3, 5, 10 and 20 featured listings at 270, 400, 650 and 1100 (single price 100)', async () => {
+    it('offers 1, 3, 5, 10 and 20 featured listings at 100, 270, 400, 650 and 1100 (single price 100)', async () => {
       const pricing = (await ctx.get('/hesabpay/pricing').expect(200)).body;
       expect(pricing.featured_ad).toBe(100);
       expect(pricing.featured_bundles).toEqual([
+        { size: 1, price: 100, list_price: 100, discount_percent: 0 },
         { size: 3, price: 270, list_price: 300, discount_percent: 10 },
         { size: 5, price: 400, list_price: 500, discount_percent: 20 },
         { size: 10, price: 650, list_price: 1000, discount_percent: 35 },
@@ -194,6 +195,7 @@ describe.skipIf(!hasDb)('Launch gifts, plan listing allowances, featured bundles
 
   describe('featured bundles', () => {
     it.each([
+      [1, 100],
       [3, 270],
       [5, 400],
       [10, 650],
@@ -213,7 +215,7 @@ describe.skipIf(!hasDb)('Launch gifts, plan listing allowances, featured bundles
       expect((await me(user)).featured_credits).toBe(20);
     });
 
-    it.each([[7], [1], [0], [4], ['5'], [undefined]])('rejects a bundle of %s and takes no money', async (bundle_size) => {
+    it.each([[7], [2], [0], [4], ['5'], [undefined]])('rejects a bundle of %s and takes no money', async (bundle_size) => {
       const user = await ctx.user();
       await ctx.post('/hesabpay/payments', { purpose: 'FEATURED_CREDITS', bundle_size }, user.token).expect(400);
       await ctx.post('/hesabpay/payments', { purpose: 'FEATURED_CREDITS', bundle_size: 5, amount: 1 }, user.token).expect(400);

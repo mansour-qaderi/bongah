@@ -144,6 +144,7 @@ describe.skipIf(!hasDb)('HesabPay (e2e)', () => {
         contact_credits: 40,
         contact_credits_per_pack: 10,
         featured_bundles: [
+          { size: 1, price: 100, list_price: 100, discount_percent: 0 },
           { size: 3, price: 270, list_price: 300, discount_percent: 10 },
           { size: 5, price: 400, list_price: 500, discount_percent: 20 },
           { size: 10, price: 650, list_price: 1000, discount_percent: 35 },

@@ -118,6 +118,7 @@ export default function EditProfileSheet({ visible, onClose }: Props) {
       heightRatio={0.8}
       footer={
         <Button
+          icon="check"
           title={t('common.save')}
           onPress={save}
           loading={saving}

@@ -7,14 +7,17 @@ copy the numbers into the files below.
 | File | Canvas | Use |
 | --- | --- | --- |
 | `logo.svg` | 100 × 100, transparent | The full mark with its ground ring (docs, web, store graphics). |
-| `app-icon.svg` | 1024 × 1024, opaque white | iOS app icon master, Play Store icon, Android legacy icons. No ring. |
-| `app-icon-android-foreground.svg` | 108 × 108 (dp), transparent | Android adaptive icon, foreground layer. The mark sits inside the 66 dp safe circle. |
-| `app-icon-android-background.svg` | 108 × 108 (dp) | Not used any more: the adaptive icon's background layer is fully transparent (`#00000000`), so there is no plate or disc behind the mark. Kept for reference. |
+| `app-icon.svg` | 1024 × 1024, opaque emerald | iOS app icon master, Play Store icon, Android legacy (square) icons: the white mark on an emerald plate. No ring. |
+| `app-icon-round.svg` | 1024 × 1024, transparent corners | Android `ic_launcher_round.png`: the same, on an emerald disc. |
+| `app-icon-android-foreground.svg` | 108 × 108 (dp), transparent | Android adaptive icon, foreground layer: the white mark, inside the 66 dp safe circle. Its pin hole is see-through, so the emerald background layer shows in it. |
+| `app-icon-android-background.svg` | 108 × 108 (dp) | Android adaptive icon, background layer: plain emerald `#047857` (the same colour as `values/ic_launcher_background.xml`). The launcher's mask (circle, squircle…) makes it the disc. |
 | `app-icon-android-monochrome.svg` | 108 × 108 (dp), transparent | Android 13+ themed icon: one colour, the system tints it; the pin's hole is see-through. |
 
-Colours: emerald `#047857` (the theme's `colors.primary`) on the right half and the chimney, deep emerald `#065F46`
-(`colors.primaryDark`) on the left half of the roof and the pin, ring `#E5E7EB`, background `#FFFFFF`. The ring is left
-out of the launcher icons: a pale ring turns to mush at 48 px and fights the system's icon mask.
+Colours: the full logo (`logo.svg`) is emerald `#047857` (the theme's `colors.primary`) on the right half and the chimney,
+deep emerald `#065F46` (`colors.primaryDark`) on the left half of the roof and the pin, ring `#E5E7EB`. The launcher
+icons are the same mark turned over: white `#FFFFFF` on the right half and the chimney, a soft emerald tint `#D1FAE5` on
+the left half, on an emerald `#047857` plate (a disc once the launcher masks it). The ring is left out of the launcher
+icons: a pale ring turns to mush at 48 px and fights the system's icon mask.
 
 ## Status: already generated and installed
 
@@ -24,7 +27,7 @@ The PNGs below were produced from these SVGs and are in the project:
 - Android (`android/app/src/main/res`): `mipmap-{m,h,xh,xxh,xxxh}dpi/ic_launcher.png`, `ic_launcher_round.png`,
   `ic_launcher_foreground.png`, `ic_launcher_monochrome.png`; `mipmap-anydpi-v26/ic_launcher.xml` and
   `ic_launcher_round.xml` (adaptive icon, with the monochrome layer for Android 13 themed icons);
-  `values/ic_launcher_background.xml` (`#00000000`: transparent, so the launcher shows no white disc behind the mark; the pin's centre is a white dot drawn in the foreground layer). `minSdk` is 24, so Android 7.x gets the plain PNGs and Android 8+ the
+  `values/ic_launcher_background.xml` (`#047857`: the emerald disc behind the white mark; the pin's hole is see-through in the foreground layer and shows it). `minSdk` is 24, so Android 7.x gets the plain PNGs and Android 8+ the
   adaptive icon.
 - iOS (`ios/BongahMobile/Images.xcassets/AppIcon.appiconset`): every iPhone and iPad size plus the 1024 marketing icon,
   all opaque RGB, with `Contents.json` pointing at them (the project targets iPhone and iPad).
@@ -47,7 +50,7 @@ mkdir -p out && cd out
 # Sizes: 20 29 40 58 60 76 80 87 120 152 167 180 1024 (iPhone and iPad), plus assets/icon.png at 1024.
 for px in 20 29 40 58 60 76 80 87 120 152 167 180 1024; do
   rsvg-convert -w $px -h $px ../app-icon.svg -o AppIcon-$px.png
-  magick AppIcon-$px.png -background white -alpha remove -alpha off AppIcon-$px.png
+  magick AppIcon-$px.png -alpha off AppIcon-$px.png
 done
 
 # Play Store listing icon: 512 x 512.
@@ -60,10 +63,8 @@ for d in mdpi:108:48 hdpi:162:72 xhdpi:216:96 xxhdpi:324:144 xxxhdpi:432:192; do
   rsvg-convert -w "$layer" -h "$layer" ../app-icon-android-foreground.svg -o "mipmap-$name/ic_launcher_foreground.png"
   rsvg-convert -w "$layer" -h "$layer" ../app-icon-android-monochrome.svg -o "mipmap-$name/ic_launcher_monochrome.png"
   rsvg-convert -w "$legacy" -h "$legacy" ../app-icon.svg -o "mipmap-$name/ic_launcher.png"
-  # Round legacy icon: the same picture cropped to a circle.
-  magick "mipmap-$name/ic_launcher.png" \
-    \( -size "${legacy}x${legacy}" xc:none -fill white -draw "circle $((legacy/2)),$((legacy/2)) $((legacy/2)),0" \) \
-    -compose DstIn -composite "mipmap-$name/ic_launcher_round.png"
+  # Round legacy icon: its own drawing (emerald disc, transparent corners), so the edge is smooth at every size.
+  rsvg-convert -w "$legacy" -h "$legacy" ../app-icon-round.svg -o "mipmap-$name/ic_launcher_round.png"
 done
 ```
 

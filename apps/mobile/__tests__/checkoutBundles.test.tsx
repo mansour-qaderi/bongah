@@ -44,6 +44,7 @@ const PRICING: Pricing = {
   contact_credits: 40,
   contact_credits_per_pack: 10,
   featured_bundles: [
+    { size: 1, price: 100, list_price: 100, discount_percent: 0 },
     { size: 3, price: 270, list_price: 300, discount_percent: 10 },
     { size: 5, price: 400, list_price: 500, discount_percent: 20 },
     { size: 10, price: 650, list_price: 1000, discount_percent: 35 },
@@ -108,7 +109,7 @@ const press = (root: ReactTestRenderer.ReactTestInstance, label: string) =>
     pressableWith(root, label).props.onPress();
   });
 const bundleTitle = (size: number) =>
-  prs.checkout.featuredBundle.replace('{{count}}', formatNumber(size, 0));
+  prs.frame.bundle.replace('{{count}}', formatNumber(size, 0));
 const posts = (path: string) =>
   callsTo(fetchMock).filter(c => c.method === 'POST' && c.path === path);
 
@@ -131,35 +132,90 @@ afterEach(async () => {
   jest.restoreAllMocks();
 });
 
-describe('the featured-ad bundles on the checkout screen', () => {
-  it('puts the single ad and the four bundles in one framed panel, apart from the ladder', async () => {
+describe('the featured-frame packs on the checkout screen', () => {
+  it('shows only the frame packs, in one framed panel: no tabs, no subscription, no listing list and no ladder', async () => {
     mockApi(fetchMock, ROUTES);
-    const tree = await mount({ tab: 'promotion' });
+    const tree = await mount();
     const panel = tree.root.findByProps({ testID: 'featured-panel' });
     const text = allText(panel);
-    expect(text).toContain(prs.checkout.featured);
+    expect(text).toContain(prs.frame.title);
+    // The single frame and the packs of 3, 5, 10 and 20, with their discounts.
     for (const size of [3, 5, 10, 20])
       expect(text).toContain(bundleTitle(size));
     for (const percent of ['۱۰', '۲۰', '۳۵', '۴۵']) {
       expect(text).toContain(`${percent}٪ تخفیف`);
     }
-    expect(text).not.toContain(prs.checkout.ladder);
-    // What the featured listing gets: a frame, the top of the list and the gold pin on the map.
-    expect(text).toContain('جایگاه بالای فهرست');
-    expect(text).toContain('نشان طلایی');
+    // Nothing but the panel, the amount and the pay button: no switcher between a subscription and the frames.
+    const all = allText(tree.root);
+    expect(all).not.toContain(prs.checkout.tabSubscription);
+    expect(all).not.toContain(prs.checkout.tabPromotion);
+    expect(all).not.toContain(prs.checkout.subscriptionHelp);
+    expect(all).not.toContain(prs.checkout.agenciesOnly);
+    for (const plan of [
+      'MONTHLY',
+      'QUARTERLY',
+      'SEMIANNUAL',
+      'YEARLY',
+    ] as const)
+      expect(all).not.toContain(prs.package[plan]);
+    expect(all).not.toContain('نردبان');
+    expect(all).not.toContain(prs.checkout.selectListing);
+    expect(all).not.toContain(listing.title);
+    expect(callsTo(fetchMock).map(c => c.path)).not.toContain(
+      '/properties/mine',
+    );
+    // What a framed listing gets, said in the product's own words.
+    expect(text).toContain(
+      '۷ روز با نشان و کادر ویژه به بالای فهرست نمایش داده می‌شود',
+    );
   });
 
-  it('lists the offers from one listing to twenty, at 100, 270, 400, 650 and 1,100', async () => {
+  it('is not a way to buy a subscription, whoever opens it', async () => {
     mockApi(fetchMock, ROUTES);
-    const tree = await mount({ tab: 'promotion' });
+    const tree = await mount();
+    await press(tree.root, prs.checkout.pay);
+    await settle();
+    const bodies = posts('/hesabpay/payments').map(c => c.body);
+    expect(bodies).toHaveLength(1);
+    expect(bodies[0]).not.toHaveProperty('package_type');
+    expect(bodies[0]).toMatchObject({ purpose: 'FEATURED_CREDITS' });
+  });
+
+  it('lists a single frame and the packs of 3, 5, 10 and 20, at 100, 270, 400, 650 and 1,100', async () => {
+    mockApi(fetchMock, ROUTES);
+    const tree = await mount();
     const text = allText(tree.root.findByProps({ testID: 'featured-panel' }));
     for (const price of ['۱۰۰', '۲۷۰', '۴۰۰', '۶۵۰', '۱,۱۰۰']) {
       expect(text).toContain(price);
     }
     expect(text).not.toMatch(/[0-9]/);
-    // Smallest bundle first.
-    const order = [3, 5, 10, 20].map(n => text.indexOf(bundleTitle(n)));
-    expect([...order].sort((a, b) => a - b)).toEqual(order);
+    // The single frame is the full price: it says what it is, and promises no discount.
+    expect(text).not.toMatch(/(^|\s)۰٪ تخفیف/);
+    // The single frame first, then the packs from the smallest.
+    const positions = [3, 5, 10, 20].map(n => text.indexOf(bundleTitle(n)));
+    expect([...positions].sort((a, b) => a - b)).toEqual(positions);
+    expect(text.indexOf(prs.frame.title)).toBeLessThan(positions[0]);
+  });
+
+  it('starts on the single frame and buys it without choosing a listing', async () => {
+    mockApi(fetchMock, {
+      ...ROUTES,
+      'POST /hesabpay/payments': {
+        status: 201,
+        body: { ...PAID, amount: 100 },
+      },
+      'GET /hesabpay/payments/pay-1': { body: { ...PAID, amount: 100 } },
+    });
+    const tree = await mount();
+    expect(allText(tree.root)).toMatch(
+      new RegExp(`${prs.checkout.amount}\\s*:\\s*۱۰۰`),
+    );
+    await press(tree.root, prs.checkout.pay);
+    await settle();
+    expect(posts('/hesabpay/payments').map(c => c.body)).toEqual([
+      { purpose: 'FEATURED_CREDITS', bundle_size: 1 },
+    ]);
+    expect(Linking.openURL).toHaveBeenCalledWith('https://pay.example/x');
   });
 
   it.each([
@@ -175,7 +231,7 @@ describe('the featured-ad bundles on the checkout screen', () => {
         'POST /hesabpay/payments': { status: 201, body: { ...PAID, amount } },
         'GET /hesabpay/payments/pay-1': { body: { ...PAID, amount } },
       });
-      const tree = await mount({ tab: 'promotion' });
+      const tree = await mount();
       await press(tree.root, bundleTitle(size));
       expect(allText(tree.root)).toMatch(
         new RegExp(`${prs.checkout.amount}\\s*:\\s*${shown}`),
@@ -189,27 +245,18 @@ describe('the featured-ad bundles on the checkout screen', () => {
     },
   );
 
-  it('sells the single featured ad for 100 on a chosen listing', async () => {
-    mockApi(fetchMock, {
-      ...ROUTES,
-      'POST /hesabpay/payments': {
-        status: 201,
-        body: { ...PAID, amount: 100 },
-      },
-      'GET /hesabpay/payments/pay-1': { body: { ...PAID, amount: 100 } },
-    });
+  it('ignores a tab, a listing or a ladder asked for in the route: it never sells any of them', async () => {
+    mockApi(fetchMock, ROUTES);
     const tree = await mount({
-      tab: 'promotion',
-      purpose: 'FEATURED_AD',
+      tab: 'subscription',
+      purpose: 'LADDER',
       propertyId: L1,
     });
-    expect(allText(tree.root)).toMatch(
-      new RegExp(`${prs.checkout.amount}\\s*:\\s*۱۰۰`),
-    );
+    expect(allText(tree.root)).not.toContain('نردبان');
     await press(tree.root, prs.checkout.pay);
     await settle();
     expect(posts('/hesabpay/payments').map(c => c.body)).toEqual([
-      { purpose: 'FEATURED_AD', property_id: L1 },
+      { purpose: 'FEATURED_CREDITS', bundle_size: 1 },
     ]);
   });
 
@@ -226,101 +273,38 @@ describe('the featured-ad bundles on the checkout screen', () => {
         },
       },
     });
-    const tree = await mount({ tab: 'promotion' });
+    const tree = await mount();
     expect(allText(tree.root)).not.toContain(bundleTitle(7));
     expect(allText(tree.root)).toContain(bundleTitle(20));
   });
 
-  it('shows no bundles when the server sends none', async () => {
+  it('shows no packs, and nothing to pay for, when the server sends none', async () => {
     mockApi(fetchMock, {
       ...ROUTES,
       'GET /hesabpay/pricing': {
         body: { ...PRICING, featured_bundles: undefined },
       },
     });
-    const tree = await mount({ tab: 'promotion' });
+    const tree = await mount();
     expect(allText(tree.root)).not.toContain(bundleTitle(5));
-    expect(allText(tree.root)).toContain(prs.checkout.featured);
+    expect(allText(tree.root)).toContain(prs.frame.title);
+    await press(tree.root, prs.checkout.pay);
+    await settle();
+    expect(posts('/hesabpay/payments')).toHaveLength(0);
   });
-});
 
-describe('spending a featured-ad credit', () => {
-  const withCredits = (n: number) => {
+  it('says how many frames the person already holds, and offers no way to spend them here', async () => {
+    mockApi(fetchMock, ROUTES);
     mockAuth = {
       status: 'signedIn',
-      user: { ...agency, featured_credits: n },
+      user: { ...agency, featured_credits: 2 },
       refreshUser,
     };
-  };
-
-  it('offers the credit only to someone who has one, for a featured ad', async () => {
-    mockApi(fetchMock, ROUTES);
-    withCredits(0);
-    let tree = await mount({ tab: 'promotion', purpose: 'FEATURED_AD' });
-    expect(allText(tree.root)).not.toContain(prs.checkout.useCredit);
-
-    withCredits(2);
-    tree = await mount({ tab: 'promotion', purpose: 'FEATURED_AD' });
-    expect(allText(tree.root)).toContain(prs.checkout.useCredit);
+    const tree = await mount();
     expect(allText(tree.root)).toContain(
-      prs.checkout.featuredCredits.replace('{{count}}', '۲'),
+      prs.frame.credits.replace('{{count}}', '۲'),
     );
-
-    tree = await mount({ tab: 'promotion', purpose: 'LADDER' });
-    expect(allText(tree.root)).not.toContain(prs.checkout.useCredit);
-  });
-
-  it('spends one credit on the chosen listing, says so, and refreshes the account', async () => {
-    mockApi(fetchMock, {
-      ...ROUTES,
-      'POST /hesabpay/featured-credits/use': {
-        body: { featured_until: '2026-10-26T08:00:00Z', featured_credits: 1 },
-      },
-    });
-    withCredits(2);
-    const tree = await mount({
-      tab: 'promotion',
-      purpose: 'FEATURED_AD',
-      propertyId: L1,
-    });
-    await press(tree.root, prs.checkout.useCredit);
-    await settle();
-    expect(posts('/hesabpay/featured-credits/use').map(c => c.body)).toEqual([
-      { property_id: L1 },
-    ]);
-    expect(toasts.calls[0][0]).toBe(
-      prs.checkout.creditUsed.replace('{{count}}', '۱'),
-    );
-    expect(toasts.calls[0][1]).toBe('success');
-    expect(refreshUser).toHaveBeenCalled();
-  });
-
-  it('asks for a listing first when none is chosen, without calling the server', async () => {
-    mockApi(fetchMock, ROUTES);
-    withCredits(1);
-    const tree = await mount({ tab: 'promotion', purpose: 'FEATURED_AD' });
-    await press(tree.root, prs.checkout.useCredit);
-    await settle();
-    expect(toasts.messages).toEqual([prs.checkout.selectListing]);
+    expect(allText(tree.root)).not.toContain(prs.frame.useCredit);
     expect(posts('/hesabpay/featured-credits/use')).toHaveLength(0);
-  });
-
-  it('says in a toast when the server has no credit left', async () => {
-    mockApi(fetchMock, {
-      ...ROUTES,
-      'POST /hesabpay/featured-credits/use': {
-        status: 409,
-        body: { code: 'NO_FEATURED_CREDITS' },
-      },
-    });
-    withCredits(1);
-    const tree = await mount({
-      tab: 'promotion',
-      purpose: 'FEATURED_AD',
-      propertyId: L1,
-    });
-    await press(tree.root, prs.checkout.useCredit);
-    await settle();
-    expect(toasts.messages).toEqual([prs.errors.noFeaturedCredits]);
   });
 });
