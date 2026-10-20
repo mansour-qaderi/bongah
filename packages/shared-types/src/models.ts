@@ -11,6 +11,7 @@ import type {
   MessageType,
   Language,
   PerkReason,
+  PlanBenefits,
   PricingKey,
   PropertyStatus,
   PropertyType,
@@ -37,6 +38,23 @@ export interface User {
   enable_daily_motivation: boolean;
   /** The welcome card has been shown to this user. Goes false -> true once and never back. */
   has_seen_welcome: boolean;
+  /**
+   * Gift listings left: a new account starts with one, and the first listing it posts uses it up (before the
+   * monthly free listing, which stays available). Absent from servers that predate the gift.
+   */
+  welcome_listing_credits?: number;
+  /**
+   * Extra listings left from the first-subscription bonus. A subscribed agency uses them after its month's allowance
+   * is spent. Absent from servers that predate the bonus.
+   */
+  bonus_listing_credits?: number;
+  /** Featured-listing credits left (bought in a bundle or given as a bonus). Absent from servers that predate them. */
+  featured_credits?: number;
+  /**
+   * True until the first-subscription bonus (extra listings and a free featured listing) has been given, so the
+   * app only promises it to someone who can still get it. Absent from servers that predate the bonus.
+   */
+  first_subscription_bonus_available?: boolean;
 }
 
 export interface Agency {
@@ -239,7 +257,13 @@ export interface PropertyContact {
 /** What each purchase costs. Prices are decided by the server. */
 export interface Pricing {
   currency: Currency;
+  /** What each plan costs. */
   subscription: Record<SubscriptionPackage, number>;
+  /**
+   * What each plan would cost without the discount (the monthly list price times its months), so the app can write
+   * the saving as a number that is true. Absent from servers that predate the plan discounts.
+   */
+  subscription_list?: Record<SubscriptionPackage, number>;
   ladder: number;
   featured_ad: number;
   /** One exact map pin on one listing, for accounts without an agency subscription. */
@@ -250,6 +274,29 @@ export interface Pricing {
   contact_credits: number;
   /** How many credits one pack contains. */
   contact_credits_per_pack: number;
+  /** Featured-listing bundles that can be bought ahead of time. Absent from servers that predate them. */
+  featured_bundles?: FeaturedBundle[];
+  /** What each plan includes (listings, launch gifts, features). Absent from servers that predate it. */
+  plans?: Record<SubscriptionPackage, PlanBenefits>;
+}
+
+/** POST /hesabpay/featured-credits/use: the listing is featured, and this is what is left. */
+export interface FeaturedCreditUsed {
+  /** When the featured badge now ends. */
+  featured_until: string;
+  /** Featured-listing credits left after this one. */
+  featured_credits: number;
+}
+
+/** One bundle of featured listings, bought now and spent on listings later. */
+export interface FeaturedBundle {
+  /** How many featured listings it contains. */
+  size: number;
+  price: number;
+  /** What the same number would cost one by one. */
+  list_price: number;
+  /** The discount the price really gives, in whole percent. */
+  discount_percent: number;
 }
 
 /** Whether the signed-in user may put exact coordinates on a listing, and what they have prepaid. */
@@ -274,6 +321,8 @@ export interface ApiErrorBody {
   /** Seconds to wait (rate limits). */
   retry_after?: number;
   resets_at?: string;
+  /** The allowance that was used up (the 403 limit errors). */
+  limit?: number;
 }
 
 // ───────────── Referrals & rewards ─────────────

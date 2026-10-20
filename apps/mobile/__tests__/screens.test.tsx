@@ -4,6 +4,7 @@ import ReactTestRenderer from 'react-test-renderer';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { initI18n } from '../src/i18n';
 import prs from '../src/i18n/locales/prs.json';
+import { captureToasts } from '../test-utils/toasts';
 import {
   allText,
   flush,
@@ -14,6 +15,7 @@ import {
 } from '../test-utils';
 
 const fetchMock = jest.fn();
+let toasts: ReturnType<typeof captureToasts>;
 let mockAuth: { status: string; user: unknown } = {
   status: 'signedOut',
   user: null,
@@ -36,7 +38,10 @@ beforeEach(() => {
   fetchMock.mockReset();
   (globalThis as unknown as { fetch: unknown }).fetch = fetchMock;
   mockAuth = { status: 'signedOut', user: null };
+  toasts = captureToasts();
 });
+
+afterEach(() => toasts.restore());
 
 const withQuery = (node: React.ReactElement) => (
   <QueryClientProvider
@@ -74,7 +79,7 @@ describe('PhoneScreen', () => {
     await ReactTestRenderer.act(async () => {
       pressableWith(tree.root, prs.auth.sendCode).props.onPress();
     });
-    expect(allText(tree.root)).toContain(prs.auth.invalidPhone);
+    expect(toasts.messages).toEqual([prs.auth.invalidPhone]);
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
@@ -112,7 +117,7 @@ describe('PhoneScreen', () => {
       pressableWith(tree.root, prs.auth.sendCode).props.onPress();
     });
     await flush();
-    expect(allText(tree.root)).toContain(prs.errors.network);
+    expect(toasts.messages).toContain(prs.errors.network);
   });
 });
 

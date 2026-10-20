@@ -27,7 +27,73 @@ export const PROPERTY_UNIT_MAX_LENGTH = 40;
 export const DEAL_TYPES = ['SALE', 'RENT', 'MORTGAGE_GROWI'] as const;
 export const CURRENCIES = ['AFGHANI', 'USD'] as const;
 export const PROPERTY_STATUSES = ['ACTIVE', 'SOLD', 'ARCHIVED'] as const;
-export const SUBSCRIPTION_PACKAGES = ['MONTHLY', 'QUARTERLY', 'YEARLY'] as const;
+export const SUBSCRIPTION_PACKAGES = [
+  'MONTHLY',
+  'QUARTERLY',
+  'SEMIANNUAL',
+  'YEARLY',
+] as const;
+/** Calendar months each subscription package lasts. */
+export const SUBSCRIPTION_MONTHS = {
+  MONTHLY: 1,
+  QUARTERLY: 3,
+  SEMIANNUAL: 6,
+  YEARLY: 12,
+} as const satisfies Record<(typeof SUBSCRIPTION_PACKAGES)[number], number>;
+/**
+ * The discount each plan is sold with, in percent off the list price (the monthly list price times the months).
+ * The longer the plan, the bigger the discount. The prices actually charged come from the server; where a price
+ * has been set by hand the real discount can differ, and `Pricing.subscription_list` lets the app work out the real one.
+ */
+export const SUBSCRIPTION_DISCOUNT_PERCENT = {
+  MONTHLY: 10,
+  QUARTERLY: 20,
+  SEMIANNUAL: 35,
+  YEARLY: 50,
+} as const satisfies Record<(typeof SUBSCRIPTION_PACKAGES)[number], number>;
+/** The plan the app calls the best offer. */
+export const BEST_SUBSCRIPTION_PACKAGE = 'YEARLY' as const;
+/**
+ * What one month of an agency subscription costs before any discount, in the account currency. It anchors every plan:
+ * a plan's list price is this times its months, and it is sold at that less the plan's discount (900 a month, 2400
+ * for three, 3900 for six, 6000 for a year). A price set by hand (settings or the admin panel) still wins.
+ */
+export const SUBSCRIPTION_BASE_MONTHLY_PRICE = 1000;
+/**
+ * What each plan includes. `listings` is how many listings the agency may publish during that one plan (counted from the
+ * plan's start to its end; a plan bought in advance has its own count when it begins). `gift_listings` and
+ * `gift_featured` are the launch gifts: extra listing credits (used after the plan's own listings) and free
+ * featured-listing credits (each makes one listing featured for the usual number of days). `business_accounting` and
+ * `public_portfolio` are the two features advertised on the plan cards.
+ */
+export interface PlanBenefits {
+  listings: number;
+  gift_listings: number;
+  gift_featured: number;
+  business_accounting: boolean;
+  public_portfolio: boolean;
+}
+export const SUBSCRIPTION_PLAN_BENEFITS = {
+  MONTHLY: { listings: 8, gift_listings: 2, gift_featured: 1, business_accounting: true, public_portfolio: false },
+  QUARTERLY: { listings: 18, gift_listings: 6, gift_featured: 3, business_accounting: true, public_portfolio: true },
+  SEMIANNUAL: { listings: 30, gift_listings: 9, gift_featured: 6, business_accounting: true, public_portfolio: true },
+  YEARLY: { listings: 60, gift_listings: 15, gift_featured: 12, business_accounting: true, public_portfolio: true },
+} as const satisfies Record<(typeof SUBSCRIPTION_PACKAGES)[number], PlanBenefits>;
+/**
+ * true: the launch gifts are given with an account's first subscription only (a later purchase adds none).
+ * false: every subscription purchase brings the gifts of its plan.
+ */
+export const LAUNCH_GIFTS_ONCE_PER_ACCOUNT = true;
+/**
+ * The featured-listing bundles that can be bought ahead of time, as a number of featured listings and the discount
+ * on the single price times that number (3 for 270, 5 for 400, 10 for 650, 20 for 1100 when one costs 100). One
+ * featured listing is bought directly for a listing, not as a bundle.
+ */
+export const FEATURED_BUNDLE_SIZES = [3, 5, 10, 20] as const;
+export const FEATURED_BUNDLE_DISCOUNT_PERCENT = { 3: 10, 5: 20, 10: 35, 20: 45 } as const satisfies Record<
+  (typeof FEATURED_BUNDLE_SIZES)[number],
+  number
+>;
 export const SUBSCRIPTION_STATUSES = ['ACTIVE', 'EXPIRED'] as const;
 export const TRANSACTION_PURPOSES = [
   'SUBSCRIPTION',
@@ -35,6 +101,7 @@ export const TRANSACTION_PURPOSES = [
   'FEATURED_AD',
   'MAP_LOCATION',
   'CONTACT_CREDITS',
+  'FEATURED_CREDITS',
 ] as const;
 /** Why an account may pin exact coordinates without paying per listing. */
 export const MAP_LOCATION_UNLIMITED_REASONS = ['AGENCY_SUBSCRIPTION', 'ADMIN'] as const;
@@ -69,6 +136,7 @@ export const BANNER_PLACEMENTS = ['HOME_TOP', 'SEARCH_TOP'] as const;
 export const PRICING_KEYS = [
   'SUBSCRIPTION_MONTHLY',
   'SUBSCRIPTION_QUARTERLY',
+  'SUBSCRIPTION_SEMIANNUAL',
   'SUBSCRIPTION_YEARLY',
   'LADDER',
   'FEATURED_AD',

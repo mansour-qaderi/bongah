@@ -51,7 +51,9 @@ describe('errorMessage', () => {
       }),
       i18n.t,
     );
-    expect(limit).toContain('۲۰۲۶/۱۱/۰۱'); // 19:30 UTC on 31 Oct is 00:00 on 1 Nov in Kabul
+    // 19:30 UTC on 31 Oct is 00:00 on 1 Nov in Kabul: 10 Aqrab in the Solar Hijri calendar. (No Gregorian date.)
+    expect(limit).toContain('۱۰ عقرب');
+    expect(limit).not.toMatch(/۲۰۲۶|۱۱\/۰۱/);
   });
 
   it('tells a wrong code apart from an expired session', () => {

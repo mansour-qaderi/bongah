@@ -21,13 +21,20 @@ import { accountPerkReason } from '../perks/perks.access.js';
 import { unlimitedMapLocationReason } from '../map-location/map-location.access.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { PromotionService } from '../promotion/promotion.service.js';
-import type { InitiatePaymentDto } from './dto/initiate-payment.dto.js';
-import type { PaymentInitiatedDto, PaymentStatusDto, PricingDto } from './dto/payment-response.dto.js';
+import type { InitiatePaymentDto, UseFeaturedCreditDto } from './dto/initiate-payment.dto.js';
+import type {
+  FeaturedCreditUsedDto,
+  PaymentInitiatedDto,
+  PaymentStatusDto,
+  PricingDto,
+} from './dto/payment-response.dto.js';
+import { bundlePrice } from './featured-bundles.js';
 import { HesabPayGateway, type VerifiedWebhookEvent } from './gateway/hesabpay-gateway.js';
 import { HESABPAY_SETTINGS, type HesabPaySettings } from './hesabpay.config.js';
 import { fulfil } from './hesabpay.fulfilment.js';
 import { paymentInclude, toPaymentSummary } from './hesabpay.mapper.js';
 import { PricingService } from './pricing.service.js';
+import { asPriceText } from './subscription-prices.js';
 
 /** What a payment request resolves to once the caller's right to make it is checked. */
 interface PaymentTarget {
@@ -91,6 +98,35 @@ export class HesabpayService {
       created_at: payment.createdAt.toISOString(),
       payment_url: session.paymentUrl,
     };
+  }
+
+  /**
+   * Spends one featured-listing credit to make one of the caller's listings featured, for the same number of days a
+   * paid featured listing lasts. The credit and the badge change together or not at all: no credit is lost when the
+   * listing turns out not to be active, and none is free when the listing is not theirs.
+   */
+  async useFeaturedCredit(userId: string, input: UseFeaturedCreditDto): Promise<FeaturedCreditUsedDto> {
+    const now = new Date();
+    return this.prisma.$transaction(async (db) => {
+      await this.promotion.assertPromotable(db, userId, input.property_id);
+      const prices = await this.pricing.effective(db);
+      const days = prices.FEATURED_AD.quantity ?? this.settings.featuredAdDays;
+
+      // One statement checks there is a credit and takes it, so two simultaneous requests cannot spend the same one.
+      const spent = await db.$queryRaw<{ featured_credits: number }[]>`
+        UPDATE users SET featured_credits = featured_credits - 1
+         WHERE id = ${userId}::uuid AND featured_credits > 0
+        RETURNING featured_credits`;
+      if (spent.length === 0) {
+        throw new ConflictException({
+          message: 'You have no featured-listing credits left.',
+          code: 'NO_FEATURED_CREDITS',
+        });
+      }
+      const until = await this.promotion.feature(db, input.property_id, days, now);
+      if (until === null) throw new NotFoundException('Active property not found.'); // rolls the credit back
+      return { featured_until: until.toISOString(), featured_credits: spent[0].featured_credits };
+    });
   }
 
   /** What each purchase costs right now. Public: the prices are not secret and the UI shows them before paying. */
@@ -293,6 +329,16 @@ export class HesabpayService {
           amount: prices.CONTACT_CREDITS.price,
           description: `Bongah contact reveal credits (${prices.CONTACT_CREDITS.quantity})`,
           quantity: prices.CONTACT_CREDITS.quantity ?? this.settings.contactCreditsPerPack,
+        };
+      }
+      case 'FEATURED_CREDITS': {
+        // Anyone may stock up; the credits are spent on their own listings later. The bundle's price follows the
+        // single featured price, and its size is recorded with the payment so it cannot change under the buyer.
+        return {
+          purpose: TransactionPurpose.FEATURED_CREDITS,
+          amount: asPriceText(bundlePrice(Number(prices.FEATURED_AD.price), input.bundle_size)),
+          description: `Bongah featured listings (${input.bundle_size})`,
+          quantity: input.bundle_size,
         };
       }
       case 'LADDER':

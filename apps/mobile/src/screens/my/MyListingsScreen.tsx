@@ -22,7 +22,7 @@ import {
 } from '../../api/hooks';
 import { useAuth } from '../../auth/AuthContext';
 import AppText from '../../components/AppText';
-import Banner from '../../components/Banner';
+import { useErrorToast } from '../../components/useErrorToast';
 import Button from '../../components/Button';
 import { Chip, ChipRow } from '../../components/Chip';
 import PromotionSheet from '../../components/PromotionSheet';
@@ -88,6 +88,11 @@ export default function MyListingsScreen({ navigation }: Props) {
       await queryClient.invalidateQueries({ queryKey: queryKeys.properties });
     },
   });
+  // A listing that could not be deleted, closed or reopened: said in a toast, the list stays as it was.
+  useErrorToast(
+    change.isError ? errorMessage(change.error, t) : null,
+    change.error,
+  );
 
   if (status !== 'signedIn') {
     return (
@@ -314,11 +319,6 @@ export default function MyListingsScreen({ navigation }: Props) {
 
   return (
     <Screen edges={['left', 'right']}>
-      {change.isError ? (
-        <View style={styles.banner}>
-          <Banner kind="error" message={errorMessage(change.error, t)} />
-        </View>
-      ) : null}
       {body}
       {properties.length > 0 ? (
         <Fab
@@ -332,7 +332,6 @@ export default function MyListingsScreen({ navigation }: Props) {
 }
 
 const styles = StyleSheet.create({
-  banner: { padding: spacing.lg, paddingBottom: 0 },
   // Room under the last card for the floating button.
   list: { paddingBottom: 104 },
   flex: { flex: 1 },

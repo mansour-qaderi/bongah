@@ -6,6 +6,7 @@ import {
   NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
+import { SUBSCRIPTION_PLAN_BENEFITS } from '@bongah/shared-types';
 import { findActiveSubscription } from '../agencies/subscription.js';
 import { Prisma, PropertyStatus, Role } from '../generated/prisma/client.js';
 import { PrismaService } from '../prisma/prisma.service.js';
@@ -56,7 +57,8 @@ export class PropertyService {
       currency: query.currency,
       ...(hasPriceRange ? { price: { gte: query.min_price, lte: query.max_price } } : {}),
     };
-    return this.page(where, query);
+    // A paid (featured) listing comes before every other one: that is what the promotion sells.
+    return this.page(where, query, true);
   }
 
   /** The signed-in user's own listings, in every status. */
@@ -97,9 +99,13 @@ export class PropertyService {
 
   /**
    * Creates a listing, enforcing who may publish:
-   *  - USER:   FREE_LISTINGS_PER_MONTH per Kabul calendar month. Every row created this month counts,
-   *            whatever its status, so archiving or deleting a listing can't be used to get another.
-   *  - AGENCY: needs an agency profile and a currently active subscription; no monthly cap.
+   *  - USER:   a welcome gift first (a new account starts with one; it pays for the listing and does not count toward
+   *            the monthly quota), then FREE_LISTINGS_PER_MONTH per Kabul calendar month. Every row created this
+   *            month counts, whatever its status, so archiving or deleting a listing can't be used to get another.
+   *  - AGENCY: needs an agency profile and a currently active subscription. Each plan comes with its own number of
+   *            listings (SUBSCRIPTION_PLAN_BENEFITS: 8 for a month, 18 for three, 30 for six, 60 for a year), counted on
+   *            the subscription row. Once those are used, a gift listing credit (launch gifts) pays for the listing;
+   *            with none left the listing is refused.
    *  - ADMIN:  unrestricted.
    * An exact map pin (lat/lng) is free for everyone and optional. Without one the written place
    * (district, neighbourhood, address) is required; with one it is optional (the schema enforces that),
@@ -112,18 +118,28 @@ export class PropertyService {
     const now = new Date();
 
     const row = await this.prisma.$transaction(async (tx) => {
-      const users = await tx.$queryRaw<{ role: Role }[]>`
-        SELECT role::text AS role FROM users WHERE id = ${userId}::uuid FOR UPDATE`;
+      const users = await tx.$queryRaw<{ role: Role; credits: number; bonus: number }[]>`
+        SELECT role::text AS role, welcome_listing_credits AS credits, bonus_listing_credits AS bonus
+          FROM users WHERE id = ${userId}::uuid FOR UPDATE`;
       if (users.length === 0) {
         throw new UnauthorizedException(); // valid token, but the account no longer exists
       }
 
       let agencyId: string | null = null;
+      let usedWelcomeCredit = false;
+      let usedBonusCredit = false;
       switch (users[0].role) {
         case Role.USER: {
+          // The gift pays first. The user row is locked, so two requests cannot both spend the one credit.
+          if (users[0].credits > 0) {
+            await tx.user.update({ where: { id: userId }, data: { welcomeListingCredits: { decrement: 1 } } });
+            usedWelcomeCredit = true;
+            break;
+          }
           const monthStart = kabulMonthStart(now);
+          // A listing the gift paid for is not one of the month's free listings.
           const used = await tx.property.count({
-            where: { userId, createdAt: { gte: monthStart } },
+            where: { userId, createdAt: { gte: monthStart }, usedWelcomeCredit: false },
           });
           if (used >= FREE_LISTINGS_PER_MONTH) {
             throw new ForbiddenException({
@@ -143,13 +159,32 @@ export class PropertyService {
               code: 'AGENCY_PROFILE_REQUIRED',
             });
           }
-          if (!(await findActiveSubscription(tx, agency.id, now))) {
+          const active = await findActiveSubscription(tx, agency.id, now);
+          if (!active) {
             throw new ForbiddenException({
               message: 'An active subscription is required to publish listings.',
               code: 'SUBSCRIPTION_REQUIRED',
             });
           }
           agencyId = agency.id;
+          // The running plan's own listings first. One conditional UPDATE takes the next slot only while there is
+          // one, so even without the user-row lock two requests could not both take the last slot.
+          const quota = SUBSCRIPTION_PLAN_BENEFITS[active.packageType].listings;
+          const taken = await tx.$executeRaw`
+            UPDATE subscriptions SET listings_used = listings_used + 1
+             WHERE id = ${active.id}::uuid AND listings_used < ${quota}`;
+          if (taken === 1) break;
+          // The plan's listings are all used: a gift credit pays for this one, or it is refused. (The user row is
+          // locked, so two requests cannot spend the same credit.)
+          if (users[0].bonus <= 0) {
+            throw new ForbiddenException({
+              message: 'All listings of this subscription are used. Renew or buy another plan to publish more.',
+              code: 'AGENCY_LISTING_LIMIT_REACHED',
+              limit: quota,
+            });
+          }
+          await tx.user.update({ where: { id: userId }, data: { bonusListingCredits: { decrement: 1 } } });
+          usedBonusCredit = true;
           break;
         }
         case Role.ADMIN:
@@ -184,6 +219,8 @@ export class PropertyService {
           bedrooms: bedrooms ?? null,
           bathrooms: bathrooms ?? null,
           images: images ?? [],
+          usedWelcomeCredit,
+          usedBonusCredit,
           // New listings enter the feed at "now"; a paid ladder later moves this forward.
           createdAt: now,
           ladderedAt: now,
@@ -259,21 +296,66 @@ export class PropertyService {
     return actor.role;
   }
 
-  private async page(where: Prisma.PropertyWhereInput, p: PaginationDto): Promise<PropertyPageDto> {
-    const [rows, total] = await this.prisma.$transaction([
-      this.prisma.property.findMany({
-        where,
-        orderBy: LISTING_ORDER,
-        skip: (p.page - 1) * p.limit,
-        take: p.limit,
-        include: WITH_AGENCY_NAME,
-      }),
-      this.prisma.property.count({ where }),
-    ]);
+  /**
+   * One page of listings, newest ladder first (LISTING_ORDER). With `featuredFirst`, listings whose paid featured
+   * period is still running come first (same order among themselves), then all the others, as one continuous list:
+   * the page boundary may fall inside either group. "Still running" is the rule of isFeaturedAt(): the flag is not
+   * cleared when the promotion ends, so it only counts while featured_until is ahead.
+   */
+  private async page(where: Prisma.PropertyWhereInput, p: PaginationDto, featuredFirst = false): Promise<PropertyPageDto> {
     const now = new Date();
-    return {
-      data: rows.map((row) => toPropertyDto(row, now)),
-      meta: { page: p.page, limit: p.limit, total, total_pages: Math.ceil(total / p.limit) },
+    const skip = (p.page - 1) * p.limit;
+    if (!featuredFirst) {
+      const [rows, total] = await this.prisma.$transaction([
+        this.prisma.property.findMany({ where, orderBy: LISTING_ORDER, skip, take: p.limit, include: WITH_AGENCY_NAME }),
+        this.prisma.property.count({ where }),
+      ]);
+      return pageOf(rows, total, p, now);
+    }
+
+    // The "not featured" side is spelled out: a NOT around a comparison with a NULL featured_until would silently drop
+    // those rows.
+    const featuredWhere: Prisma.PropertyWhereInput = { AND: [where, { isFeatured: true, featuredUntil: { gt: now } }] };
+    const otherWhere: Prisma.PropertyWhereInput = {
+      AND: [where, { OR: [{ isFeatured: false }, { featuredUntil: null }, { featuredUntil: { lte: now } }] }],
     };
+    const [featuredCount, otherCount] = await this.prisma.$transaction([
+      this.prisma.property.count({ where: featuredWhere }),
+      this.prisma.property.count({ where: otherWhere }),
+    ]);
+    const featuredRows =
+      skip < featuredCount
+        ? await this.prisma.property.findMany({
+            where: featuredWhere,
+            orderBy: LISTING_ORDER,
+            skip,
+            take: Math.min(p.limit, featuredCount - skip),
+            include: WITH_AGENCY_NAME,
+          })
+        : [];
+    const room = p.limit - featuredRows.length;
+    const otherRows =
+      room > 0
+        ? await this.prisma.property.findMany({
+            where: otherWhere,
+            orderBy: LISTING_ORDER,
+            skip: Math.max(0, skip - featuredCount),
+            take: room,
+            include: WITH_AGENCY_NAME,
+          })
+        : [];
+    return pageOf([...featuredRows, ...otherRows], featuredCount + otherCount, p, now);
   }
+}
+
+function pageOf<Row extends Parameters<typeof toPropertyDto>[0]>(
+  rows: Row[],
+  total: number,
+  p: PaginationDto,
+  now: Date,
+): PropertyPageDto {
+  return {
+    data: rows.map((row) => toPropertyDto(row, now)),
+    meta: { page: p.page, limit: p.limit, total, total_pages: Math.ceil(total / p.limit) },
+  };
 }

@@ -32,7 +32,7 @@ describe.skipIf(!hasDb)('Wallet, payment history and receipts (e2e)', () => {
         package_type: 'QUARTERLY',
         quantity: null,
         property: null,
-        amount: 2700,
+        amount: 2400,
         currency: 'AFGHANI',
         payer: { full_name: 'Ahmad Zahir', phone_number: agency.phone, agency_name: 'Test Agency' },
       });
@@ -55,7 +55,7 @@ describe.skipIf(!hasDb)('Wallet, payment history and receipts (e2e)', () => {
       expect(featured).toMatchObject({
         purpose: 'FEATURED_AD',
         quantity: 7,
-        amount: 100.5,
+        amount: 100,
         property: { id: listing.id, title: 'Receipt villa' },
         payer: { agency_name: null },
       });

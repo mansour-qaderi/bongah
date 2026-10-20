@@ -21,6 +21,7 @@ import type {
   ContactAccess,
   Currency,
   DealType,
+  FeaturedCreditUsed,
   FeedbackReceived,
   Language,
   Paginated,
@@ -327,6 +328,13 @@ export const initiatePayment = (input: InitiatePaymentInput) =>
   request<PaymentInitiated>('POST', '/hesabpay/payments', {
     auth: true,
     body: input,
+  });
+
+/** Spends one featured-listing credit on one of my listings (bought in a bundle, or the first-subscription bonus). */
+export const spendFeaturedCredit = (propertyId: string) =>
+  request<FeaturedCreditUsed>('POST', '/hesabpay/featured-credits/use', {
+    auth: true,
+    body: { property_id: propertyId },
   });
 
 export const getPayment = (id: string) =>

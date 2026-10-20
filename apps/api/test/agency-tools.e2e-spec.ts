@@ -1,3 +1,4 @@
+import { SUBSCRIPTION_PLAN_BENEFITS } from '@bongah/shared-types';
 import { randomUUID } from 'node:crypto';
 import type {
   AgencyAnalytics,
@@ -182,8 +183,11 @@ describe.skipIf(!hasDb)('Agency tools: analytics, bulk listings, listing picture
       await ctx.post('/agencies/me/properties/bulk', {}, agency.token).expect(400);
       expect(await ctx.prisma.property.count({ where: { userId: agency.id } })).toBe(0);
 
+      // Bulk rows go through the same code as POST /properties, so the plan's listing allowance applies to them too.
+      const quota = SUBSCRIPTION_PLAN_BENEFITS.MONTHLY.listings;
       const fifty = await bulkCreate(agency, Array.from({ length: 50 }, (_, i) => body({ title: `Bulk ${i}` }))).expect(200);
-      expect(fifty.body).toMatchObject({ total: 50, succeeded: 50, failed: 0 });
+      expect(fifty.body).toMatchObject({ total: 50, succeeded: quota, failed: 50 - quota });
+      expect(fifty.body.results.filter((r: { ok: boolean }) => !r.ok).every((r: { code: string }) => r.code === 'AGENCY_LISTING_LIMIT_REACHED')).toBe(true);
     });
 
     it('edits many listings, and reports rows that are not the agency\'s, missing, or malformed', async () => {

@@ -7,8 +7,14 @@ import { AuthController } from './auth.controller.js';
 import { AuthService } from './auth.service.js';
 import { JwtAuthGuard } from './guards/jwt-auth.guard.js';
 import { RolesGuard } from './guards/roles.guard.js';
-import { MockSmsGateway } from './sms/mock-sms.gateway.js';
-import { SmsGateway } from './sms/sms-gateway.js';
+import {
+  MockOtpGateway,
+  OtpGateway,
+  readOtpDevFallback,
+  readOtpProvider,
+  readWhatsAppSettings,
+  WhatsAppOtpGateway,
+} from './otp/index.js';
 
 @Module({
   imports: [
@@ -32,27 +38,32 @@ import { SmsGateway } from './sms/sms-gateway.js';
     JwtAuthGuard,
     RolesGuard,
     {
-      provide: SmsGateway,
+      provide: OtpGateway,
       inject: [ConfigService],
-      useFactory: (config: ConfigService): SmsGateway => {
-        const provider = config.get<string>('SMS_PROVIDER', 'mock');
-        if (provider === 'mock') {
-          if (config.get<string>('NODE_ENV') === 'production') {
-            // Allowed for testing deployments (e.g. a Render staging service), but only as a
-            // deliberate choice: the default being "mock" must never switch it on by accident.
-            if (config.get<string>('SMS_PROVIDER') !== 'mock') {
-              throw new Error(
-                'In production SMS_PROVIDER must be set explicitly ("mock" for testing, or a real provider).',
-              );
-            }
+      useFactory: (config: ConfigService): OtpGateway => {
+        const { provider, explicit } = readOtpProvider(config);
+        if (provider === 'whatsapp') {
+          if (readOtpDevFallback(config) && config.get<string>('NODE_ENV') === 'production') {
             new Logger('AuthModule').warn(
-              'SMS_PROVIDER=mock in production: OTP codes are only written to the server log and never sent by SMS. Use for testing only.',
+              'OTP_DEV_FALLBACK=true in production: when WhatsApp fails, the code is returned in the response, so anyone ' +
+                'who can make the gateway fail can sign in as any phone number. Use for testing only.',
             );
           }
-          return new MockSmsGateway();
+          return new WhatsAppOtpGateway(readWhatsAppSettings(config));
         }
-        // Add a case per real provider, returning your SmsGateway implementation.
-        throw new Error(`Unsupported SMS_PROVIDER "${provider}". Register its SmsGateway here.`);
+        if (config.get<string>('NODE_ENV') === 'production') {
+          // Allowed for testing deployments (e.g. a Render staging service), but only as a deliberate choice:
+          // the default being "mock" must never switch it on by accident.
+          if (!explicit) {
+            throw new Error('In production OTP_PROVIDER must be set explicitly ("whatsapp" for real delivery, "mock" for testing).');
+          }
+          new Logger('AuthModule').warn(
+            'OTP_PROVIDER=mock in production: verification codes are NOT sent; they are returned in the response of the ' +
+              'send-code request (the app shows them) and written to the server log. Anyone who can reach the API can ' +
+              'sign in as any phone number. Use for testing only, and set OTP_PROVIDER=whatsapp for real users.',
+          );
+        }
+        return new MockOtpGateway();
       },
     },
   ],

@@ -919,6 +919,18 @@ describe('PropertyDetailsScreen: a listing with no description', () => {
     expect(placeholder(tree.root)).toHaveLength(0);
     expect(allText(tree.root)).not.toContain(SENTENCE);
   });
+
+  it('shows a description with paragraphs as it was written, under «توضیحات»', async () => {
+    const written = 'خانه دو منزله\n\nدارای حیاط بزرگ\nنزدیک مکتب';
+    const tree = await show(written);
+    const text = allText(tree.root);
+    expect(text).toContain(prs.property.description);
+    expect(text.indexOf(prs.property.description)).toBeLessThan(
+      text.indexOf(written),
+    );
+    expect(text).toContain(written);
+    expect(placeholder(tree.root)).toHaveLength(0);
+  });
 });
 
 // ─────────── Round 4: the unit, and the form and the map following each other ───────────

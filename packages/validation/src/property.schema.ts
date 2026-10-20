@@ -7,7 +7,7 @@ import {
   PROPERTY_TYPES,
   PROPERTY_UNIT_MAX_LENGTH,
 } from '@bongah/shared-types';
-import { cleanText, httpUrl, moneyAmount, normalizePlaceName, placeName } from './common';
+import { cleanText, httpUrl, moneyAmount, multilineText, normalizePlaceName, placeName } from './common';
 
 // Field names are snake_case: they are the public wire format of the property endpoints.
 
@@ -43,8 +43,8 @@ const optionalPlace = (max: number) =>
 
 const propertyShape = {
   title: cleanText(3, 150),
-  /** Optional: a listing can be published without a description. Stored as '' when left out. */
-  description: cleanText(0, 5000).optional(),
+  /** Optional: a listing can be published without a description. Stored as '' when left out. Keeps its line breaks. */
+  description: multilineText(0, 5000).optional(),
   type: z.enum(PROPERTY_TYPES),
   /** Optional free text: which unit of a building ("واحد ۳"). null (or blank) clears it on an update. */
   unit: cleanText(0, PROPERTY_UNIT_MAX_LENGTH).nullish(),

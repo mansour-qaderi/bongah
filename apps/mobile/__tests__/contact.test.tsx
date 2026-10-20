@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { initI18n } from '../src/i18n';
 import { formatNumber } from '../src/i18n/format';
 import prs from '../src/i18n/locales/prs.json';
+import { captureToasts } from '../test-utils/toasts';
 import {
   propertyRef,
   telUrl,
@@ -115,7 +116,7 @@ const limitReached = (q: ReturnType<typeof quota>) => ({
 
 const PRICING = {
   currency: 'AFGHANI',
-  subscription: { MONTHLY: 1000, QUARTERLY: 2700, YEARLY: 9600 },
+  subscription: { MONTHLY: 1000, QUARTERLY: 2700, SEMIANNUAL: 5000, YEARLY: 9600 },
   ladder: 50,
   featured_ad: 100,
   map_location: 30,
@@ -178,7 +179,9 @@ const openUrl = jest.fn(async () => true);
 beforeAll(async () => {
   await initI18n();
 });
+let toasts: ReturnType<typeof captureToasts>;
 beforeEach(() => {
+  toasts = captureToasts();
   fetchMock.mockReset();
   openUrl.mockClear();
   mockNavigation.navigate.mockClear();
@@ -189,6 +192,7 @@ beforeEach(() => {
     .mockImplementation(openUrl);
 });
 afterEach(async () => {
+  toasts.restore();
   await act(async () => {
     mounted.splice(0).forEach(tree => tree.unmount());
   });
@@ -311,7 +315,7 @@ describe('PropertyDetailsScreen: contact bar', () => {
     await settle();
     await press(tree.root, prs.property.callAction);
     await settle();
-    expect(allText(tree.root)).toContain(prs.contact.openFailed);
+    expect(toasts.messages).toContain(prs.contact.openFailed);
   });
 
   it('tells a signed-out visitor to sign in', async () => {
@@ -381,6 +385,9 @@ describe('PropertyDetailsScreen: daily limit reached', () => {
 
     const text = allText(tree.root);
     expect(text).toContain(prs.contact.limitTitle);
+    // The day it renews is a Solar Hijri date (15 Oct 2026 is 23 Mizan), never a Gregorian one.
+    expect(text).toContain('۲۳ میزان');
+    expect(text).not.toMatch(/۲۰۲۶|۲۰۲۶\/۱۰/);
     expect(text).toContain(
       prs.contact.creditsLeft.replace('{{count}}', formatNumber(2, 0)),
     );

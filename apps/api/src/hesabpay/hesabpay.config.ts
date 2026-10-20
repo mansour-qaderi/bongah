@@ -1,8 +1,13 @@
 import { randomBytes } from 'node:crypto';
 import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { CURRENCIES, SUBSCRIPTION_PACKAGES } from '@bongah/shared-types';
+import {
+  CURRENCIES,
+  SUBSCRIPTION_BASE_MONTHLY_PRICE,
+  SUBSCRIPTION_PACKAGES,
+} from '@bongah/shared-types';
 import type { Currency, SubscriptionPackage } from '../generated/prisma/client.js';
+import { asPriceText, defaultPriceOf } from './subscription-prices.js';
 
 export const HESABPAY_SETTINGS = Symbol('HESABPAY_SETTINGS');
 
@@ -17,6 +22,11 @@ export interface HesabPaySettings {
   /** Prices as decimal strings with at most 2 decimals. Decided here, never by the client. */
   prices: {
     subscription: Record<SubscriptionPackage, string>;
+    /**
+     * What one month costs without a discount: the one number every plan is priced from. The plans' list prices (and
+     * so the discounts the app shows) are this times their months. HESABPAY_PRICE_SUBSCRIPTION_LIST_MONTHLY, or 1000.
+     */
+    subscriptionListMonthly: string;
     ladder: string;
     featuredAd: string;
     /** One exact map pin on one listing, for accounts without an agency subscription. */
@@ -31,11 +41,11 @@ export interface HesabPaySettings {
 
 const DEFAULT_BASE_URL = 'https://api.hesab.com/api/v1';
 
-/** Placeholders so the app runs locally. Live mode refuses to start without explicit prices. */
+/**
+ * Placeholders so the app runs locally. Live mode refuses to start without explicit prices. (The subscription plans
+ * are not among them: they are priced from one monthly list price, below.)
+ */
 const MOCK_DEFAULT_PRICES = {
-  HESABPAY_PRICE_SUBSCRIPTION_MONTHLY: '1000',
-  HESABPAY_PRICE_SUBSCRIPTION_QUARTERLY: '2700',
-  HESABPAY_PRICE_SUBSCRIPTION_YEARLY: '9600',
   HESABPAY_PRICE_LADDER: '50',
   HESABPAY_PRICE_FEATURED_AD: '100',
   HESABPAY_PRICE_MAP_LOCATION: '30',
@@ -116,12 +126,26 @@ export function readHesabPaySettings(config: ConfigService): HesabPaySettings {
     throw new Error('HESABPAY_CONTACT_CREDITS_PER_PACK must be a whole number between 1 and 9999.');
   }
 
+  // The four plans are priced from ONE number, the monthly list price, so the discounts (10% a month, 20% for 3, 35%
+  // for 6, 50% for a year) are true by construction. Per-plan settings used to exist; they are ignored now, because
+  // an old value would quietly contradict the discount the app advertises. A price can still be set on purpose, per
+  // plan, by an admin (the price list in the admin panel), which is an audited decision and wins over these.
+  const rawList = text('HESABPAY_PRICE_SUBSCRIPTION_LIST_MONTHLY');
+  if (rawList && (!PRICE_PATTERN.test(rawList) || Number(rawList) <= 0)) {
+    throw new Error(`HESABPAY_PRICE_SUBSCRIPTION_LIST_MONTHLY must be a positive amount with at most 2 decimals (got "${rawList}").`);
+  }
+  const subscriptionListMonthly = rawList || asPriceText(SUBSCRIPTION_BASE_MONTHLY_PRICE);
   const subscription = Object.fromEntries(
-    SUBSCRIPTION_PACKAGES.map((pkg) => [
-      pkg,
-      price(`HESABPAY_PRICE_SUBSCRIPTION_${pkg}` as keyof typeof MOCK_DEFAULT_PRICES),
-    ]),
+    SUBSCRIPTION_PACKAGES.map((pkg) => [pkg, asPriceText(defaultPriceOf(Number(subscriptionListMonthly), pkg))]),
   ) as Record<SubscriptionPackage, string>;
+  const ignored = SUBSCRIPTION_PACKAGES.filter((pkg) => text(`HESABPAY_PRICE_SUBSCRIPTION_${pkg}`));
+  if (ignored.length > 0) {
+    logger.warn(
+      `${ignored.map((pkg) => `HESABPAY_PRICE_SUBSCRIPTION_${pkg}`).join(', ')} ${ignored.length === 1 ? 'is' : 'are'} ` +
+        `ignored: the plans are priced from HESABPAY_PRICE_SUBSCRIPTION_LIST_MONTHLY (${subscriptionListMonthly} a month, ` +
+        `${SUBSCRIPTION_PACKAGES.map((pkg) => `${subscription[pkg]} for ${pkg}`).join(', ')}). Delete the old settings.`,
+    );
+  }
 
   return {
     mode,
@@ -131,6 +155,7 @@ export function readHesabPaySettings(config: ConfigService): HesabPaySettings {
     currency,
     prices: {
       subscription,
+      subscriptionListMonthly,
       ladder: price('HESABPAY_PRICE_LADDER'),
       featuredAd: price('HESABPAY_PRICE_FEATURED_AD'),
       mapLocation: price('HESABPAY_PRICE_MAP_LOCATION'),

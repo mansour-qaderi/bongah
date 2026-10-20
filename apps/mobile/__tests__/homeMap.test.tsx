@@ -27,7 +27,7 @@ import { mockNavigation } from '../test-utils/navMock';
 import FilterSheet from '../src/components/FilterSheet';
 import { MARKER_TAP_GRACE_MS } from '../src/components/PropertyMap';
 import { LOCATE_TIMEOUT_MS } from '../src/map/location';
-import { dealColors } from '../src/theme';
+import { colors, dealColors } from '../src/theme';
 
 const fetchMock = jest.fn();
 let mockAuth: { status: string; user: unknown } = {
@@ -379,6 +379,38 @@ describe('Home map: markers', () => {
     expect(hasId(node, 'featured-star')).toBe(true);
     expect(hasId(marker(tree.root, 'property:p2'), 'featured-star')).toBe(
       false,
+    );
+  });
+
+  it('draws a featured listing as a glowing gold pin, above the ordinary ones', async () => {
+    serve([
+      listing({ id: 'p1', is_featured: true }),
+      listing({ id: 'p2', lat: 36.7, lng: 67.1 }),
+      listing({ id: 'p3', lat: 31.6, lng: 65.7 }),
+    ]);
+    const tree = await render(home());
+    await settle();
+    // Drawn after the others, so nothing ordinary covers it (later is on top).
+    const ids = markerIds(tree.root);
+    expect(ids[ids.length - 1]).toBe('property:p1');
+
+    const featured = marker(tree.root, 'property:p1');
+    expect(hasId(featured, 'featured-glow')).toBe(true);
+    expect(hasId(featured, 'featured-pulse')).toBe(true);
+    expect(hasId(featured, 'featured-star')).toBe(true);
+    expect(spoken(featured)).toContain(prs.property.featured);
+    const badge = featured.find(n => n.props.testID === 'marker-badge');
+    expect(JSON.stringify(badge.props.style)).toContain(colors.accentBright);
+    // The deal colour is kept: it is a gold ring round the emerald (sale) badge, not a different pin.
+    expect(JSON.stringify(badge.props.style)).toContain(dealColors.SALE.main);
+
+    const plain = marker(tree.root, 'property:p2');
+    for (const id of ['featured-glow', 'featured-pulse', 'featured-star']) {
+      expect(hasId(plain, id)).toBe(false);
+    }
+    const plainBadge = plain.find(n => n.props.testID === 'marker-badge');
+    expect(JSON.stringify(plainBadge.props.style)).not.toContain(
+      colors.accentBright,
     );
   });
 

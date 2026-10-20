@@ -6,6 +6,8 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { initI18n } from '../src/i18n';
 import { formatDate, formatNumber, toPersianDigits } from '../src/i18n/format';
 import prs from '../src/i18n/locales/prs.json';
+import { captureToasts } from '../test-utils/toasts';
+import { colors } from '../src/theme';
 import {
   allText,
   callsTo,
@@ -47,7 +49,7 @@ const PHONE = '+93701234567';
 const L1 = '11111111-1111-4111-8111-111111111111';
 const PRICING = {
   currency: 'AFGHANI',
-  subscription: { MONTHLY: 1000, QUARTERLY: 2700, YEARLY: 9600 },
+  subscription: { MONTHLY: 1000, QUARTERLY: 2700, SEMIANNUAL: 5000, YEARLY: 9600 },
   ladder: 50,
   featured_ad: 100,
   map_location: 30,
@@ -127,12 +129,15 @@ beforeAll(async () => {
 });
 const mounted: ReactTestRenderer.ReactTestRenderer[] = [];
 afterEach(async () => {
+  toasts.restore();
   await ReactTestRenderer.act(async () => {
     mounted.splice(0).forEach(tree => tree.unmount());
   });
 });
 let shareSpy: jest.SpyInstance;
+let toasts: ReturnType<typeof captureToasts>;
 beforeEach(() => {
+  toasts = captureToasts();
   fetchMock.mockReset();
   signIn.mockClear();
   (globalThis as unknown as { fetch: unknown }).fetch = fetchMock;
@@ -277,7 +282,7 @@ describe('ReferralScreen', () => {
     const tree = await render(screenElement(ReferralScreen));
     await settle();
     await press(tree.root, prs.referral.copy);
-    expect(allText(tree.root)).toContain(prs.referral.copyFailed);
+    expect(toasts.messages).toContain(prs.referral.copyFailed);
     expect(allText(tree.root)).not.toContain(prs.referral.copied);
   });
 
@@ -288,11 +293,11 @@ describe('ReferralScreen', () => {
 
     shareSpy.mockResolvedValueOnce({ action: Share.dismissedAction });
     await press(tree.root, prs.referral.share);
-    expect(allText(tree.root)).not.toContain(prs.referral.shareFailed);
+    expect(toasts.messages).not.toContain(prs.referral.shareFailed);
 
     shareSpy.mockRejectedValueOnce(new Error('no share target'));
     await press(tree.root, prs.referral.share);
-    expect(allText(tree.root)).toContain(prs.referral.shareFailed);
+    expect(toasts.messages).toContain(prs.referral.shareFailed);
   });
 
   it('explains that further invites earn nothing once the limit is reached', async () => {
@@ -499,24 +504,26 @@ describe('PhoneScreen referral code field', () => {
     await press(tree.root, prs.auth.sendCode);
     await settle();
 
-    expect(allText(tree.root)).toContain(
+    expect(toasts.messages).toContain(
       prs.auth.referralInvalidFormat.replace('{{length}}', toPersianDigits(8)),
     );
     expect(fetchMock).not.toHaveBeenCalled();
     expect(nav.navigate).not.toHaveBeenCalled();
   });
 
-  it('shows both problems at once when the phone and the code are wrong', async () => {
+  it('says the phone is wrong first, and outlines both fields, when the phone and the code are wrong', async () => {
     mockApi(fetchMock, {});
     const tree = await render(screenElement(PhoneScreen));
     await type(tree.root, prs.auth.phoneLabel, '123');
     await type(tree.root, prs.auth.referralLabel, 'ABC');
     await press(tree.root, prs.auth.sendCode);
-    const text = allText(tree.root);
-    expect(text).toContain(prs.auth.invalidPhone);
-    expect(text).toContain(
-      prs.auth.referralInvalidFormat.replace('{{length}}', toPersianDigits(8)),
-    );
+    expect(toasts.messages).toEqual([prs.auth.invalidPhone]);
+    // The page itself keeps its shape: no error text is drawn on it.
+    expect(allText(tree.root)).not.toContain(prs.auth.invalidPhone);
+    const outlined = tree.root
+      .findAllByType(TextInput)
+      .filter(n => JSON.stringify(n.props.style).includes(colors.danger));
+    expect(outlined).toHaveLength(2);
   });
 
   it('is typed left-to-right', async () => {
@@ -608,9 +615,8 @@ describe('OtpScreen with an invite code', () => {
 
     // Not signed in, not a generic "wrong code" message: the invite code is what failed.
     expect(signIn).not.toHaveBeenCalled();
-    const text = allText(tree.root);
-    expect(text).toContain(prs.auth.referralInvalid);
-    expect(text).not.toContain(prs.errors.invalidCode);
+    expect(toasts.messages).toContain(prs.auth.referralInvalid);
+    expect(toasts.messages).not.toContain(prs.errors.invalidCode);
 
     await press(tree.root, prs.auth.continueWithoutReferral);
     await settle();
@@ -618,7 +624,7 @@ describe('OtpScreen with an invite code', () => {
     expect(verifyBody(1)).toEqual({ phone_number: PHONE, otp_code: '123456' });
     expect(signIn).toHaveBeenCalledTimes(1);
     expect(nav.replace).toHaveBeenCalledWith('ProfileSetup');
-    expect(allText(tree.root)).not.toContain(prs.auth.referralInvalid);
+    expect(toasts.messages).toEqual([prs.auth.referralInvalid]);
   });
 
   it('still reports a wrong SMS code as a wrong SMS code', async () => {
@@ -631,9 +637,8 @@ describe('OtpScreen with an invite code', () => {
       ),
     );
     await enterCode(tree);
-    const text = allText(tree.root);
-    expect(text).toContain(prs.errors.invalidCode);
-    expect(text).not.toContain(prs.auth.continueWithoutReferral);
+    expect(toasts.messages).toEqual([prs.errors.invalidCode]);
+    expect(allText(tree.root)).not.toContain(prs.auth.continueWithoutReferral);
   });
 });
 
@@ -753,7 +758,7 @@ describe('PromotionSheet free ladder tokens', () => {
     await settle();
     await press(tree.root, prs.promotion.useFreeToken);
     await settle();
-    expect(allText(tree.root)).toContain(prs.referral.noToken);
+    expect(toasts.messages).toContain(prs.referral.noToken);
     expect(allText(tree.root)).not.toContain(
       prs.promotion.freeTokenDone.slice(0, 10),
     );

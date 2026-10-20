@@ -52,8 +52,8 @@ android {
         applicationId "com.bongahmobile"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 10102
-        versionName "1.1.2"
+        versionCode 10104
+        versionName "1.1.4"
     }
     signingConfigs {
         debug {

@@ -8,9 +8,6 @@ const SECRET = 'a-webhook-secret-of-16+chars';
 const LIVE_ENV = {
   HESABPAY_MODE: 'live',
   HESABPAY_API_KEY: 'key',
-  HESABPAY_PRICE_SUBSCRIPTION_MONTHLY: '1000',
-  HESABPAY_PRICE_SUBSCRIPTION_QUARTERLY: '2700',
-  HESABPAY_PRICE_SUBSCRIPTION_YEARLY: '9600',
   HESABPAY_PRICE_LADDER: '50',
   HESABPAY_PRICE_FEATURED_AD: '100',
   HESABPAY_PRICE_MAP_LOCATION: '30',
@@ -24,11 +21,38 @@ describe('readHesabPaySettings', () => {
     const s = readHesabPaySettings(config({ HESABPAY_WEBHOOK_SECRET: SECRET }));
     expect(s.mode).toBe('mock');
     expect(s.currency).toBe('AFGHANI');
-    expect(s.prices.subscription.MONTHLY).toBe('1000');
+    expect(s.prices.subscription).toEqual({ MONTHLY: '900', QUARTERLY: '2400', SEMIANNUAL: '3900', YEARLY: '6000' });
+    expect(s.prices.subscriptionListMonthly).toBe('1000');
     expect(s.featuredAdDays).toBe(7);
     expect(s.prices.contactCredits).toBe('40');
     expect(s.contactCreditsPerPack).toBe(10);
     expect(s.baseUrl).toBe('https://api.hesab.com/api/v1');
+  });
+
+  it('prices the four plans from one monthly list price, 1000 unless set', () => {
+    const s = readHesabPaySettings(config(LIVE_ENV));
+    expect(s.prices.subscriptionListMonthly).toBe('1000');
+    // 1000 a month less 10%; 3000 less 20%; 6000 less 35%; 12000 less 50%.
+    expect(s.prices.subscription).toEqual({ MONTHLY: '900', QUARTERLY: '2400', SEMIANNUAL: '3900', YEARLY: '6000' });
+    const listed = readHesabPaySettings(config({ ...LIVE_ENV, HESABPAY_PRICE_SUBSCRIPTION_LIST_MONTHLY: '1200' }));
+    expect(listed.prices.subscriptionListMonthly).toBe('1200');
+    expect(listed.prices.subscription).toEqual({ MONTHLY: '1080', QUARTERLY: '2880', SEMIANNUAL: '4680', YEARLY: '7200' });
+  });
+
+  it('ignores the old per-plan price settings, so a stale one cannot contradict the advertised discount', () => {
+    const s = readHesabPaySettings(
+      config({
+        ...LIVE_ENV,
+        HESABPAY_PRICE_SUBSCRIPTION_MONTHLY: '1000',
+        HESABPAY_PRICE_SUBSCRIPTION_QUARTERLY: '2700',
+        HESABPAY_PRICE_SUBSCRIPTION_YEARLY: '9600',
+      }),
+    );
+    expect(s.prices.subscription).toEqual({ MONTHLY: '900', QUARTERLY: '2400', SEMIANNUAL: '3900', YEARLY: '6000' });
+  });
+
+  it('does not need any plan price in live mode', () => {
+    expect(() => readHesabPaySettings(config(LIVE_ENV))).not.toThrow();
   });
 
   it('allows mock mode in production when chosen on purpose', () => {
@@ -72,7 +96,7 @@ describe('readHesabPaySettings', () => {
     ['HESABPAY_PRICE_LADDER', '0'],
     ['HESABPAY_PRICE_LADDER', '-5'],
     ['HESABPAY_PRICE_LADDER', '1e3'],
-    ['HESABPAY_PRICE_SUBSCRIPTION_YEARLY', 'free'],
+    ['HESABPAY_PRICE_SUBSCRIPTION_LIST_MONTHLY', '0'],
     ['HESABPAY_FEATURED_AD_DAYS', '0'],
     ['HESABPAY_FEATURED_AD_DAYS', '2.5'],
     ['HESABPAY_FEATURED_AD_DAYS', '4000'],

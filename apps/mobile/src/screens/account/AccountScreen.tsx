@@ -298,6 +298,15 @@ export default function AccountScreen({ navigation }: Props) {
         <ReferralBanner onOpen={() => navigation.navigate('Referral')} />
       ) : null}
 
+      <MenuGroup testID="upgrade-group">
+        <MenuRow
+          icon="coin"
+          label={t('nav.upgrade')}
+          hint={t('account.upgradeHint')}
+          onPress={() => navigation.navigate('Upgrade')}
+        />
+      </MenuGroup>
+
       <MenuGroup title={t('account.settings')} testID="settings-group">
         {user ? <MorningMessagesCard embedded /> : null}
         <View style={styles.languageRow}>

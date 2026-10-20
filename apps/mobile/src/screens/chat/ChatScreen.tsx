@@ -59,6 +59,8 @@ import {
 import { newClientId } from '../../chat/uuid';
 import AppText from '../../components/AppText';
 import Banner from '../../components/Banner';
+import { ToastHost } from '../../components/Toast';
+import { useErrorToast } from '../../components/useErrorToast';
 import Button from '../../components/Button';
 import { KeyboardAvoider } from '../../components/KeyboardAware';
 import { Chip, ChipRow } from '../../components/Chip';
@@ -299,6 +301,18 @@ export default function ChatScreen({ navigation, route }: Props) {
     closePicker();
   };
 
+  const noticeText =
+    notice === 'unsupported'
+      ? t('chat.imageUnsupported')
+      : notice === 'tooLarge'
+      ? t('chat.imageTooLarge')
+      : notice
+      ? errorMessage(notice, t)
+      : null;
+  // What went wrong with a picture, and a pin outside Afghanistan, are said in a toast; the chat stays as it was.
+  useErrorToast(noticeText, notice);
+  useErrorToast(pinOutside ? t('chat.locationOutside') : null, pinOutside);
+
   // ── drawing ──────────────────────────────────────────────────────────────
   if (history.isPending) return <LoadingView />;
   if (history.isError)
@@ -312,14 +326,6 @@ export default function ChatScreen({ navigation, route }: Props) {
   const items = chatItems(messages, outbox, myId);
   const closed = property.status !== 'ACTIVE';
   const someoneTyping = typing[conversationId] === true;
-  const noticeText =
-    notice === 'unsupported'
-      ? t('chat.imageUnsupported')
-      : notice === 'tooLarge'
-      ? t('chat.imageTooLarge')
-      : notice
-      ? errorMessage(notice, t)
-      : null;
 
   return (
     <Screen edges={['left', 'right']}>
@@ -389,12 +395,6 @@ export default function ChatScreen({ navigation, route }: Props) {
           >
             {t('chat.typing')}
           </AppText>
-        ) : null}
-
-        {noticeText ? (
-          <View style={styles.notice}>
-            <Banner kind="error" message={noticeText} />
-          </View>
         ) : null}
 
         {closed ? (
@@ -505,9 +505,6 @@ export default function ChatScreen({ navigation, route }: Props) {
             <AppText variant="caption" color={colors.textMuted}>
               {t('chat.locationHint')}
             </AppText>
-            {pinOutside ? (
-              <Banner kind="error" message={t('chat.locationOutside')} />
-            ) : null}
             <LocationPicker
               value={pin}
               camera={AFGHANISTAN_CAMERA}
@@ -533,6 +530,7 @@ export default function ChatScreen({ navigation, route }: Props) {
             </View>
           </SafeAreaView>
         </View>
+        <ToastHost />
       </Modal>
     </Screen>
   );

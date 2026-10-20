@@ -39,9 +39,10 @@ Admins are created from the command line only; no API request can make one. Buil
 pnpm build
 pnpm admin:promote 0700123456   # makes this number an admin (creates the account if it does not exist)
 pnpm admin:demote  0700123456   # back to a regular account
+pnpm db:seed                    # provisions the developer account (0790049201; SEED_ADMIN_PHONE overrides) as an admin
 ```
 
-The admin then signs in with that phone number and the usual SMS code. Every request re-reads the role
+The admin then signs in with that phone number and the usual WhatsApp code. Every request re-reads the role
 from the database, so a demotion or a ban takes effect on the very next request. Both commands are
 written to the admin audit log (with no actor).
 

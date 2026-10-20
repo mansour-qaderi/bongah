@@ -15,6 +15,7 @@ import { allMessages, type MessagesData } from '../src/chat/messageCache';
 import { initI18n } from '../src/i18n';
 import { formatNumber } from '../src/i18n/format';
 import prs from '../src/i18n/locales/prs.json';
+import { captureToasts } from '../test-utils/toasts';
 import {
   allText,
   inputLabelled,
@@ -27,6 +28,7 @@ import {
 import { lastSocket, resetSockets } from '../test-utils/mockSocket';
 
 const fetchMock = jest.fn();
+let toasts: ReturnType<typeof captureToasts>;
 let mockAuth: { status: string; user: unknown } = {
   status: 'signedIn',
   user: null,
@@ -265,6 +267,7 @@ beforeAll(async () => {
   await initI18n();
 });
 beforeEach(() => {
+  toasts = captureToasts();
   fetchMock.mockReset();
   resetSockets();
   (launchImageLibrary as jest.Mock).mockReset();
@@ -863,7 +866,7 @@ describe('ChatScreen', () => {
       pick({ uri: 'file:///a.gif', type: 'image/gif', fileSize: 1000 });
       const { tree } = await openChat();
       await attach(tree);
-      expect(allText(tree.root)).toContain(prs.chat.imageUnsupported);
+      expect(toasts.messages).toContain(prs.chat.imageUnsupported);
       expect(requests('POST', '/chat/images')).toHaveLength(0);
     });
 
@@ -871,7 +874,7 @@ describe('ChatScreen', () => {
       pick({ uri: 'file:///a.jpg', type: 'image/jpeg', fileSize: 2_000_000 });
       const { tree } = await openChat();
       await attach(tree);
-      expect(allText(tree.root)).toContain(prs.chat.imageTooLarge);
+      expect(toasts.messages).toContain(prs.chat.imageTooLarge);
       expect(requests('POST', '/chat/images')).toHaveLength(0);
     });
 
@@ -945,7 +948,7 @@ describe('ChatScreen', () => {
       await act(async () => {
         tapMap(tree.root, 'location-picker-map', [2.35, 48.85]); // Paris
       });
-      expect(allText(tree.root)).toContain(prs.chat.locationOutside);
+      expect(toasts.messages).toContain(prs.chat.locationOutside);
       expect(
         pressableWith(tree.root, prs.chat.locationSend).props.disabled,
       ).toBe(true);

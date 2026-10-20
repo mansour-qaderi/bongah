@@ -5,6 +5,7 @@ import type { PaymentInitiated } from '@bongah/shared-types';
 import type { InitiatePaymentInput } from '@bongah/validation';
 import { getPayment, initiatePayment } from '../api/endpoints';
 import { queryKeys } from '../api/hooks';
+import { useSafeAuth } from '../auth/useSafeAuth';
 import { PAYMENT_POLL_INTERVAL_MS, PAYMENT_POLL_TIMEOUT_MS } from '../config';
 
 /**
@@ -16,6 +17,8 @@ import { PAYMENT_POLL_INTERVAL_MS, PAYMENT_POLL_TIMEOUT_MS } from '../config';
  */
 export function usePaymentFlow() {
   const queryClient = useQueryClient();
+  const auth = useSafeAuth();
+  const refreshUser = auth?.refreshUser;
   const [payment, setPayment] = useState<PaymentInitiated | null>(null);
   const [openFailed, setOpenFailed] = useState(false);
   const startedAt = useRef(0);
@@ -60,8 +63,10 @@ export function usePaymentFlow() {
       queryClient.invalidateQueries({ queryKey: queryKeys.contact });
       // ...and a subscription turns on the chat perks.
       queryClient.invalidateQueries({ queryKey: queryKeys.chatCapabilities });
+      // ...and a first subscription or a featured bundle changes the credits on the user (bonus listings, featured).
+      refreshUser?.();
     }
-  }, [status, queryClient]);
+  }, [status, queryClient, refreshUser]);
 
   return {
     /** The payment once started; null while the person is still choosing. */

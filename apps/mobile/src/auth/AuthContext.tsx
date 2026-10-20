@@ -31,6 +31,8 @@ interface AuthContextValue {
   signIn: (response: VerifyOtpResponse) => Promise<void>;
   /** Replace the stored user, e.g. after the name was set. */
   updateUser: (user: User) => Promise<void>;
+  /** Ask the server for the user again (credits change when a payment or a listing goes through). Never throws. */
+  refreshUser: () => Promise<void>;
   signOut: () => Promise<void>;
 }
 
@@ -113,15 +115,24 @@ export function AuthProvider({ children }: PropsWithChildren) {
     });
   }, []);
 
+  const refreshUser = useCallback(async () => {
+    try {
+      await updateUser(await getMe());
+    } catch {
+      // Offline or a hiccup: the person keeps the numbers they had, and the next refresh catches up.
+    }
+  }, [updateUser]);
+
   const value = useMemo<AuthContextValue>(
     () => ({
       status: state.status,
       user: state.status === 'signedIn' ? state.session.user : null,
       signIn,
       updateUser,
+      refreshUser,
       signOut,
     }),
-    [state, signIn, updateUser, signOut],
+    [state, signIn, updateUser, refreshUser, signOut],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

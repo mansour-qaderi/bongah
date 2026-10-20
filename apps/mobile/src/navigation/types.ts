@@ -40,6 +40,8 @@ export type RootStackParamList = {
         purpose?: 'LADDER' | 'FEATURED_AD';
       }
     | undefined;
+  /** The subscription plans for agencies, with their discounts, and the way to pay. Reached from Account and the limit banners. */
+  Upgrade: undefined;
   /** My invite code, who joined with it and the free ladders I earned. */
   Referral: undefined;
   /** One conversation. The snapshot supplies the header and listing card; messages are live. */

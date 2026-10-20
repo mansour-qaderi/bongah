@@ -14,6 +14,7 @@ import { queryKeys, useChatCapabilities, useTemplates } from '../../api/hooks';
 import { useAuth } from '../../auth/AuthContext';
 import AppText from '../../components/AppText';
 import Banner from '../../components/Banner';
+import { useErrorToast } from '../../components/useErrorToast';
 import Button from '../../components/Button';
 import { ScrollScreen } from '../../components/Screen';
 import { EmptyView, ErrorView, LoadingView } from '../../components/States';
@@ -152,6 +153,7 @@ function Manager({
 
   const full = !editing && templates.length >= max;
   const failure = save.error ?? toggleAuto.error ?? remove.error;
+  useErrorToast(failure ? errorMessage(failure, t) : null, failure);
 
   return (
     <ScrollScreen edges={['left', 'right']}>
@@ -161,10 +163,6 @@ function Manager({
           max: formatNumber(max, 0),
         })}
       </AppText>
-
-      {failure ? (
-        <Banner kind="error" message={errorMessage(failure, t)} />
-      ) : null}
 
       <View style={styles.card}>
         <AppText variant="heading">

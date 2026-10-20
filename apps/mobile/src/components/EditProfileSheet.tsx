@@ -10,12 +10,12 @@ import { useAuth } from '../auth/AuthContext';
 import { colors, spacing } from '../theme';
 import AppText from './AppText';
 import Avatar from './Avatar';
-import Banner from './Banner';
 import BottomSheet from './BottomSheet';
 import Button from './Button';
 import Icon from './Icon';
 import { KeyboardAwareScrollView } from './KeyboardAware';
 import TextField from './TextField';
+import { showToast } from './Toast';
 
 interface Props {
   visible: boolean;
@@ -39,7 +39,6 @@ export default function EditProfileSheet({ visible, onClose }: Props) {
   const [name, setName] = useState('');
   const [photo, setPhoto] = useState<PhotoChoice>(null);
   const [nameError, setNameError] = useState<string | null>(null);
-  const [failure, setFailure] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
   // Each time the sheet opens it starts from what is saved, not from a half-finished earlier edit.
@@ -48,7 +47,6 @@ export default function EditProfileSheet({ visible, onClose }: Props) {
     setName(user?.full_name ?? '');
     setPhoto(null);
     setNameError(null);
-    setFailure(null);
     setSaving(false);
     // Only the opening matters: a refreshed `user` while the sheet is open must not wipe what is being typed.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -64,7 +62,6 @@ export default function EditProfileSheet({ visible, onClose }: Props) {
       : user.avatar;
 
   const pickPhoto = async () => {
-    setFailure(null);
     // Shrunk on the phone first: a profile picture is shown small, so there is no reason to send a full photo.
     const result = await launchImageLibrary({
       mediaType: 'photo',
@@ -77,22 +74,22 @@ export default function EditProfileSheet({ visible, onClose }: Props) {
     if (result.didCancel) return;
     const asset = result.assets?.[0];
     if (result.errorCode || !asset?.uri) {
-      setFailure(t('account.photoFailed'));
+      showToast(t('account.photoFailed'));
       return;
     }
     const type = asset.type ?? '';
     if (!(CHAT_IMAGE_TYPES as readonly string[]).includes(type)) {
-      setFailure(t('account.photoUnsupported'));
+      showToast(t('account.photoUnsupported'));
       return;
     }
     setPhoto({ kind: 'picked', uri: asset.uri, type });
   };
 
   const save = async () => {
-    setFailure(null);
     const parsed = registerUserSchema.safeParse({ full_name: name });
     if (!parsed.success) {
       setNameError(t('auth.invalidName'));
+      showToast(t('auth.invalidName'));
       return;
     }
     setNameError(null);
@@ -108,7 +105,7 @@ export default function EditProfileSheet({ visible, onClose }: Props) {
       await updateUser(updated);
       onClose();
     } catch (error) {
-      setFailure(errorMessage(error, t));
+      showToast(errorMessage(error, t));
       setSaving(false);
     }
   };
@@ -129,8 +126,6 @@ export default function EditProfileSheet({ visible, onClose }: Props) {
       }
     >
       <KeyboardAwareScrollView contentContainerStyle={styles.content}>
-        {failure ? <Banner kind="error" message={failure} /> : null}
-
         <View style={styles.photoBlock}>
           <Pressable
             accessibilityRole="button"
@@ -191,7 +186,7 @@ export default function EditProfileSheet({ visible, onClose }: Props) {
           autoComplete="name"
           textContentType="name"
           maxLength={100}
-          error={nameError}
+          invalid={nameError !== null}
           onSubmitEditing={save}
         />
       </KeyboardAwareScrollView>

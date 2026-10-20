@@ -10,48 +10,51 @@ import {
 import { sendOtp } from '../../api/endpoints';
 import { errorMessage } from '../../api/errors';
 import AppText from '../../components/AppText';
-import Banner from '../../components/Banner';
 import Button from '../../components/Button';
 import { ScrollScreen } from '../../components/Screen';
 import TextField from '../../components/TextField';
+import { showToast } from '../../components/Toast';
 import { toPersianDigits } from '../../i18n/format';
-import { closeAuth } from '../../navigation/closeAuth';
 import type { AuthStackParamList } from '../../navigation/types';
 import { colors, spacing } from '../../theme';
 
 type Props = NativeStackScreenProps<AuthStackParamList, 'Phone'>;
 
+/**
+ * Sign in or register: the phone number (and an invite code, if a friend gave one), then a code is sent to that
+ * number's WhatsApp. Whatever is wrong is said in a toast, and the field it is about gets a red outline; the page
+ * itself keeps its shape. The screen's own back arrow leaves it, so there is no separate close button.
+ */
 export default function PhoneScreen({ navigation }: Props) {
   const { t } = useTranslation();
   const [text, setText] = useState('');
-  const [fieldError, setFieldError] = useState<string | null>(null);
+  const [phoneInvalid, setPhoneInvalid] = useState(false);
   const [referral, setReferral] = useState('');
-  const [referralError, setReferralError] = useState<string | null>(null);
-  const [failure, setFailure] = useState<string | null>(null);
+  const [referralInvalid, setReferralInvalid] = useState(false);
   const [loading, setLoading] = useState(false);
 
   const submit = async () => {
-    setFailure(null);
     // The same normaliser the server uses, so what we send is already canonical (+93…).
     const phone = normalizeAfghanMobile(text);
     // The invite code is optional: empty means none; anything else must look like a code
-    // (null = typed but not a code). Whether it exists is only known once the SMS code is checked.
+    // (null = typed but not a code). Whether it exists is only known once the WhatsApp code is checked.
     const referralCode = referral.trim()
       ? normalizeReferralCode(referral)
       : undefined;
     if (!phone || referralCode === null) {
-      setFieldError(phone ? null : t('auth.invalidPhone'));
-      setReferralError(
-        referralCode === null
-          ? t('auth.referralInvalidFormat', {
+      setPhoneInvalid(!phone);
+      setReferralInvalid(referralCode === null);
+      showToast(
+        !phone
+          ? t('auth.invalidPhone')
+          : t('auth.referralInvalidFormat', {
               length: toPersianDigits(REFERRAL_CODE_LENGTH),
-            })
-          : null,
+            }),
       );
       return;
     }
-    setFieldError(null);
-    setReferralError(null);
+    setPhoneInvalid(false);
+    setReferralInvalid(false);
     setLoading(true);
     try {
       const response = await sendOtp(phone);
@@ -62,7 +65,7 @@ export default function PhoneScreen({ navigation }: Props) {
         ...(referralCode ? { referralCode } : {}),
       });
     } catch (error) {
-      setFailure(errorMessage(error, t, { sendingCode: true }));
+      showToast(errorMessage(error, t, { sendingCode: true }));
     } finally {
       setLoading(false);
     }
@@ -72,17 +75,15 @@ export default function PhoneScreen({ navigation }: Props) {
     <ScrollScreen style={styles.content}>
       <AppText variant="title">{t('app.name')}</AppText>
       <AppText color={colors.textMuted} style={styles.hint}>
-        {t('auth.phoneHint')}
+        {t('auth.phoneHintWhatsapp')}
       </AppText>
-
-      {failure ? <Banner kind="error" message={failure} /> : null}
 
       <TextField
         label={t('auth.phoneLabel')}
         value={text}
         onChangeText={value => {
           setText(value);
-          setFieldError(null);
+          setPhoneInvalid(false);
         }}
         placeholder={t('auth.phonePlaceholder')}
         keyboardType="phone-pad"
@@ -90,7 +91,7 @@ export default function PhoneScreen({ navigation }: Props) {
         autoComplete="tel"
         maxLength={20}
         ltr
-        error={fieldError}
+        invalid={phoneInvalid}
         onSubmitEditing={submit}
       />
       <AppText
@@ -105,7 +106,7 @@ export default function PhoneScreen({ navigation }: Props) {
         value={referral}
         onChangeText={value => {
           setReferral(value);
-          setReferralError(null);
+          setReferralInvalid(false);
         }}
         placeholder={t('auth.referralPlaceholder')}
         autoCapitalize="characters"
@@ -113,15 +114,14 @@ export default function PhoneScreen({ navigation }: Props) {
         maxLength={24}
         digits="keep"
         ltr
-        error={referralError}
+        invalid={referralInvalid}
         onSubmitEditing={submit}
       />
-      <Button title={t('auth.sendCode')} onPress={submit} loading={loading} />
       <Button
-        title={t('common.close')}
-        variant="outline"
-        onPress={() => closeAuth(navigation)}
-        style={styles.close}
+        title={t('auth.sendCode')}
+        icon="send"
+        onPress={submit}
+        loading={loading}
       />
     </ScrollScreen>
   );
@@ -131,5 +131,4 @@ const styles = StyleSheet.create({
   content: { paddingTop: spacing.xl },
   hint: { marginTop: spacing.sm, marginBottom: spacing.xl },
   referralHint: { marginBottom: spacing.xs },
-  close: { marginTop: spacing.md },
 });

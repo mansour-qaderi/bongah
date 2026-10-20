@@ -6,7 +6,7 @@ import request from 'supertest';
 import { AppModule } from '../src/app.module.js';
 import { AuthModule } from '../src/auth/auth.module.js';
 import { JwtAuthGuard } from '../src/auth/guards/jwt-auth.guard.js';
-import { SmsGateway } from '../src/auth/sms/sms-gateway.js';
+import { OtpGateway } from '../src/auth/otp/otp-gateway.js';
 import { PrismaService } from '../src/prisma/prisma.service.js';
 
 @Controller('test-protected')
@@ -134,15 +134,28 @@ describe.skipIf(!hasDb)('Auth (e2e)', () => {
       await verifyOtp(phone.e164, second).expect(200);
     });
 
-    it('does not keep the code or burn quota when the SMS gateway fails', async () => {
-      const failing = await Test.createTestingModule({ imports: [AppModule] })
-        .overrideGuard(ThrottlerGuard)
-        .useValue({ canActivate: () => true })
-        .overrideProvider(SmsGateway)
-        .useValue({ send: async () => Promise.reject(new Error('gateway down')) })
-        .compile();
-      const failingApp = failing.createNestApplication();
-      await failingApp.init();
+    /** An app whose WhatsApp gateway is down; `fallback` is OTP_DEV_FALLBACK while it is built. */
+    const appWithFailingGateway = async (fallback: 'true' | 'false') => {
+      const before = process.env.OTP_DEV_FALLBACK;
+      process.env.OTP_DEV_FALLBACK = fallback;
+      try {
+        const failing = await Test.createTestingModule({ imports: [AppModule] })
+          .overrideGuard(ThrottlerGuard)
+          .useValue({ canActivate: () => true })
+          .overrideProvider(OtpGateway)
+          .useValue({ send: async () => Promise.reject(new Error('gateway down')) })
+          .compile();
+        const failingApp = failing.createNestApplication();
+        await failingApp.init();
+        return failingApp;
+      } finally {
+        if (before === undefined) delete process.env.OTP_DEV_FALLBACK;
+        else process.env.OTP_DEV_FALLBACK = before;
+      }
+    };
+
+    it('does not keep the code or burn quota when the OTP gateway fails (fallback off)', async () => {
+      const failingApp = await appWithFailingGateway('false');
       try {
         const phone = newPhone();
         await request(failingApp.getHttpServer())
@@ -150,6 +163,45 @@ describe.skipIf(!hasDb)('Auth (e2e)', () => {
           .send({ phone_number: phone.e164 })
           .expect(503);
         expect(await prisma.otpCode.count({ where: { phoneNumber: phone.e164 } })).toBe(0);
+      } finally {
+        await failingApp.close();
+      }
+    });
+
+    it('leaves the code the person already holds valid when a resend cannot be delivered', async () => {
+      const phone = newPhone();
+      const held = await requestCode(phone.e164);
+      // Past the resend cooldown, so the next send is allowed.
+      await prisma.otpCode.updateMany({
+        where: { phoneNumber: phone.e164 },
+        data: { createdAt: new Date(Date.now() - 5 * 60_000) },
+      });
+      const failingApp = await appWithFailingGateway('false');
+      try {
+        await request(failingApp.getHttpServer())
+          .post('/auth/send-otp')
+          .send({ phone_number: phone.e164 })
+          .expect(503);
+      } finally {
+        await failingApp.close();
+      }
+      await verifyOtp(phone.e164, held).expect(200);
+    });
+
+    it('hands the code back when the gateway fails and the dev fallback is on, so sign-in is never blocked', async () => {
+      const failingApp = await appWithFailingGateway('true');
+      try {
+        const phone = newPhone();
+        const res = await request(failingApp.getHttpServer())
+          .post('/auth/send-otp')
+          .send({ phone_number: phone.e164 })
+          .expect(200);
+        expect(res.body.dev_otp).toMatch(/^\d{6}$/);
+        const login = await request(failingApp.getHttpServer())
+          .post('/auth/verify-otp')
+          .send({ phone_number: phone.e164, otp_code: res.body.dev_otp })
+          .expect(200);
+        expect(login.body.access_token).toEqual(expect.any(String));
       } finally {
         await failingApp.close();
       }
@@ -165,13 +217,23 @@ describe.skipIf(!hasDb)('Auth (e2e)', () => {
       expect(res.body).toMatchObject({
         token_type: 'Bearer',
         is_new_user: true,
-        user: { phone_number: phone.e164, role: 'USER', full_name: null, avatar: null, enable_daily_motivation: true, has_seen_welcome: false },
+        user: { phone_number: phone.e164, role: 'USER', full_name: null, avatar: null, enable_daily_motivation: true, has_seen_welcome: false, welcome_listing_credits: 1 },
       });
 
       const payload = await jwt.verifyAsync(res.body.access_token);
       expect(payload).toMatchObject({ sub: res.body.user.id, role: 'USER' });
       expect(payload.exp - payload.iat).toBe(res.body.expires_in);
       expect(await prisma.user.count({ where: { phoneNumber: phone.e164 } })).toBe(1);
+    });
+
+    it('gives the welcome gift once, to the new account only', async () => {
+      const phone = newPhone();
+      const first = await verifyOtp(phone.e164, await requestCode(phone.e164)).expect(200);
+      expect(first.body.user.welcome_listing_credits).toBe(1);
+      await prisma.user.update({ where: { id: first.body.user.id }, data: { welcomeListingCredits: 0 } }); // spent
+      await prisma.otpCode.updateMany({ where: { phoneNumber: phone.e164 }, data: { createdAt: new Date(Date.now() - 120_000) } });
+      const again = await verifyOtp(phone.e164, await requestCode(phone.e164)).expect(200);
+      expect(again.body.user.welcome_listing_credits).toBe(0); // signing in again does not refill it
     });
 
     it('logs an existing user back in without creating a duplicate', async () => {

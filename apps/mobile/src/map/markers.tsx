@@ -1,5 +1,11 @@
-import React from 'react';
-import { StyleSheet, View } from 'react-native';
+import React, { useEffect, useRef } from 'react';
+import {
+  AccessibilityInfo,
+  Animated,
+  Easing,
+  StyleSheet,
+  View,
+} from 'react-native';
 import { useTranslation } from 'react-i18next';
 import type {
   AgencyMapPin,
@@ -62,16 +68,78 @@ const BADGE = 38;
 const HALO = 56;
 const TAG_MAX_WIDTH = 150;
 
-/** A small downward point under a badge, so its tip marks the exact spot. */
-function Tail({ color }: { color: string }) {
-  return <View style={[styles.tail, { backgroundColor: color }]} />;
+/** A small downward point under a badge, so its tip marks the exact spot. Gold-edged on a featured listing. */
+function Tail({ color, gold = false }: { color: string; gold?: boolean }) {
+  return (
+    <View
+      style={[
+        styles.tail,
+        { backgroundColor: color },
+        gold ? styles.tailGold : null,
+      ]}
+    />
+  );
+}
+
+/** One pulse of the featured glow: how long it takes to grow and fade out. */
+export const FEATURED_PULSE_MS = 1700;
+
+/**
+ * The glow behind a featured (paid, "آگهی ویژه") listing: a steady soft gold disc and a ring of gold that grows out of
+ * the badge and fades, over and over. The ring stops (the disc stays) for someone who has asked their phone for
+ * less motion. It never grows past the room the selected marker's halo already has, so the marker's frame is not
+ * outgrown.
+ */
+function FeaturedGlow() {
+  const pulse = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    let cancelled = false;
+    let loop: Animated.CompositeAnimation | null = null;
+    Promise.resolve(AccessibilityInfo.isReduceMotionEnabled())
+      .catch(() => false)
+      .then(reduce => {
+        if (cancelled || reduce) return;
+        loop = Animated.loop(
+          Animated.timing(pulse, {
+            toValue: 1,
+            duration: FEATURED_PULSE_MS,
+            easing: Easing.out(Easing.quad),
+            useNativeDriver: true,
+          }),
+        );
+        loop.start();
+      });
+    return () => {
+      cancelled = true;
+      loop?.stop();
+    };
+  }, [pulse]);
+  const scale = pulse.interpolate({
+    inputRange: [0, 1],
+    outputRange: [1, HALO / BADGE],
+  });
+  const opacity = pulse.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0.7, 0],
+  });
+  return (
+    <>
+      <View testID="featured-glow" style={styles.glow} />
+      <Animated.View
+        testID="featured-pulse"
+        pointerEvents="none"
+        style={[styles.pulse, { opacity, transform: [{ scale }] }]}
+      />
+    </>
+  );
 }
 
 /**
  * A listing. The badge is a coloured disc: the colour says what it is offered for (emerald = sale, blue =
  * rent, gold = growi) and the white line icon says what it is (flat, house, plot, shop, villa). The price
  * appears above it once the map is close enough to leave room (`showPrice`), and always on the chosen one,
- * which also grows and gets a soft halo. A paid (featured) listing carries a small gold star.
+ * which also grows and gets a soft halo. A paid (featured) listing is the one that stands out: a gold ring round
+ * its badge, a gold glow that pulses, a gold tail and a small gold star, so it is found first on a crowded map.
  */
 function PropertyMarkerView({
   property,
@@ -87,15 +155,19 @@ function PropertyMarkerView({
   const seller = useSellerLabel()(property);
   const price = format.compactPrice(property.price, property.currency);
   const tone = dealColors[property.deal_type];
+  const featured = property.is_featured;
   return (
     <View
       style={styles.markerBox}
       accessibilityLabel={[
+        featured ? t('property.featured') : null,
         propertyTypeLabel(property.type, t),
         t(`dealType.${property.deal_type}`),
         price,
         seller,
-      ].join('، ')}
+      ]
+        .filter(Boolean)
+        .join('، ')}
       accessibilityState={{ selected }}
     >
       {showPrice || selected ? (
@@ -111,6 +183,7 @@ function PropertyMarkerView({
         </View>
       ) : null}
       <View style={styles.badgeBox}>
+        {featured ? <FeaturedGlow /> : null}
         {selected ? (
           <View style={[styles.halo, { backgroundColor: tone.main }]} />
         ) : null}
@@ -119,6 +192,7 @@ function PropertyMarkerView({
           style={[
             styles.badge,
             { backgroundColor: tone.main },
+            featured ? styles.badgeFeatured : null,
             selected ? styles.badgeSelected : null,
           ]}
         >
@@ -129,12 +203,12 @@ function PropertyMarkerView({
             background={tone.main}
             weight={2.1}
           />
-          {property.is_featured ? (
+          {featured ? (
             <View testID="featured-star" style={styles.star} />
           ) : null}
         </View>
       </View>
-      <Tail color={tone.main} />
+      <Tail color={tone.main} gold={featured} />
     </View>
   );
 }
@@ -201,10 +275,13 @@ function AgencyMarkerView({
 export function ClusterMarker({
   count,
   onlyProperties = true,
+  hasFeatured = false,
 }: {
   count: number;
   /** false when offices are in the group, so the word "properties" would be wrong. */
   onlyProperties?: boolean;
+  /** true when a featured listing is among them: the pile gets a gold edge, so it is not passed over. */
+  hasFeatured?: boolean;
 }) {
   const { t } = useTranslation();
   const height = Math.min(
@@ -223,6 +300,7 @@ export function ClusterMarker({
       })}
       style={[
         styles.cluster,
+        hasFeatured ? styles.clusterFeatured : null,
         { height, borderRadius: height / 2, minWidth: height },
       ]}
     >
@@ -273,6 +351,29 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   badgeSelected: { transform: [{ scale: 1.15 }] },
+  // A featured listing: a gold ring in place of the white one, a little larger than the rest.
+  badgeFeatured: {
+    borderColor: colors.accentBright,
+    borderWidth: 3,
+    transform: [{ scale: 1.1 }],
+  },
+  glow: {
+    position: 'absolute',
+    width: BADGE + 12,
+    height: BADGE + 12,
+    borderRadius: (BADGE + 12) / 2,
+    backgroundColor: colors.accentBright,
+    opacity: 0.35,
+  },
+  pulse: {
+    position: 'absolute',
+    width: BADGE,
+    height: BADGE,
+    borderRadius: BADGE / 2,
+    borderWidth: 3,
+    borderColor: colors.accentBright,
+    backgroundColor: 'rgba(245,158,11,0.25)', // colors.accentBright at 25%
+  },
   star: {
     position: 'absolute',
     top: -5,
@@ -297,6 +398,7 @@ const styles = StyleSheet.create({
     borderColor: WHITE,
     transform: [{ rotate: '45deg' }],
   },
+  tailGold: { borderColor: colors.accentBright },
   tag: {
     maxWidth: TAG_MAX_WIDTH,
     marginBottom: spacing.xs,
@@ -341,6 +443,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingHorizontal: spacing.md,
   },
+  clusterFeatured: { borderColor: colors.accentBright, borderWidth: 3.5 },
   userHalo: {
     width: 36,
     height: 36,

@@ -1,11 +1,13 @@
 import { BadRequestException, Inject, Injectable } from '@nestjs/common';
 import type { Pricing, PricingEntry } from '@bongah/shared-types';
-import { PRICING_KEYS, SUBSCRIPTION_PACKAGES } from '@bongah/shared-types';
+import { PRICING_KEYS, SUBSCRIPTION_PACKAGES, SUBSCRIPTION_PLAN_BENEFITS } from '@bongah/shared-types';
 import type { SetPricingInput } from '@bongah/validation';
 import { recordAudit } from '../audit/admin-audit.js';
 import { Prisma, PricingKey } from '../generated/prisma/client.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { HESABPAY_SETTINGS, type HesabPaySettings } from './hesabpay.config.js';
+import { featuredBundles } from './featured-bundles.js';
+import { listPriceOf } from './subscription-prices.js';
 
 /** What one product costs right now (price as a decimal string, like the settings). */
 export interface EffectivePrice {
@@ -41,6 +43,7 @@ export class PricingService {
     return {
       SUBSCRIPTION_MONTHLY: { price: prices.subscription.MONTHLY, quantity: null },
       SUBSCRIPTION_QUARTERLY: { price: prices.subscription.QUARTERLY, quantity: null },
+      SUBSCRIPTION_SEMIANNUAL: { price: prices.subscription.SEMIANNUAL, quantity: null },
       SUBSCRIPTION_YEARLY: { price: prices.subscription.YEARLY, quantity: null },
       LADDER: { price: prices.ladder, quantity: null },
       FEATURED_AD: { price: prices.featuredAd, quantity: featuredAdDays },
@@ -69,12 +72,17 @@ export class PricingService {
       subscription: Object.fromEntries(
         SUBSCRIPTION_PACKAGES.map((pkg) => [pkg, price(`SUBSCRIPTION_${pkg}` as PricingKey)]),
       ) as Pricing['subscription'],
+      subscription_list: Object.fromEntries(
+        SUBSCRIPTION_PACKAGES.map((pkg) => [pkg, listPriceOf(Number(this.settings.prices.subscriptionListMonthly), pkg)]),
+      ) as Pricing['subscription'],
       ladder: price('LADDER'),
       featured_ad: price('FEATURED_AD'),
       map_location: price('MAP_LOCATION'),
       featured_ad_days: pricing.FEATURED_AD.quantity ?? this.settings.featuredAdDays,
       contact_credits: price('CONTACT_CREDITS'),
       contact_credits_per_pack: pricing.CONTACT_CREDITS.quantity ?? this.settings.contactCreditsPerPack,
+      featured_bundles: featuredBundles(price('FEATURED_AD')),
+      plans: SUBSCRIPTION_PLAN_BENEFITS,
     };
   }
 

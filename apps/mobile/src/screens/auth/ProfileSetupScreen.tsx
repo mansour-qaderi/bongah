@@ -11,6 +11,7 @@ import Banner from '../../components/Banner';
 import Button from '../../components/Button';
 import { ScrollScreen } from '../../components/Screen';
 import TextField from '../../components/TextField';
+import { showToast } from '../../components/Toast';
 import { closeAuth } from '../../navigation/closeAuth';
 import type { AuthStackParamList } from '../../navigation/types';
 import { colors, spacing } from '../../theme';
@@ -23,14 +24,13 @@ export default function ProfileSetupScreen({ navigation, route }: Props) {
   const { updateUser } = useAuth();
   const [name, setName] = useState('');
   const [fieldError, setFieldError] = useState<string | null>(null);
-  const [failure, setFailure] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
   const save = async () => {
-    setFailure(null);
     const parsed = registerUserSchema.safeParse({ full_name: name });
     if (!parsed.success) {
       setFieldError(t('auth.invalidName'));
+      showToast(t('auth.invalidName'));
       return;
     }
     setFieldError(null);
@@ -40,7 +40,7 @@ export default function ProfileSetupScreen({ navigation, route }: Props) {
       await updateUser(user);
       closeAuth(navigation);
     } catch (error) {
-      setFailure(errorMessage(error, t));
+      showToast(errorMessage(error, t));
       setLoading(false);
     }
   };
@@ -53,7 +53,6 @@ export default function ProfileSetupScreen({ navigation, route }: Props) {
       {route?.params?.referralApplied ? (
         <Banner kind="success" message={t('auth.referralApplied')} />
       ) : null}
-      {failure ? <Banner kind="error" message={failure} /> : null}
       <TextField
         label={t('auth.fullName')}
         value={name}
@@ -65,7 +64,7 @@ export default function ProfileSetupScreen({ navigation, route }: Props) {
         autoComplete="name"
         textContentType="name"
         maxLength={100}
-        error={fieldError}
+        invalid={fieldError !== null}
         onSubmitEditing={save}
       />
       <Button title={t('common.save')} onPress={save} loading={loading} />

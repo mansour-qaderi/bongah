@@ -11,6 +11,7 @@ import Banner from '../../components/Banner';
 import Button from '../../components/Button';
 import { ScrollScreen } from '../../components/Screen';
 import OtpInput from '../../components/OtpInput';
+import { showToast } from '../../components/Toast';
 import { formatPhone, toPersianDigits } from '../../i18n/format';
 import { closeAuth } from '../../navigation/closeAuth';
 import type { AuthStackParamList } from '../../navigation/types';
@@ -18,19 +19,51 @@ import { colors, spacing } from '../../theme';
 
 type Props = NativeStackScreenProps<AuthStackParamList, 'Otp'>;
 
+/** How long the test code stays in its toast. */
+export const TEST_CODE_TOAST_MS = 15000;
+
+/** The code as plain 0-9, whatever digits or spaces it was typed or pasted with. */
+const cleanCode = (code: string): string =>
+  toAsciiDigits(code).replace(/\s/g, '');
+
+/**
+ * Enter the 6-digit code that was sent to WhatsApp. "تأیید و ورود" stays off until all six digits are there.
+ *
+ * When the server runs without a WhatsApp gateway (test mode), or its gateway could not deliver the message and the
+ * server's development fallback is on, it hands the code back with the "code sent" answer. This screen then shows it
+ * (in the banner and in a toast that stays up long enough to read), and fills it in, in every build: nothing reached
+ * WhatsApp, so without it nobody could read the code and sign-in would be blocked. With the real gateway working the
+ * server never returns a code and none is shown.
+ *
+ * What goes wrong is said in a toast (a wrong code also outlines the boxes in red until the next edit).
+ */
 export default function OtpScreen({ navigation, route }: Props) {
   const { t } = useTranslation();
   const { signIn } = useAuth();
   const { phone, referralCode } = route.params;
 
-  const [code, setCode] = useState('');
-  const [devOtp, setDevOtp] = useState(route.params.devOtp);
+  const [code, setCode] = useState(route.params.devOtp ?? '');
+  const [testCode, setTestCode] = useState(route.params.devOtp);
   const [secondsLeft, setSecondsLeft] = useState(route.params.resendAfter);
-  const [failure, setFailure] = useState<string | null>(null);
-  const [fieldError, setFieldError] = useState<string | null>(null);
+  const [codeRefused, setCodeRefused] = useState(false);
   const [referralRejected, setReferralRejected] = useState(false);
   const [verifying, setVerifying] = useState(false);
   const [resending, setResending] = useState(false);
+
+  const digits = cleanCode(code);
+  const complete = new RegExp(`^\\d{${OTP_LENGTH}}$`).test(digits);
+
+  // The code the server handed back is also said in a toast, held longer than an ordinary one so it can be read (and
+  // copied from the banner) before it goes.
+  useEffect(() => {
+    if (testCode) {
+      showToast(
+        t('auth.testCode', { code: toPersianDigits(testCode) }),
+        'info',
+        TEST_CODE_TOAST_MS,
+      );
+    }
+  }, [testCode, t]);
 
   // Count down to the moment another code may be requested.
   useEffect(() => {
@@ -39,18 +72,14 @@ export default function OtpScreen({ navigation, route }: Props) {
     return () => clearTimeout(timer);
   }, [secondsLeft]);
 
-  /** `withoutReferral`: carry on with the same SMS code after the invite code was refused. */
+  /** `withoutReferral`: carry on with the same code after the invite code was refused. */
   const submit = async (withoutReferral = false) => {
-    setFailure(null);
-    setReferralRejected(false);
-    const digits = toAsciiDigits(code).replace(/\s/g, '');
-    if (!new RegExp(`^\\d{${OTP_LENGTH}}$`).test(digits)) {
-      setFieldError(
-        t('auth.invalidOtp', { length: toPersianDigits(OTP_LENGTH) }),
-      );
+    if (!complete) {
+      showToast(t('auth.verifyFirst', { length: toPersianDigits(OTP_LENGTH) }));
       return;
     }
-    setFieldError(null);
+    setCodeRefused(false);
+    setReferralRejected(false);
     setVerifying(true);
     try {
       const response = await verifyOtp(
@@ -69,24 +98,29 @@ export default function OtpScreen({ navigation, route }: Props) {
         closeAuth(navigation);
       }
     } catch (error) {
-      // The SMS code was fine and is still usable: only the invite code was refused, and the
-      // person decides whether to fix it (back to the phone screen) or carry on without it.
-      if (isInvalidReferralCode(error)) setReferralRejected(true);
-      else setFailure(errorMessage(error, t, { unauthorized: 'invalidCode' }));
+      // The code was fine and is still usable: only the invite code was refused, and the person decides whether to
+      // fix it (back to the phone screen) or carry on without it.
+      if (isInvalidReferralCode(error)) {
+        setReferralRejected(true);
+        showToast(t('auth.referralInvalid'));
+      } else {
+        setCodeRefused(true);
+        showToast(errorMessage(error, t, { unauthorized: 'invalidCode' }));
+      }
       setVerifying(false);
     }
   };
 
   const resend = async () => {
-    setFailure(null);
     setResending(true);
     try {
       const response = await sendOtp(phone);
       setSecondsLeft(response.resend_after);
-      setDevOtp(response.dev_otp);
-      setCode('');
+      setTestCode(response.dev_otp);
+      setCode(response.dev_otp ?? '');
+      setCodeRefused(false);
     } catch (error) {
-      setFailure(errorMessage(error, t, { sendingCode: true }));
+      showToast(errorMessage(error, t, { sendingCode: true }));
     } finally {
       setResending(false);
     }
@@ -101,21 +135,10 @@ export default function OtpScreen({ navigation, route }: Props) {
         })}
       </AppText>
 
-      {failure ? <Banner kind="error" message={failure} /> : null}
-      {referralRejected ? (
-        <Banner kind="error" message={t('auth.referralInvalid')}>
-          <Button
-            title={t('auth.continueWithoutReferral')}
-            variant="outline"
-            onPress={() => submit(true)}
-            loading={verifying}
-          />
-        </Banner>
-      ) : null}
-      {__DEV__ && devOtp ? (
+      {testCode ? (
         <Banner
           kind="info"
-          message={t('auth.devCode', { code: toPersianDigits(devOtp) })}
+          message={t('auth.testCode', { code: toPersianDigits(testCode) })}
         />
       ) : null}
 
@@ -126,33 +149,35 @@ export default function OtpScreen({ navigation, route }: Props) {
         label={t('auth.otpLabel')}
         length={OTP_LENGTH}
         value={code}
-        invalid={fieldError !== null}
+        invalid={codeRefused}
         onChange={value => {
           setCode(value);
-          setFieldError(null);
+          setCodeRefused(false);
         }}
       />
-      {fieldError ? (
-        <AppText
-          variant="caption"
-          color={colors.danger}
-          style={styles.codeNote}
-        >
-          {fieldError}
-        </AppText>
-      ) : (
-        <AppText
-          variant="caption"
-          color={colors.textMuted}
-          style={styles.codeNote}
-        >
-          {t('auth.otpPasteHint')}
-        </AppText>
-      )}
+      <AppText
+        variant="caption"
+        color={colors.textMuted}
+        style={styles.codeNote}
+      >
+        {t('auth.otpPasteHintWhatsapp')}
+      </AppText>
+
+      {referralRejected ? (
+        <Button
+          title={t('auth.continueWithoutReferral')}
+          variant="outline"
+          onPress={() => submit(true)}
+          loading={verifying}
+          style={styles.secondary}
+        />
+      ) : null}
       <Button
         title={t('auth.verify')}
+        icon="check"
         onPress={() => submit()}
         loading={verifying}
+        disabled={!complete}
       />
 
       <Button
@@ -161,6 +186,7 @@ export default function OtpScreen({ navigation, route }: Props) {
             ? t('auth.resendIn', { seconds: toPersianDigits(secondsLeft) })
             : t('auth.resend')
         }
+        icon="refresh"
         variant="secondary"
         disabled={secondsLeft > 0}
         loading={resending}
@@ -169,6 +195,7 @@ export default function OtpScreen({ navigation, route }: Props) {
       />
       <Button
         title={t('auth.changeNumber')}
+        icon="edit"
         variant="outline"
         onPress={() => navigation.goBack()}
         style={styles.secondary}

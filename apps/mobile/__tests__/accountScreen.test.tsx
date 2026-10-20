@@ -105,6 +105,13 @@ describe('AccountScreen dashboard', () => {
     expect(withoutCredit).not.toMatch(/[0-9]/);
   });
 
+  it('has a way to the plans, "ارتقای حساب و خرید اشتراک", for everyone who signs in', async () => {
+    const { tree, nav } = await mount();
+    expect(allText(tree.root)).toContain('ارتقای حساب و خرید اشتراک');
+    await press(tree.root, prs.nav.upgrade);
+    expect(nav.navigate).toHaveBeenCalledWith('Upgrade');
+  });
+
   it('gives an ordinary user no agency tools and no plan badge', async () => {
     const { tree } = await mount();
     const text = allText(tree.root);

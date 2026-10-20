@@ -34,6 +34,10 @@ describe.skipIf(!hasDb)('Registration (e2e)', () => {
         avatar: null,
         enable_daily_motivation: true,
         has_seen_welcome: false,
+        welcome_listing_credits: 0,
+        bonus_listing_credits: 0,
+        featured_credits: 0,
+        first_subscription_bonus_available: true,
       });
       await ctx.post('/agencies/register', agencyBody(), user.token).expect(201);
       expect((await ctx.get('/users/me', user.token).expect(200)).body.role).toBe('AGENCY');
@@ -56,6 +60,10 @@ describe.skipIf(!hasDb)('Registration (e2e)', () => {
         avatar: null,
         enable_daily_motivation: true,
         has_seen_welcome: false,
+        welcome_listing_credits: 0,
+        bonus_listing_credits: 0,
+        featured_credits: 0,
+        first_subscription_bonus_available: true,
       });
     });
 

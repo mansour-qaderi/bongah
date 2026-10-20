@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { User } from '@bongah/shared-types';
 import { changeLanguage, initI18n } from '../src/i18n';
 import prs from '../src/i18n/locales/prs.json';
+import { captureToasts } from '../test-utils/toasts';
 import ps from '../src/i18n/locales/ps.json';
 import { KV_KEYS, kv } from '../src/storage/kv';
 import { resetPushRegistration } from '../src/push/registration';
@@ -18,6 +19,7 @@ import {
 } from '../test-utils';
 
 const fetchMock = jest.fn();
+let toasts: ReturnType<typeof captureToasts>;
 // The Account tab also shows the invite banner, which asks for the referral summary. These tests are about the
 // morning-messages switch, so that request is left out of what they count.
 const switchCalls = () =>
@@ -165,6 +167,7 @@ beforeAll(async () => {
   await initI18n();
 });
 beforeEach(async () => {
+  toasts = captureToasts();
   fetchMock.mockReset();
   (globalThis as unknown as { fetch: unknown }).fetch = fetchMock;
   startFocused = true;
@@ -178,6 +181,7 @@ beforeEach(async () => {
   await changeLanguage('prs');
 });
 afterEach(async () => {
+  toasts.restore();
   await ReactTestRenderer.act(async () => {
     mounted.splice(0).forEach(tree => tree.unmount());
   });
@@ -455,7 +459,7 @@ describe('the morning messages switch (Account screen)', () => {
     await flip(tree.root, false);
 
     expect(tree.root.findByType(Switch).props.value).toBe(true);
-    expect(allText(tree.root)).toContain(prs.errors.network);
+    expect(toasts.messages).toContain(prs.errors.network);
     expect(updatedUsers.map(u => u.enable_daily_motivation)).toEqual([false, true]);
     expect(messaging.requestPermission).not.toHaveBeenCalled();
   });

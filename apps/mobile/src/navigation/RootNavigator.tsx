@@ -8,6 +8,7 @@ import TemplatesScreen from '../screens/chat/TemplatesScreen';
 import AddPropertyScreen from '../screens/property/AddPropertyScreen';
 import PropertyDetailsScreen from '../screens/property/PropertyDetailsScreen';
 import CheckoutScreen from '../screens/payments/CheckoutScreen';
+import UpgradeScreen from '../screens/payments/UpgradeScreen';
 import ReferralScreen from '../screens/referral/ReferralScreen';
 import SavedListingsScreen from '../screens/saved/SavedListingsScreen';
 import SplashScreen from '../screens/splash/SplashScreen';
@@ -72,6 +73,11 @@ export default function RootNavigator() {
         name="Checkout"
         component={CheckoutScreen}
         options={{ title: t('nav.checkout') }}
+      />
+      <Stack.Screen
+        name="Upgrade"
+        component={UpgradeScreen}
+        options={{ title: t('nav.upgrade') }}
       />
       <Stack.Screen
         name="Referral"
