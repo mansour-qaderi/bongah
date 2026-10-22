@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { StyleSheet } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { BackHandler, StyleSheet } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useTranslation } from 'react-i18next';
 import { registerUserSchema } from '@bongah/validation';
@@ -18,13 +18,26 @@ import { colors, spacing } from '../../theme';
 
 type Props = NativeStackScreenProps<AuthStackParamList, 'ProfileSetup'>;
 
-/** Shown once after the first login: asks for a name. It can be skipped and set later. */
+/**
+ * Shown once after the first login: asks for a name, and does not let go until there is one. The name is what the
+ * person is called under the price of their listings ("owner" is only what an account without a name is shown as), so
+ * there is no way past this screen without it: no "later" button, and the phone's back button does nothing here.
+ */
 export default function ProfileSetupScreen({ navigation, route }: Props) {
   const { t } = useTranslation();
   const { updateUser } = useAuth();
   const [name, setName] = useState('');
   const [fieldError, setFieldError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+
+  // The back button must not leave a person signed in with no name.
+  useEffect(() => {
+    const subscription = BackHandler.addEventListener(
+      'hardwareBackPress',
+      () => true,
+    );
+    return () => subscription.remove();
+  }, []);
 
   const save = async () => {
     const parsed = registerUserSchema.safeParse({ full_name: name });
@@ -55,6 +68,7 @@ export default function ProfileSetupScreen({ navigation, route }: Props) {
       ) : null}
       <TextField
         label={t('auth.fullName')}
+        required
         value={name}
         onChangeText={value => {
           setName(value);
@@ -73,13 +87,6 @@ export default function ProfileSetupScreen({ navigation, route }: Props) {
         onPress={save}
         loading={loading}
       />
-      <Button
-        icon="arrow"
-        title={t('auth.skip')}
-        variant="outline"
-        onPress={() => closeAuth(navigation)}
-        style={styles.skip}
-      />
     </ScrollScreen>
   );
 }
@@ -87,5 +94,4 @@ export default function ProfileSetupScreen({ navigation, route }: Props) {
 const styles = StyleSheet.create({
   content: { paddingTop: spacing.xl },
   hint: { marginBottom: spacing.xl },
-  skip: { marginTop: spacing.md },
 });

@@ -25,15 +25,19 @@ import type {
   FeaturedCreditUsed,
   SpendLaddersResponse,
   FeedbackReceived,
+  GeoProvider,
   Language,
   Paginated,
   PaymentInitiated,
+  PlaceDetails,
+  PlaceSuggestions,
   Pricing,
   Wallet,
   Property,
   PropertyImageUploaded,
   PropertyType,
   ReferralSummary,
+  RouteResult,
   SendOtpResponse,
   Transaction,
   User,
@@ -356,3 +360,59 @@ export const getPayment = (id: string) =>
 /** A suggestion, a problem or a thank-you for the Bongah team, from the Account tab. Needs a signed-in account. */
 export const sendFeedback = (input: CreateFeedbackInput) =>
   request<FeedbackReceived>('POST', '/feedback', { auth: true, body: input });
+
+// ───────────── Places and routes (Google / Mapbox through the server; see map/GeocodingService.ts) ─────────────
+
+/** How long a place question may take before the app asks OpenStreetMap instead: a dropdown that lags is no help. */
+const GEO_TIMEOUT_MS = 7_000;
+
+export const geoAutocomplete = (
+  params: {
+    q: string;
+    lat?: number;
+    lng?: number;
+    session?: string;
+    lang?: Language;
+  },
+  signal?: AbortSignal,
+) =>
+  request<PlaceSuggestions>('GET', '/geo/autocomplete', {
+    auth: true,
+    query: params,
+    signal,
+    timeoutMs: GEO_TIMEOUT_MS,
+  });
+
+export const geoPlace = (
+  provider: GeoProvider,
+  id: string,
+  params: { session?: string; lang?: Language },
+  signal?: AbortSignal,
+) =>
+  request<PlaceDetails>(
+    'GET',
+    `/geo/places/${provider}/${encodeURIComponent(id)}`,
+    { auth: true, query: params, signal, timeoutMs: GEO_TIMEOUT_MS },
+  );
+
+export const geoReverse = (
+  params: { lat: number; lng: number; lang?: Language },
+  signal?: AbortSignal,
+) =>
+  request<PlaceDetails>('GET', '/geo/reverse', {
+    auth: true,
+    query: params,
+    signal,
+    timeoutMs: GEO_TIMEOUT_MS,
+  });
+
+export const geoRoute = (
+  params: { from_lat: number; from_lng: number; to_lat: number; to_lng: number },
+  signal?: AbortSignal,
+) =>
+  request<RouteResult>('GET', '/geo/route', {
+    auth: true,
+    query: params,
+    signal,
+    timeoutMs: 12_000,
+  });

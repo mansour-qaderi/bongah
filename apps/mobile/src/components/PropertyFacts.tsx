@@ -1,12 +1,13 @@
 import React from 'react';
 import { StyleSheet, View } from 'react-native';
-import type { TFunction } from 'i18next';
 import { useTranslation } from 'react-i18next';
 import type { Property } from '@bongah/shared-types';
+import { hasRoomsFor } from '../constants/propertyRooms';
 import { formatNumber } from '../i18n/format';
 import { propertyTypeLabel } from '../i18n/propertyType';
 import { useFormat } from '../i18n/useFormat';
 import { propertyLineIcon } from '../map/markers';
+import { startsWithProvince } from '../utils/addressLine';
 import { colors, radius, spacing } from '../theme';
 import AppText from './AppText';
 import Icon, { type IconName } from './Icon';
@@ -14,7 +15,8 @@ import Icon, { type IconName } from './Icon';
 /**
  * Where a listing is, in one line: the province, then the most specific place it has. Older listings carry a
  * district; a new one is written as one free address, so a blank district falls back to the neighbourhood and then to
- * the address itself.
+ * the address itself. An address that already starts with the province (a whole line: "نیمروز، زرنج، ناحیه ۴، …") is
+ * not given the province a second time.
  */
 export function propertyPlace(
   property: Pick<
@@ -23,29 +25,21 @@ export function propertyPlace(
   >,
   provinceName: (value: string) => string,
 ): string {
-  const where =
-    property.district || property.neighborhood || property.address || '';
-  return [provinceName(property.province), where].filter(Boolean).join('، ');
-}
-
-/**
- * What kind of property a listing is, in words: "آپارتمان" or, when the owner also said which unit it is, "آپارتمان، واحد ۳".
- * Takes the translate function so the cards, the details page and the saved list all word it the same way.
- */
-export function propertyKind(
-  property: Pick<Property, 'type' | 'unit'>,
-  t: TFunction,
-): string {
-  const type = propertyTypeLabel(property.type, t);
-  return property.unit ? `${type}، ${property.unit}` : type;
+  const where = (
+    property.district ||
+    property.neighborhood ||
+    property.address ||
+    ''
+  ).trim();
+  const province = provinceName(property.province);
+  if (!where) return province;
+  return startsWithProvince(where, province) ? where : [province, where].filter(Boolean).join('، ');
 }
 
 interface Fact {
   key: string;
   icon: IconName;
   text: string;
-  /** Something small after the text (the jerib info button beside the area). */
-  extra?: React.ReactNode;
 }
 
 /** A fact as a short run: the icon and its words, side by side. */
@@ -60,8 +54,8 @@ function RowFact({ icon, text }: Omit<Fact, 'key'>) {
   );
 }
 
-/** A fact as a grid cell: its icon in a small soft tile, and the words beside it (and a small extra after them). */
-function GridFact({ icon, text, extra }: Omit<Fact, 'key'>) {
+/** A fact as a grid cell: its icon in a small soft tile, and the words beside it. */
+function GridFact({ icon, text }: Omit<Fact, 'key'>) {
   return (
     <View style={styles.cell}>
       <View style={styles.tile}>
@@ -76,7 +70,6 @@ function GridFact({ icon, text, extra }: Omit<Fact, 'key'>) {
         >
           {text}
         </AppText>
-        {extra}
       </View>
     </View>
   );
@@ -87,13 +80,17 @@ interface Props {
   /** Lead with the kind of property (house, flat…) and its own icon. The list card does; the badges card does not. */
   withType?: boolean;
   /**
+   * Also say which unit it is ("واحد ۳"), as a fact of its own after the kind. Only the details page does: on the cards
+   * the kind chip says the kind and nothing else, so what an owner typed in the unit box (sometimes the listing's own
+   * title) is never repeated under the title.
+   */
+  withUnit?: boolean;
+  /**
    * 'row' (the default): one wrapping line of small icons and words, for the dense cards.
    * 'grid': two columns by up to two rows, each fact with its own icon tile — the kind and the area above, the
    * bedrooms and the bathrooms below. The list card uses it.
    */
   layout?: 'row' | 'grid';
-  /** Shown right after the area (the details page puts the jerib info button there). Grid layout only. */
-  areaAccessory?: React.ReactNode;
   /** Grid layout: draw the hairline above it (default), or leave it off when the grid starts a card of its own. */
   divider?: boolean;
 }
@@ -106,8 +103,8 @@ interface Props {
 export default function PropertyFacts({
   property,
   withType,
+  withUnit,
   layout = 'row',
-  areaAccessory,
   divider = true,
 }: Props) {
   const { t } = useTranslation();
@@ -118,23 +115,27 @@ export default function PropertyFacts({
     facts.push({
       key: 'type',
       icon: propertyLineIcon(property.type),
-      text: propertyKind(property, t),
+      text: propertyTypeLabel(property.type, t),
     });
+    if (withUnit && property.unit) {
+      facts.push({ key: 'unit', icon: 'apartment', text: property.unit });
+    }
   }
   facts.push({
     key: 'area',
     icon: 'area',
     text: format.area(property.area_sqm),
-    extra: areaAccessory,
   });
-  if (property.bedrooms !== null) {
+  // A shop, an office, land or a garage has no rooms to count, whatever an older listing has stored.
+  const rooms = hasRoomsFor(property.type);
+  if (rooms && property.bedrooms !== null) {
     facts.push({
       key: 'bedrooms',
       icon: 'bed',
       text: `${formatNumber(property.bedrooms, 0)} ${t('property.bedrooms')}`,
     });
   }
-  if (property.bathrooms !== null) {
+  if (rooms && property.bathrooms !== null) {
     facts.push({
       key: 'bathrooms',
       icon: 'shower',
@@ -148,8 +149,8 @@ export default function PropertyFacts({
         style={[styles.grid, divider ? styles.gridDivider : null]}
         testID="property-facts"
       >
-        {facts.map(({ key, icon, text, extra }) => (
-          <GridFact key={key} icon={icon} text={text} extra={extra} />
+        {facts.map(({ key, icon, text }) => (
+          <GridFact key={key} icon={icon} text={text} />
         ))}
       </View>
     );

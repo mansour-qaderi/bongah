@@ -7,9 +7,7 @@ import {
   formatPhone,
   formatPrice,
   chatStamp,
-  jeribToSqm,
   parseNumberInput,
-  sqmToJerib,
   toLatinDigits,
   toPersianDigits,
 } from '../src/i18n/format';
@@ -97,14 +95,6 @@ describe('parseNumberInput', () => {
         value: null,
       });
     }
-  });
-});
-
-describe('land units', () => {
-  it('one jerib is 2000 square metres', () => {
-    expect(jeribToSqm(1)).toBe(2000);
-    expect(sqmToJerib(5000)).toBe(2.5);
-    expect(sqmToJerib(jeribToSqm(3.75))).toBeCloseTo(3.75);
   });
 });
 

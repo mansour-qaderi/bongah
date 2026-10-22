@@ -5,12 +5,6 @@ const PERSIAN_DIGITS = '۰۱۲۳۴۵۶۷۸۹';
 const THOUSANDS_SEPARATOR = ',';
 const DECIMAL_SEPARATOR = '٫';
 
-/** One jerib is 2,000 square metres (the Afghan land measure). */
-export const SQM_PER_JERIB = 2000;
-
-export const sqmToJerib = (sqm: number): number => sqm / SQM_PER_JERIB;
-export const jeribToSqm = (jerib: number): number => jerib * SQM_PER_JERIB;
-
 /**
  * Any digits → Persian ۰-۹. Western 0-9 and Arabic-Indic ٠-٩ (what some keyboards type) both become the
  * Persian forms, because that is what Dari and Pashto readers expect on screen. Everything else is left alone.

@@ -50,6 +50,8 @@ interface RequestOptions {
   timeoutMs?: number;
   /** Send the bearer token. A 401 then means "your session is over", not "wrong input". */
   auth?: boolean;
+  /** Cancels the request (a search the person has typed past). It then fails like a timeout. */
+  signal?: AbortSignal;
 }
 
 function buildUrl(path: string, query?: Record<string, QueryValue>): string {
@@ -89,6 +91,9 @@ export async function request<T>(
     () => controller.abort(),
     options.timeoutMs ?? REQUEST_TIMEOUT_MS,
   );
+  const stop = () => controller.abort();
+  if (options.signal?.aborted) controller.abort();
+  else options.signal?.addEventListener('abort', stop);
 
   let response: Response;
   try {
@@ -111,6 +116,7 @@ export async function request<T>(
     );
   } finally {
     clearTimeout(timer);
+    options.signal?.removeEventListener('abort', stop);
   }
 
   const data = await readBody(response);

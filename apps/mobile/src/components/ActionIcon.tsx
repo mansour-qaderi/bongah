@@ -34,7 +34,9 @@ export type ActionIconName =
   | 'star'
   | 'down'
   | 'list'
-  | 'search';
+  | 'search'
+  | 'draw'
+  | 'navigate';
 
 const PATHS: Record<ActionIconName, string[]> = {
   // Mirrored paper plane: a diagonal line from the tip into the fold, and the plane's outline.
@@ -104,6 +106,10 @@ const PATHS: Record<ActionIconName, string[]> = {
     'M3 18H3.01',
   ],
   search: ['M11 19A8 8 0 1 0 11 3A8 8 0 1 0 11 19', 'M21 21L16.65 16.65'],
+  // A plot's outline with its corners: "draw the boundary".
+  draw: ['M5 6L18 4L20 17L7 20Z', 'M5 6H5.01', 'M18 4H18.01', 'M20 17H20.01', 'M7 20H7.01'],
+  // The arrowhead of a navigation app: "take me there".
+  navigate: ['M3 11L22 2L13 21L11 13L3 11Z'],
 };
 
 interface Props {

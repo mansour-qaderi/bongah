@@ -11,6 +11,7 @@ import { AgenciesModule } from './agencies/agencies.module.js';
 import { PropertyModule } from './property/property.module.js';
 import { HesabpayModule } from './hesabpay/hesabpay.module.js';
 import { MapLocationModule } from './map-location/map-location.module.js';
+import { GeoModule } from './geo/geo.module.js';
 import { ReferralModule } from './referral/referral.module.js';
 import { AdminModule } from './admin/admin.module.js';
 import { BannersModule } from './banners/banners.module.js';
@@ -28,6 +29,7 @@ import { PropertyImagesModule } from './property-images/property-images.module.j
     UsersModule,
     AgenciesModule,
     MapLocationModule,
+    GeoModule,
     PropertyModule,
     HesabpayModule,
     ReferralModule,

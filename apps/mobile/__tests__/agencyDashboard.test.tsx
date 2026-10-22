@@ -540,7 +540,7 @@ describe('PropertyDetailsScreen: view counting', () => {
     expect(allText(tree.root)).toContain('خانه');
   });
 
-  it('lets the owner promote from the details page through the sheet', async () => {
+  it('lets the owner promote from a button on the details page itself, with no sheet in between', async () => {
     mockApi(fetchMock, {
       [`GET /properties/${L1}`]: { body: listing(agencyUser.id) },
       ...payRoutes('PENDING'),
@@ -548,9 +548,27 @@ describe('PropertyDetailsScreen: view counting', () => {
     const nav = navigation();
     const tree = await render(screenElement(PropertyDetailsScreen, nav, route));
     await settle();
-    await press(tree.root, prs.property.promote);
+    // The frame is offered on the page: the button is there before anything is opened, and no sheet title is.
+    expect(tree.root.findAll(n => n.props.testID === 'frame-promote').length).toBeGreaterThan(0);
+    expect(allText(tree.root)).not.toContain(prs.promotion.title);
+    await act(async () => {
+      tree.root.find(n => n.props.testID === 'frame-promote' && typeof n.props.onPress === 'function').props.onPress();
+    });
     await settle();
-    expect(allText(tree.root)).toContain(prs.frame.title);
+    expect(posts('/hesabpay/payments')[0].body).toEqual({
+      purpose: 'FEATURED_AD',
+      property_id: L1,
+    });
     expect(nav.navigate).not.toHaveBeenCalled();
+  });
+
+  it('shows the frame button to the owner only', async () => {
+    mockApi(fetchMock, {
+      [`GET /properties/${L1}`]: { body: listing('someone-else') },
+      ...payRoutes('PENDING'),
+    });
+    const tree = await render(screenElement(PropertyDetailsScreen, navigation(), route));
+    await settle();
+    expect(tree.root.findAll(n => n.props.testID === 'frame-promote')).toHaveLength(0);
   });
 });

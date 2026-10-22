@@ -1,9 +1,12 @@
 import React from 'react';
+import { StyleSheet } from 'react-native';
 import ReactTestRenderer from 'react-test-renderer';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { initI18n } from '../src/i18n';
 import { formatNumber } from '../src/i18n/format';
 import prs from '../src/i18n/locales/prs.json';
+import { colors } from '../src/theme';
+import { rowStyles } from '../src/components/SwitchRow';
 import { captureToasts } from '../test-utils/toasts';
 import {
   propertyRef,
@@ -213,7 +216,7 @@ describe('contact links', () => {
 });
 
 describe('PropertyDetailsScreen: contact bar', () => {
-  it('shows Call, WhatsApp and Chat, and how many free reveals are left', async () => {
+  it('shows Call and Chat (no WhatsApp button), and how many free reveals are left', async () => {
     mockApi(fetchMock, {
       [`GET /properties/${L}`]: { body: listing() },
       [`POST /properties/${L}/view`]: { status: 204 },
@@ -223,7 +226,7 @@ describe('PropertyDetailsScreen: contact bar', () => {
     await settle();
     const text = allText(tree.root);
     expect(text).toContain(prs.property.callAction);
-    expect(text).toContain(prs.property.whatsappAction);
+    expect(text).not.toContain(prs.property.whatsappAction);
     expect(text).toContain(prs.property.chatAction);
     expect(text).toContain(
       prs.property.freeRevealsLeft.replace('{{count}}', formatNumber(3, 0)),
@@ -248,25 +251,6 @@ describe('PropertyDetailsScreen: contact bar', () => {
     expect(openUrl).toHaveBeenCalledWith('tel:+93701234567');
     // The owner's details are shown once revealed.
     expect(allText(tree.root)).toContain('احمد');
-  });
-
-  it('opens WhatsApp on the number with the listing title and reference prefilled', async () => {
-    mockApi(fetchMock, {
-      [`GET /properties/${L}`]: { body: listing() },
-      [`POST /properties/${L}/view`]: { status: 204 },
-      [`GET /properties/${L}/contact`]: { body: locked() },
-      [`POST /properties/${L}/contact/unlock`]: { body: unlocked() },
-    });
-    const tree = await render(screen());
-    await settle();
-    await press(tree.root, prs.property.whatsappAction);
-    await settle();
-
-    const [url] = openUrl.mock.calls[0] as unknown as [string];
-    expect(url.startsWith('https://wa.me/93701234567?text=')).toBe(true);
-    const text = decodeURIComponent(url.split('text=')[1]);
-    expect(text).toContain('خانه نو');
-    expect(text).toContain('#11111111');
   });
 
   it('does not reveal again when the number is already unlocked today', async () => {
@@ -357,7 +341,9 @@ describe('PropertyDetailsScreen: contact bar', () => {
     });
     const tree = await render(screen());
     await settle();
-    expect(allText(tree.root)).toContain(prs.property.unlimitedReveals);
+    // Someone with no limit is told nothing about one.
+    expect(allText(tree.root)).not.toContain('نمایش نامحدود');
+    expect(allText(tree.root)).not.toContain(prs.property.noFreeRevealsLeft);
   });
 });
 
@@ -421,7 +407,7 @@ describe('PropertyDetailsScreen: daily limit reached', () => {
     });
     const tree = await render(screen());
     await settle();
-    await press(tree.root, prs.property.whatsappAction);
+    await press(tree.root, prs.property.callAction);
     await settle();
     expect(unlockCalls()).toHaveLength(1);
     expect(unlockCalls()[0].body).toEqual({ use_credit: false });
@@ -430,9 +416,9 @@ describe('PropertyDetailsScreen: daily limit reached', () => {
     await settle();
     expect(unlockCalls()).toHaveLength(2);
     expect(unlockCalls()[1].body).toEqual({ use_credit: true });
-    // It was WhatsApp that was tapped, so WhatsApp opens (and not the dialler).
+    // It was Call that was tapped, so the dialler opens once the credit has paid for the number.
     const [url] = openUrl.mock.calls[0] as unknown as [string];
-    expect(url.startsWith('https://wa.me/93701234567')).toBe(true);
+    expect(url).toBe('tel:+93701234567');
     // The sheet closes.
     expect(allText(tree.root)).not.toContain(prs.contact.limitTitle);
   });
@@ -573,36 +559,29 @@ describe('PropertyDetailsScreen: layout and the jerib helper', () => {
     expect(specs).toContain(prs.propertyType.HOUSE_HAWILI);
   });
 
-  const toggle = (root: ReactTestRenderer.ReactTestInstance) =>
-    byId(root, 'jerib-conversion-toggle').find(
-      n => typeof n.props.onPress === 'function',
-    )!;
-
-  it('keeps the jerib conversion out of the area row, folded away in a card of its own', async () => {
+  it('has no jerib anywhere: the area is one clean figure in square metres', async () => {
     const tree = await open();
     const text = allText(tree.root);
-    // No info icon beside the area, and no conversion line in the page until the card is opened.
     expect(byId(tree.root, 'jerib-info')).toHaveLength(0);
+    expect(byId(tree.root, 'jerib-conversion')).toHaveLength(0);
     expect(text).toContain('۵۰۰ متر مربع');
+    expect(text).not.toContain('جریب');
     expect(text).not.toContain('حدود');
-    expect(text).not.toContain('۰٫۲۵');
-    expect(byId(tree.root, 'jerib-conversion').length).toBeGreaterThan(0);
-    expect(text).toContain(prs.property.areaConversion);
-    expect(byId(tree.root, 'jerib-conversion-body')).toHaveLength(0);
   });
 
-  it('opens the conversion card with this listing worked out, and folds it again', async () => {
+  it('puts the header in order: title, price (with the deal badge at its end), the seller under it, then the specs', async () => {
     const tree = await open();
-    await act(async () => toggle(tree.root).props.onPress());
     const text = allText(tree.root);
-    expect(byId(tree.root, 'jerib-conversion-body').length).toBeGreaterThan(0);
-    expect(text).toContain(prs.property.jeribInfoIntro);
-    expect(text).toContain(prs.property.jeribInfoOne); // 1 jerib = 2,000 m²
-    expect(text).toContain(prs.property.jeribInfoHectare);
-    // 500 m² is a quarter of a jerib.
-    expect(text).toContain('۵۰۰ متر مربع، یعنی حدود ۰٫۲۵ جریب');
-    await act(async () => toggle(tree.root).props.onPress());
-    expect(byId(tree.root, 'jerib-conversion-body')).toHaveLength(0);
+    const seller = prs.property.owner;
+    expect(byId(tree.root, 'seller').length).toBeGreaterThan(0);
+    expect(byId(tree.root, 'deal-tags').length).toBeGreaterThan(0);
+    const at = (needle: string) => text.indexOf(needle);
+    expect(at('خانه نو')).toBeLessThan(at('۱,۲۰۰,۰۰۰'));
+    expect(at('۱,۲۰۰,۰۰۰')).toBeLessThan(at(seller));
+    expect(at(seller)).toBeLessThan(at(prs.property.specs));
+    // The deal badge is inside the price box, beside the price and not above the title.
+    const box = byId(tree.root, 'price-box')[0];
+    expect(allText(box)).toContain(prs.dealType.SALE);
   });
 
   describe('the owner', () => {
@@ -616,27 +595,60 @@ describe('PropertyDetailsScreen: layout and the jerib helper', () => {
       return tree;
     };
 
-    it('gets a small pencil button next to the bookmark, which opens the listing in the form', async () => {
+    it('gets a pencil button in the header row, beside share and the bookmark, which opens the listing in the form', async () => {
       const tree = await asOwner();
-      const button = byId(tree.root, 'edit-listing').find(
-        node => typeof node.props.onPress === 'function',
-      );
+      // The pressable itself (the one that carries the label), not the component that wraps it.
+      const pressable = (id: string) =>
+        byId(tree.root, id).find(
+          node =>
+            typeof node.props.onPress === 'function' &&
+            typeof node.props.accessibilityLabel === 'string',
+        );
+      const button = pressable('edit-listing');
       expect(button).toBeDefined();
       expect(button?.props.accessibilityLabel).toBe(prs.property.editListing);
-      // The same row as the bookmark: one parent holds both.
-      const bookmark = byId(tree.root, `bookmark-${L}`).find(
-        node => typeof node.props.onPress === 'function',
-      );
-      expect(bookmark?.parent?.parent).toBe(button?.parent?.parent);
-      // Its name is written beside the icon, and the big "ویرایش آگهی" button in the page is gone.
-      expect(allText(button as ReactTestRenderer.ReactTestInstance)).toBe(
-        prs.my.edit,
-      );
+      // One row holds all three round buttons, side by side, the pencil first.
+      const row = byId(tree.root, 'header-actions')[0];
+      for (const id of ['edit-listing', 'share-listing', `bookmark-${L}`]) {
+        expect(byId(row, id).length).toBeGreaterThan(0);
+      }
+      const ids = row
+        .findAll(node => typeof node.props.testID === 'string')
+        .map(node => node.props.testID as string)
+        .filter(id => ['edit-listing', 'share-listing', `bookmark-${L}`].includes(id));
+      expect([...new Set(ids)]).toEqual([
+        'edit-listing',
+        'share-listing',
+        `bookmark-${L}`,
+      ]);
+      // An icon, with no name written beside it, and no big "ویرایش آگهی" button in the page.
+      expect(allText(button as ReactTestRenderer.ReactTestInstance)).toBe('');
       expect(allText(tree.root)).not.toContain(prs.property.editListing);
       await act(async () => button?.props.onPress());
       expect(mockNavigation.navigate).toHaveBeenCalledWith('AddProperty', {
         propertyId: L,
       });
+    });
+
+    it('offers «پوشش با کادر ویژه» as the same gold-edged row as the featured switch at the foot of the listing form', async () => {
+      const tree = await asOwner();
+      const row = tree.root.findAll(
+        n =>
+          n.props.testID === 'frame-promote' && typeof n.type === 'string',
+      )[0];
+      expect(row).toBeDefined();
+      const flat = StyleSheet.flatten(row.props.style);
+      expect(flat).toMatchObject({
+        borderWidth: 2.5,
+        borderColor: colors.accentBright,
+        backgroundColor: colors.surface,
+        flexDirection: 'row',
+      });
+      // The same row the form uses for its featured-frame switch: one look, shared.
+      expect(flat).toMatchObject(
+        StyleSheet.flatten([rowStyles.row, rowStyles.gold]) ?? {},
+      );
+      expect(allText(row)).toContain(prs.property.promote);
     });
 
     it('is the only one to see it', async () => {

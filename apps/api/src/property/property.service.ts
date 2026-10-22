@@ -16,7 +16,7 @@ import type { PropertyDto, PropertyPageDto } from './dto/property-response.dto.j
 import type { UpdatePropertyDto } from './dto/update-property.dto.js';
 import { kabulDayKey } from '../contact/contact.time.js';
 import { FREE_LISTINGS_PER_MONTH } from './property.constants.js';
-import { toPropertyDto, WITH_AGENCY_NAME } from './property.mapper.js';
+import { toPropertyDto, WITH_PARTIES } from './property.mapper.js';
 import { kabulMonthStart, nextKabulMonthStart } from './property.time.js';
 
 /** Newest ladder first. Rows with no ladder time (legacy) sort last, then newest created. */
@@ -70,7 +70,7 @@ export class PropertyService {
   async findOne(id: string): Promise<PropertyDto> {
     const row = await this.prisma.property.findFirst({
       where: { id, status: { not: PropertyStatus.ARCHIVED }, user: { bannedAt: null } },
-      include: WITH_AGENCY_NAME,
+      include: WITH_PARTIES,
     });
     if (!row) throw new NotFoundException('Property not found.');
     return toPropertyDto(row, new Date());
@@ -204,11 +204,14 @@ export class PropertyService {
         unit,
         mortgage_months,
         price_terms,
+        boundary,
         ...rest
       } = input;
       const created = await tx.property.create({
         data: {
           ...rest,
+          // A Json column takes "no value" as Prisma.DbNull, not null: an outline is stored only when one was drawn.
+          ...(boundary ? { boundary } : {}),
           description,
           district: district ?? '',
           neighborhood: neighborhood ?? null,
@@ -229,7 +232,7 @@ export class PropertyService {
           createdAt: now,
           ladderedAt: now,
         },
-        include: WITH_AGENCY_NAME,
+        include: WITH_PARTIES,
       });
       return created;
     });
@@ -243,12 +246,12 @@ export class PropertyService {
    */
   async update(userId: string, id: string, input: UpdatePropertyDto): Promise<PropertyDto> {
     const now = new Date();
-    const { deal_type, area_sqm, unit, mortgage_months, price_terms, ...rest } = input;
+    const { deal_type, area_sqm, unit, mortgage_months, price_terms, boundary, ...rest } = input;
 
     const row = await this.prisma.$transaction(async (tx) => {
       const locked = await tx.$queryRaw<
-        { user_id: string; removed_by_admin_at: Date | null; deal_type: DealType }[]
-      >`SELECT user_id, removed_by_admin_at, deal_type FROM properties WHERE id = ${id}::uuid FOR UPDATE`;
+        { user_id: string; removed_by_admin_at: Date | null; deal_type: DealType; lat: number | null }[]
+      >`SELECT user_id, removed_by_admin_at, deal_type, lat FROM properties WHERE id = ${id}::uuid FOR UPDATE`;
       if (locked.length === 0) throw new NotFoundException('Property not found.');
       const actorRole = await this.assertCanModify(tx, userId, locked[0].user_id);
       // A listing an admin took down stays down: only an admin can touch it (restore it, say).
@@ -269,6 +272,14 @@ export class PropertyService {
         });
       }
       const clearsMonths = dealAfter !== DealType.MORTGAGE_GROWI;
+      // An outline needs a pin, the one sent with it or the one the listing already has (the map finds listings by
+      // their pin). The pin itself cannot be removed by an edit, so a stored one stays.
+      if (boundary && rest.lat === undefined && locked[0].lat === null) {
+        throw new BadRequestException({
+          message: 'A plot outline needs a map location.',
+          errors: [{ field: 'boundary', message: 'A plot outline needs a map location' }],
+        });
+      }
 
       return tx.property.update({
         where: { id },
@@ -280,8 +291,10 @@ export class PropertyService {
           ...(unit !== undefined ? { unit: unit || null } : {}),
           ...(deal_type !== undefined ? { dealType: deal_type } : {}),
           ...(area_sqm !== undefined ? { areaSqm: area_sqm } : {}),
+          // null removes the outline (a Json column spells that Prisma.DbNull); left out, it stays as it is.
+          ...(boundary !== undefined ? { boundary: boundary ?? Prisma.DbNull } : {}),
         },
-        include: WITH_AGENCY_NAME,
+        include: WITH_PARTIES,
       });
     });
     return toPropertyDto(row, now);
@@ -324,8 +337,10 @@ export class PropertyService {
     const now = new Date();
     const skip = (p.page - 1) * p.limit;
     if (!featuredFirst) {
-      const [rows, total] = await this.prisma.$transaction([
-        this.prisma.property.findMany({ where, orderBy: LISTING_ORDER, skip, take: p.limit, include: WITH_AGENCY_NAME }),
+      // Two plain reads, not a transaction: a snapshot of rows and total together is not worth a BEGIN/COMMIT and a
+      // connection held across both. A listing added between them only moves the total by one.
+      const [rows, total] = await Promise.all([
+        this.prisma.property.findMany({ where, orderBy: LISTING_ORDER, skip, take: p.limit, include: WITH_PARTIES }),
         this.prisma.property.count({ where }),
       ]);
       return pageOf(rows, total, p, now);
@@ -337,7 +352,7 @@ export class PropertyService {
     const otherWhere: Prisma.PropertyWhereInput = {
       AND: [where, { OR: [{ isFeatured: false }, { featuredUntil: null }, { featuredUntil: { lte: now } }] }],
     };
-    const [featuredCount, otherCount] = await this.prisma.$transaction([
+    const [featuredCount, otherCount] = await Promise.all([
       this.prisma.property.count({ where: featuredWhere }),
       this.prisma.property.count({ where: otherWhere }),
     ]);
@@ -348,7 +363,7 @@ export class PropertyService {
             orderBy: LISTING_ORDER,
             skip,
             take: Math.min(p.limit, featuredCount - skip),
-            include: WITH_AGENCY_NAME,
+            include: WITH_PARTIES,
           })
         : [];
     const room = p.limit - featuredRows.length;
@@ -359,7 +374,7 @@ export class PropertyService {
             orderBy: LISTING_ORDER,
             skip: Math.max(0, skip - featuredCount),
             take: room,
-            include: WITH_AGENCY_NAME,
+            include: WITH_PARTIES,
           })
         : [];
     return pageOf([...featuredRows, ...otherRows], featuredCount + otherCount, p, now);

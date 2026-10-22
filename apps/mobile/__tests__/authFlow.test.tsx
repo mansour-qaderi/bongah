@@ -24,7 +24,7 @@ jest.mock('../src/auth/AuthContext', () => ({
 }));
 
 // Imported after the mock so the screens pick it up.
-import OtpScreen, { TEST_CODE_TOAST_MS } from '../src/screens/auth/OtpScreen';
+import OtpScreen from '../src/screens/auth/OtpScreen';
 import PhoneScreen from '../src/screens/auth/PhoneScreen';
 
 const PHONE = '+93701234567';
@@ -205,7 +205,7 @@ describe('the code screen', () => {
       globals.__DEV__ = wasDev;
     });
 
-    it('shows the code it was given and fills it in, even in a release build', async () => {
+    it('fills in the code it was given without any test-mode text, even in a release build', async () => {
       globals.__DEV__ = false; // a release build: nothing here depends on the debug flag
       mockApi(fetchMock, { 'POST /auth/verify-otp': VERIFIED });
       const { tree } = await screen(
@@ -213,10 +213,9 @@ describe('the code screen', () => {
         navigation(),
         otpParams({ devOtp: '654321' }),
       );
-      const text = allText(tree.root);
-      expect(text).toContain(
-        prs.auth.testCode.replace('{{code}}', toPersianDigits('654321')),
-      );
+      // No "test mode" banner over the page, and no toast either.
+      expect(allText(tree.root)).not.toContain('حالت آزمایشی');
+      expect(toasts.messages).toEqual([]);
       // Already in the boxes, so «تأیید و ورود» is on and a tap signs in with exactly that code.
       expect(pressableWith(tree.root, prs.auth.verify).props.disabled).toBe(
         false,
@@ -229,31 +228,9 @@ describe('the code screen', () => {
       });
     });
 
-    it('also says the code in a toast that stays long enough to read, so a blocked WhatsApp never blocks sign-in', async () => {
-      const { tree } = await screen(
-        OtpScreen,
-        navigation(),
-        otpParams({ devOtp: '654321' }),
-      );
-      expect(allText(tree.root)).toContain(toPersianDigits('654321'));
-      const shown = toasts.calls.filter(c =>
-        String(c[0]).includes(toPersianDigits('654321')),
-      );
-      expect(shown).toHaveLength(1);
-      expect(shown[0][2]).toBe(TEST_CODE_TOAST_MS);
-      expect(TEST_CODE_TOAST_MS).toBeGreaterThanOrEqual(10000);
-    });
-
     it('shows no code toast when the real gateway sent the code', async () => {
       await screen(OtpScreen, navigation(), otpParams());
       expect(toasts.messages).toEqual([]);
-    });
-
-    it('shows nothing of the kind when the real gateway sent the code', async () => {
-      const { tree } = await screen(OtpScreen, navigation(), otpParams());
-      expect(allText(tree.root)).not.toContain(
-        prs.auth.testCode.split('{{')[0].trim(),
-      );
     });
 
     it('takes the new code when another one is asked for', async () => {
@@ -269,7 +246,8 @@ describe('the code screen', () => {
       );
       await press(tree.root, prs.auth.resend);
       await settle();
-      const text = allText(tree.root);
+      // The boxes are read one by one, so the digits come with spaces between them.
+      const text = allText(tree.root).replace(/\s/g, '');
       expect(text).toContain(toPersianDigits('222333'));
       expect(text).not.toContain(toPersianDigits('111444'));
     });

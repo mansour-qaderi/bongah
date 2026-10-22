@@ -150,6 +150,7 @@ export type IconName =
   | 'shop'
   | 'garage'
   | 'office'
+  | 'map-pin'
   // The app
   | 'pin'
   | 'chat'
@@ -193,7 +194,18 @@ export type IconName =
   // A featured frame (کادر ویژه): a rounded frame with a star in it
   | 'frameStar'
   // The balance: a wallet
-  | 'wallet';
+  | 'wallet'
+  // The listing form's map: fullscreen and back, undo a corner, draw a plot
+  | 'expand'
+  | 'collapse'
+  | 'undo'
+  | 'draw'
+  // The map's style switch: stacked layers
+  | 'layers'
+  // The map's satellite switch: a satellite sending a signal
+  | 'satellite'
+  // Directions to a listing
+  | 'navigate';
 
 export const ICON_GRID = 24;
 
@@ -251,8 +263,7 @@ export const ICON_SHAPES: Record<IconName, Shape[]> = {
     bar(10.5, 18, 3, 3.5),
   ],
 
-  // A map pin: a teardrop (a square with three round corners, turned) with a dot.
-  pin: [
+  'map-pin': [
     {
       x: 5.5,
       y: 3.5,
@@ -264,6 +275,19 @@ export const ICON_SHAPES: Record<IconName, Shape[]> = {
     },
     dot(12, 10, 4),
     bar(8, 21, 8, 1.6),
+  ],
+  // A map pin: a teardrop (a square with three round corners, turned so its point is down) with a ring in its head.
+  pin: [
+    {
+      x: 5,
+      y: 3.5,
+      w: 14,
+      h: 14,
+      r: [7, 7, 7, 0],
+      stroke: true,
+      rotate: -45,
+    },
+    ring(12, 10.5, 5.4),
   ],
   // A speech bubble with three dots.
   chat: [
@@ -514,5 +538,85 @@ export const ICON_SHAPES: Record<IconName, Shape[]> = {
     bar(5.5, 3.5, 11, 1.6),
     frame(14, 10.5, 7.5, 5, 2.5),
     dot(17.2, 13, 1.8),
+  ],
+  // Fullscreen: four corners pointing out.
+  expand: [
+    line(4, 9.5, 4, 4),
+    line(4, 4, 9.5, 4),
+    line(14.5, 4, 20, 4),
+    line(20, 4, 20, 9.5),
+    line(20, 14.5, 20, 20),
+    line(20, 20, 14.5, 20),
+    line(9.5, 20, 4, 20),
+    line(4, 20, 4, 14.5),
+  ],
+  // Leave fullscreen: the same four corners pointing in.
+  collapse: [
+    line(9.5, 4, 9.5, 9.5),
+    line(9.5, 9.5, 4, 9.5),
+    line(14.5, 4, 14.5, 9.5),
+    line(14.5, 9.5, 20, 9.5),
+    line(14.5, 20, 14.5, 14.5),
+    line(14.5, 14.5, 20, 14.5),
+    line(9.5, 20, 9.5, 14.5),
+    line(9.5, 14.5, 4, 14.5),
+  ],
+  // Undo: an arrow back to the left that turns round on the right.
+  undo: [
+    frame(8, 8.25, 11.5, 10.5, 5.25, [1, 1, 1, 0]),
+    bar(4.5, 8.25, 5, 1.5),
+    line(4.6, 9, 8.3, 5.4),
+    line(4.6, 9, 8.3, 12.6),
+  ],
+  // Map layers: a diamond with two "V" edges stacked under it.
+  layers: [
+    { x: 8, y: 3.5, w: 8, h: 8, r: 1.2, stroke: true, rotate: 45 },
+    { x: 8, y: 7, w: 8, h: 8, r: 1.2, stroke: [0, 1, 1, 0], rotate: 45 },
+    { x: 8, y: 10.5, w: 8, h: 8, r: 1.2, stroke: [0, 1, 1, 0], rotate: 45 },
+  ],
+  // A satellite: a body with a panel on each side and a dish, the whole turned 45 degrees, and a signal's two arcs.
+  satellite: [
+    ...(
+      [
+        frame(9.5, 9.5, 5, 5, 1.2),
+        // The panels, each with a line across it, and what joins them to the body.
+        frame(2, 8, 5.5, 8, 0.9),
+        frame(16.5, 8, 5.5, 8, 0.9),
+        bar(2.4, 11.45, 4.7, 1.1),
+        bar(16.9, 11.45, 4.7, 1.1),
+        bar(7.5, 11.2, 2, 1.6),
+        bar(14.5, 11.2, 2, 1.6),
+        // The dish, on its stem.
+        {
+          x: 9.5,
+          y: 5.2,
+          w: 5,
+          h: 3,
+          r: [2.5, 2.5, 0, 0],
+          stroke: [1, 1, 0, 1],
+        },
+        bar(11.2, 8.2, 1.6, 1.4),
+      ] as Shape[]
+    ).map(shape => turn(shape, 45, 12, 12)),
+    { x: 2.6, y: 16.6, w: 4.8, h: 4.8, r: 2.4, stroke: [1, 1, 0, 0] },
+    { x: 0.4, y: 14.4, w: 9.2, h: 9.2, r: 4.6, stroke: [1, 1, 0, 0] },
+  ],
+  // Drawing a plot: four corners joined into an outline.
+  draw: [
+    line(5, 6.5, 18, 4.5),
+    line(18, 4.5, 19.5, 17.5),
+    line(19.5, 17.5, 6.5, 19.5),
+    line(6.5, 19.5, 5, 6.5),
+    dot(5, 6.5, 3.6),
+    dot(18, 4.5, 3.6),
+    dot(19.5, 17.5, 3.6),
+    dot(6.5, 19.5, 3.6),
+  ],
+  // Directions: the arrowhead a navigation app points with.
+  navigate: [
+    line(4, 11, 20, 4),
+    line(20, 4, 13, 20),
+    line(13, 20, 11, 13),
+    line(11, 13, 4, 11),
   ],
 };

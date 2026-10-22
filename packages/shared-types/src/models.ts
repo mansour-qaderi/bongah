@@ -6,6 +6,7 @@ import type {
   BannerPlacement,
   Currency,
   DealType,
+  GeoProvider,
   ContactUnlockMethod,
   MapLocationUnlimitedReason,
   MessageType,
@@ -102,8 +103,13 @@ export interface Property {
   id: string;
   user_id: string;
   agency_id: string | null;
-  /** Public name of the agency that published it; null for a private owner. (The owner's name and number stay behind the contact reveal.) */
+  /** Public name of the agency that published it; null for a private owner. (The owner's number stays behind the contact reveal.) */
   agency_name: string | null;
+  /**
+   * A private owner's own name, shown under the price in place of "owner". Null for an agency's listing (the agency's
+   * name is its face), for an owner who has not given a name, and from a server that does not send it.
+   */
+  owner_name?: string | null;
   title: string;
   description: string;
   type: PropertyType;
@@ -129,8 +135,8 @@ export interface Property {
   lat: number | null;
   lng: number | null;
   /**
-   * The plot's outline, when the listing has one. Optional because the API does not send it yet: the app draws
-   * it if it is there and ignores it if it is missing or malformed.
+   * The plot's outline the owner drew, when the listing has one: a GeoJSON Polygon, [longitude, latitude], one closed
+   * ring. Optional because an older API does not send it; null when the listing has none.
    */
   boundary?: PlotBoundary | null;
   images: string[];
@@ -887,4 +893,52 @@ export interface TestPushResult {
   devices: number;
   delivered: number;
   failed: number;
+}
+
+// ───────────────────────── Places and routes (GET /geo/*) ─────────────────────────
+
+/**
+ * One row of the place search's dropdown. `id` is the provider's own place id: coordinates are only fetched when the
+ * row is chosen (GET /geo/places/:id), which is how Google and Mapbox bill a search session. Some answers already
+ * carry the coordinate; then `lat`/`lng` are set and no second call is needed.
+ */
+export interface PlaceSuggestion {
+  id: string;
+  provider: GeoProvider;
+  /** The place's own name: "شفاخانه جمهوریت", "کافه براسان". */
+  title: string;
+  /** Where it is, wide to narrow, without the title: "ناحیه ۲، کابل". Empty when the provider said nothing more. */
+  subtitle: string;
+  /** What kind of place, when known ("hospital", "university", "cafe"), for the row's icon. */
+  category: string | null;
+  lat: number | null;
+  lng: number | null;
+}
+
+export interface PlaceSuggestions {
+  data: PlaceSuggestion[];
+}
+
+/** A chosen place with its coordinate (GET /geo/places/:id) or what is at a coordinate (GET /geo/reverse). */
+export interface PlaceDetails {
+  provider: GeoProvider;
+  title: string;
+  /** The whole address in one line, as the provider writes it. */
+  address: string;
+  lat: number;
+  lng: number;
+  /** The province as the provider names it ("Kabul", "ولایت نیمروز"), or null. The app matches it to its own list. */
+  province: string | null;
+  district: string | null;
+  neighborhood: string | null;
+  street: string | null;
+}
+
+/** A driving route (GET /geo/route): its line from start to end, and how long and how far it is. */
+export interface RouteResult {
+  provider: GeoProvider;
+  distance_m: number;
+  duration_s: number;
+  /** [longitude, latitude] pairs, start first. */
+  coordinates: [number, number][];
 }

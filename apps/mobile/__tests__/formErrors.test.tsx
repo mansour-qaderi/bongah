@@ -10,6 +10,8 @@ import {
   mockApi,
   pressableWith,
   render as renderTree,
+  chooseType,
+  typeOptions,
 } from '../test-utils';
 
 const fetchMock = jest.fn();
@@ -199,10 +201,19 @@ const plus = (root: ReactTestRenderer.ReactTestInstance, label: string) =>
       )
       .props.onPress();
   });
-/** One tap on + for the bedrooms and the bathrooms: the form will not go without them. */
+/**
+ * One tap on + for the bedrooms and the bathrooms: the form will not go without them. A shop, an office, land, a garage,
+ * a garden and "other" have no such steppers, and the form does not ask.
+ */
 async function addRooms(root: ReactTestRenderer.ReactTestInstance) {
-  await plus(root, prs.add.bedrooms);
-  await plus(root, prs.add.bathrooms);
+  const has = (label: string) =>
+    root.findAll(
+      n =>
+        typeof n.props.onPress === 'function' &&
+        n.props.accessibilityLabel === `${label}: ${prs.common.increase}`,
+    ).length > 0;
+  if (has(prs.add.bedrooms)) await plus(root, prs.add.bedrooms);
+  if (has(prs.add.bathrooms)) await plus(root, prs.add.bathrooms);
 }
 /** Fills in everything the form requires when there is no pin: the one written address included. */
 async function fillForm(root: ReactTestRenderer.ReactTestInstance) {
@@ -211,7 +222,7 @@ async function fillForm(root: ReactTestRenderer.ReactTestInstance) {
   await type(root, prs.dealPrice.SALE, '1200000');
   await type(root, prs.add.area, '120');
   await addRooms(root);
-  await type(root, prs.add.address, WRITTEN_ADDRESS);
+  await type(root, prs.add.place, WRITTEN_ADDRESS);
   await press(root, prs.home.selectProvince); // opens the province list
   await press(root, 'کابل');
 }
@@ -229,7 +240,7 @@ async function fillFormWithoutRooms(root: ReactTestRenderer.ReactTestInstance) {
   await type(root, prs.add.descriptionLabel, 'خانه نو با دو اتاق خواب');
   await type(root, prs.dealPrice.SALE, '1200000');
   await type(root, prs.add.area, '120');
-  await type(root, prs.add.address, WRITTEN_ADDRESS);
+  await type(root, prs.add.place, WRITTEN_ADDRESS);
   await press(root, prs.home.selectProvince);
   await press(root, 'کابل');
 }
@@ -332,19 +343,30 @@ describe('field errors from the server, in words', () => {
     expect(formFieldFor('nope')).toBeNull();
   });
 
-  it('names the first failing field in the toast, and counts the rest', () => {
-    const one = toastForErrors({ price: prs.add.error.price }, t as never);
-    expect(one).toBe(`${prs.add.price}: ${prs.add.error.price}`);
-    const many = toastForErrors(
-      { price: prs.add.error.price, title: prs.add.required, type: 'x' },
+  it('says in one sentence which fields are missing, and which are filled in wrongly', () => {
+    const missing = toastForErrors(
+      { title: prs.add.required, area_sqm: prs.add.required },
       t as never,
     );
-    // the form's own order: the title comes before the price; two more follow
-    expect(many.startsWith(`${prs.add.titleField}: ${prs.add.required}`)).toBe(
-      true,
+    expect(missing).toBe(
+      'لطفاً فیلدهای ضروری (عنوان آگهی، مساحت) را تکمیل نمایید.',
     );
-    expect(many).toContain('۲');
-    expect(many).not.toContain('(');
+    const wrong = toastForErrors({ price: prs.add.error.price }, t as never);
+    expect(wrong).toBe(`لطفاً فیلدهای (${prs.add.price}) را اصلاح نمایید.`);
+    const both = toastForErrors(
+      {
+        title: prs.add.required,
+        price: prs.add.error.price,
+        description: prs.add.required,
+      },
+      t as never,
+    );
+    expect(both).toBe(
+      `لطفاً فیلدهای ضروری (${prs.add.titleField}، ${prs.add.descriptionLabel}) را تکمیل و فیلدهای (${prs.add.price}) را اصلاح نمایید.`,
+    );
+    // The old "title: this is required, and 1 more" shape is gone: no colon, no count.
+    expect(missing).not.toContain(':');
+    expect(toastForErrors({}, t as never)).toBe('');
   });
 
   it('has every message in both languages', () => {
@@ -465,7 +487,7 @@ describe('AddPropertyScreen: what is wrong is said where it is wrong', () => {
     await settle();
     expect(allText(tree.root)).toContain(prs.add.error.price);
     expect(allText(toastOf(tree.root))).toBe(
-      `${prs.add.price}: ${prs.add.error.price}`,
+      prs.add.error.fixFields.replace('{{fields}}', prs.add.price),
     );
     expect(posted()).toBeUndefined();
   });
@@ -473,7 +495,7 @@ describe('AddPropertyScreen: what is wrong is said where it is wrong', () => {
   it('shows a province that was not chosen under the province box', async () => {
     const tree = await open();
     await fillBasics(tree.root);
-    await type(tree.root, prs.add.address, WRITTEN_ADDRESS);
+    await type(tree.root, prs.add.place, WRITTEN_ADDRESS);
     await press(tree.root, prs.add.submit);
     await settle();
     expect(allText(tree.root)).toContain(prs.add.required);
@@ -514,7 +536,7 @@ describe('AddPropertyScreen: what is wrong is said where it is wrong', () => {
     expect(posted()).toBeDefined();
     expect(allText(tree.root)).toContain(prs.add.error.typeNotSupported);
     expect(allText(toastOf(tree.root))).toBe(
-      `${prs.add.type}: ${prs.add.error.typeNotSupported}`,
+      prs.add.error.fixFields.replace('{{fields}}', prs.add.type),
     );
     noGenericBanner(tree.root);
   });
@@ -611,17 +633,6 @@ describe('AddPropertyScreen: what is wrong is said where it is wrong', () => {
 });
 
 describe('the form and the API agree on what a property type is', () => {
-  const chips = (root: ReactTestRenderer.ReactTestInstance) =>
-    root.findAll(
-      n =>
-        typeof n.props.onPress === 'function' &&
-        PROPERTY_TYPES.some(
-          p =>
-            n.props.accessibilityLabel === undefined &&
-            allText(n) === (prs.propertyType as Record<string, string>)[p],
-        ),
-    );
-
   it('offers exactly the nine types, in the order of the shared list, and the shared schema accepts each', async () => {
     expect(PROPERTY_TYPES).toEqual([
       'HOUSE_HAWILI',
@@ -663,20 +674,16 @@ describe('the form and the API agree on what a property type is', () => {
     const tree = await render(screenElement(AddPropertyScreen, navigation()));
     mounted.push(tree);
     await settle();
-    const text = allText(tree.root);
-    const order = PROPERTY_TYPES.map(p =>
-      text.indexOf((prs.propertyType as Record<string, string>)[p]),
+    // The dropdown lists exactly the shared types, in the shared order.
+    const rows = await typeOptions(tree.root);
+    expect(rows.map(row => row.value)).toEqual([...PROPERTY_TYPES]);
+    expect(rows.map(row => row.label)).toEqual(
+      PROPERTY_TYPES.map(p => (prs.propertyType as Record<string, string>)[p]),
     );
-    expect(order.every(i => i >= 0)).toBe(true);
-    expect([...order].sort((a, b) => a - b)).toEqual(order);
-    void chips;
   });
 
   it('sends the type it shows: choosing «ویلا» posts VILLA, «دفتر» posts OFFICE', async () => {
-    for (const [label, wire] of [
-      [prs.propertyType.VILLA, 'VILLA'],
-      [prs.propertyType.OFFICE, 'OFFICE'],
-    ] as const) {
+    for (const wire of ['VILLA', 'OFFICE'] as const) {
       fetchMock.mockReset();
       answerGeocoder(KABUL_SPOT, {
         'POST /properties': { status: 201, body: listing() },
@@ -684,7 +691,7 @@ describe('the form and the API agree on what a property type is', () => {
       const tree = await render(screenElement(AddPropertyScreen, navigation()));
       mounted.push(tree);
       await settle();
-      await press(tree.root, label);
+      await chooseType(tree.root, wire);
       await fillForm(tree.root);
       await press(tree.root, prs.add.submit);
       await settle();
@@ -721,7 +728,7 @@ describe('the unit box only asks about buildings', () => {
     ['OTHER', false],
   ] as const)('%s: unit box shown = %s', async (kind, shown) => {
     const tree = await open();
-    await press(tree.root, (prs.propertyType as Record<string, string>)[kind]);
+    await chooseType(tree.root, kind);
     expect(hasUnitBox(tree.root)).toBe(shown);
     expect(allText(tree.root).includes(prs.add.unitHelp)).toBe(shown);
   });
@@ -729,20 +736,20 @@ describe('the unit box only asks about buildings', () => {
   it('is there from the start (a house is the first type) and goes when a garage is chosen', async () => {
     const tree = await open();
     expect(hasUnitBox(tree.root)).toBe(true);
-    await press(tree.root, prs.propertyType.GARAGE);
+    await chooseType(tree.root, 'GARAGE');
     expect(hasUnitBox(tree.root)).toBe(false);
   });
 
   it('keeps what was typed while another type is looked at, but only a building sends it', async () => {
     const tree = await open();
-    await press(tree.root, prs.propertyType.APARTMENT);
+    await chooseType(tree.root, 'APARTMENT');
     await type(tree.root, UNIT_LABEL, 'واحد سوم');
-    await press(tree.root, prs.propertyType.GARAGE);
-    await press(tree.root, prs.propertyType.APARTMENT);
+    await chooseType(tree.root, 'GARAGE');
+    await chooseType(tree.root, 'APARTMENT');
     expect(inputLabelled(tree.root, UNIT_LABEL).props.value).toBe('واحد سوم');
 
     // back to a garage and send: no unit in the post
-    await press(tree.root, prs.propertyType.GARAGE);
+    await chooseType(tree.root, 'GARAGE');
     await fillFormWithoutRooms(tree.root);
     await press(tree.root, prs.add.submit);
     await settle();
@@ -752,7 +759,7 @@ describe('the unit box only asks about buildings', () => {
 
   it('sends the unit for an apartment', async () => {
     const tree = await open();
-    await press(tree.root, prs.propertyType.APARTMENT);
+    await chooseType(tree.root, 'APARTMENT');
     await type(tree.root, UNIT_LABEL, 'واحد سوم');
     await fillForm(tree.root);
     await press(tree.root, prs.add.submit);
@@ -773,7 +780,7 @@ describe('the unit box only asks about buildings', () => {
     );
     await settle();
     expect(inputLabelled(tree.root, UNIT_LABEL).props.value).toBe('واحد ۳');
-    await press(tree.root, prs.propertyType.GARAGE);
+    await chooseType(tree.root, 'GARAGE');
     await press(tree.root, prs.add.save);
     await settle();
     const patch = callsTo(fetchMock).find(c => c.method === 'PATCH');
@@ -852,8 +859,11 @@ describe('the description goes out as typed and is read back as typed', () => {
       await press(tree.root, prs.add.submit);
       await settle();
       expect(posted()).toBeUndefined();
-      expect(allText(toastOf(tree.root))).toContain(
-        `${prs.add.descriptionLabel}: ${prs.add.required}`,
+      expect(allText(toastOf(tree.root))).toBe(
+        prs.add.error.completeFields.replace(
+          '{{fields}}',
+          prs.add.descriptionLabel,
+        ),
       );
     }
   });
@@ -998,16 +1008,8 @@ describe('the welcome gift on the listing form', () => {
   const gifted = { ...user, welcome_listing_credits: 1 };
   const PROMPT = 'با ثبت این آگهی، امتیاز هدیه ثبت اول شما مصرف خواهد شد.';
 
-  it('says, before posting, that the first listing uses the gift', async () => {
-    mockAuth = { status: 'signedIn', user: gifted };
-    answerGeocoder(KABUL_SPOT, {});
-    const tree = await render(screenElement(AddPropertyScreen, navigation()));
-    await settle();
-    expect(allText(tree.root)).toContain(PROMPT);
-  });
-
-  it('says nothing once the gift is spent, or for an account that never had one', async () => {
-    for (const account of [{ ...user, welcome_listing_credits: 0 }, user]) {
+  it('says nothing when the form opens, gift or no gift (no banner, no toast)', async () => {
+    for (const account of [gifted, { ...user, welcome_listing_credits: 0 }, user]) {
       mockAuth = { status: 'signedIn', user: account };
       answerGeocoder(KABUL_SPOT, {});
       const tree = await render(screenElement(AddPropertyScreen, navigation()));

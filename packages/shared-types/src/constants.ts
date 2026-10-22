@@ -228,6 +228,21 @@ export const AFGHANISTAN_BOUNDS = {
   maxLng: 75.0,
 } as const;
 
+/**
+ * A plot outline a person draws on the listing form (the plot of a house, a piece of land, a garden). A drawn plot has
+ * a few dozen corners at most; the cap keeps a broken or hostile payload small. The area limits match `area_sqm`:
+ * below 10 m² it is a misplaced tap, not a plot.
+ */
+export const PLOT_MAX_VERTICES = 200;
+export const PLOT_MIN_AREA_SQM = 10;
+export const PLOT_MAX_AREA_SQM = 100_000_000;
+
+/** Where the server's place search / route answers came from (`/geo/*`). Nominatim and OSRM are asked by the app itself. */
+export const GEO_PROVIDERS = ['google', 'mapbox'] as const;
+export type GeoProvider = (typeof GEO_PROVIDERS)[number];
+/** Longest text the place search accepts. */
+export const PLACE_QUERY_MAX_LENGTH = 120;
+
 /** Socket.io event names, shared so the server and the app cannot drift apart. */
 export const CHAT_EVENTS = {
   /** client -> server: send a message (acknowledged). */

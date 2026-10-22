@@ -1,5 +1,6 @@
 import React from 'react';
 import {
+  Animated,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -10,6 +11,7 @@ import {
 import { formatNumber } from '../i18n/format';
 import { colors, radius, spacing } from '../theme';
 import AppText from './AppText';
+import { inkBetween, SelectionFill, useSelection } from './selection';
 
 interface ChipProps {
   label: string;
@@ -19,9 +21,90 @@ interface ChipProps {
   compact?: boolean;
   /** A figure shown after the label in its own small capsule (how many listings are in a status). */
   count?: number;
+  /**
+   * A tab that moves: the filled pill fades and scales onto the chip being chosen while it leaves the one being left,
+   * and the label's ink follows. For chips that act as tabs (My Listings); chips that are options in a sheet stay still.
+   */
+  animated?: boolean;
 }
 
-export function Chip({
+export function Chip(props: ChipProps) {
+  return props.animated ? <AnimatedChip {...props} /> : <PlainChip {...props} />;
+}
+
+/** The tab form of a chip: an edge, a pill that fills in, and the label on top. */
+function AnimatedChip({
+  label,
+  selected = false,
+  onPress,
+  compact = false,
+  count,
+}: ChipProps) {
+  const value = useSelection(selected);
+  const height = compact ? 34 : CHIP_HEIGHT;
+  return (
+    <Animated.View
+      style={[
+        styles.tab,
+        {
+          height,
+          borderColor: value.interpolate({
+            inputRange: [0, 1],
+            outputRange: [colors.border, colors.primary],
+          }),
+        },
+      ]}
+    >
+      <SelectionFill value={value} radius={height / 2} />
+      <Pressable
+        accessibilityRole="button"
+        accessibilityState={{ selected }}
+        onPress={onPress}
+        style={({ pressed }) => [
+          styles.tabInner,
+          compact && styles.chipCompact,
+          pressed && styles.chipPressed,
+        ]}
+      >
+        <AppText
+          variant="label"
+          animatedColor={inkBetween(value, colors.text, colors.textOnPrimary)}
+          numberOfLines={1}
+          style={styles.label}
+        >
+          {label}
+        </AppText>
+        {count !== undefined ? (
+          <Animated.View
+            style={[
+              styles.count,
+              {
+                backgroundColor: value.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: [colors.neutralSoft, 'rgba(255,255,255,0.22)'],
+                }),
+              },
+            ]}
+          >
+            <AppText
+              variant="caption"
+              animatedColor={inkBetween(
+                value,
+                colors.neutralText,
+                colors.textOnPrimary,
+              )}
+              style={styles.countText}
+            >
+              {formatNumber(count, 0)}
+            </AppText>
+          </Animated.View>
+        ) : null}
+      </Pressable>
+    </Animated.View>
+  );
+}
+
+function PlainChip({
   label,
   selected = false,
   onPress,
@@ -95,6 +178,21 @@ export function ChipRow({
 export const CHIP_HEIGHT = 36;
 
 const styles = StyleSheet.create({
+  // The edge and the clip of an animated tab; the pill that fills it and the pressable sit inside.
+  tab: {
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    overflow: 'hidden',
+    backgroundColor: colors.surface,
+  },
+  tabInner: {
+    flex: 1,
+    paddingHorizontal: spacing.lg - 1,
+    flexDirection: 'row',
+    gap: spacing.sm,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   chip: {
     height: CHIP_HEIGHT,
     paddingHorizontal: spacing.lg,

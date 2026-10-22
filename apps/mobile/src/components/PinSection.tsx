@@ -1,57 +1,41 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
-import type { Coordinate, MapCamera } from '../map/geo';
-import { colors, spacing } from '../theme';
+import { colors, radius, spacing } from '../theme';
 import AppText from './AppText';
-import LocationPicker from './LocationPicker';
 
 interface Props {
-  value: Coordinate | null;
-  camera: MapCamera;
-  onChange: (coordinate: Coordinate) => void;
+  /** The map itself (LocationEditor). null while the same map is open fullscreen, so only one is drawn. */
+  map: React.ReactNode;
+  /** The last tap or drop was outside Afghanistan. */
+  outside?: boolean;
   error?: string;
-  /** Something to say under the map (the address that was found for the spot). */
+  /** What is known about the spot, the drawn plot and the map's buttons. */
   children?: React.ReactNode;
 }
 
 /**
- * The "where is it on the map" part of a listing form. Free for everyone: an exact pin is no longer something
- * that is bought, so this is only the title, a line of help, the map and what is known about the chosen spot.
+ * The "where is it on the map" part of a listing form: one line that says what the map is for, the map in a rounded
+ * box, and what is known about the chosen spot. Free for everyone. That one line is the only help text there is: no
+ * title above it and no hint under the map.
  */
 export default function PinSection({
-  value,
-  camera,
-  onChange,
+  map,
+  outside = false,
   error,
   children,
 }: Props) {
   const { t } = useTranslation();
-  const [outside, setOutside] = useState(false);
-
   return (
     <View style={styles.box}>
-      <AppText variant="label" color={colors.textSecondary}>
-        {t('add.location')}
-      </AppText>
-      <AppText variant="caption" color={colors.textMuted}>
-        {t('add.locationHelp')}
-      </AppText>
-      <LocationPicker
-        value={value}
-        camera={camera}
-        onChange={coordinate => {
-          setOutside(false);
-          onChange(coordinate);
-        }}
-        onOutside={() => setOutside(true)}
-      />
       <AppText
-        variant="caption"
-        color={value ? colors.primaryDark : colors.textMuted}
+        variant="bodySm"
+        color={colors.textSecondary}
+        testID="location-hint"
       >
-        {value ? t('map.placed') : t('map.tapToPlace')}
+        {t('add.locationHint')}
       </AppText>
+      <View style={styles.map}>{map}</View>
       {outside ? (
         <AppText variant="caption" color={colors.danger}>
           {t('map.outside')}
@@ -69,4 +53,12 @@ export default function PinSection({
 
 const styles = StyleSheet.create({
   box: { gap: spacing.sm, marginBottom: spacing.lg },
+  map: {
+    height: 300,
+    borderRadius: radius.md,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.neutralSoft,
+  },
 });

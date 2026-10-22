@@ -12,6 +12,7 @@ import type {
   Property,
   PropertyType,
 } from '@bongah/shared-types';
+import { useSafeAuth } from '../auth/useSafeAuth';
 import AppText from '../components/AppText';
 import Icon, { type IconName } from '../components/Icon';
 import { formatNumber } from '../i18n/format';
@@ -53,11 +54,39 @@ export const propertyLineIcon = (type: string): IconName =>
 export const propertyEmoji = (type: string): string =>
   PROPERTY_ICONS[currentPropertyType(type)];
 
-/** Who is selling, for a marker: the agency's name, or "owner" for a private seller. */
+/**
+ * Who is selling: the agency's name, else a private owner's own name, and "owner" only for one who has not given a
+ * name (an account from before the name was asked for) or from a server that does not send it yet.
+ */
 export function useSellerLabel() {
   const { t } = useTranslation();
-  return (property: Pick<Property, 'agency_name'>) =>
-    property.agency_name ?? t('property.owner');
+  const me = useSafeAuth()?.user;
+  return (
+    property: Pick<Property, 'agency_name' | 'owner_name'> &
+      Partial<Pick<Property, 'user_id'>>,
+  ) =>
+    property.agency_name ??
+    (property.owner_name?.trim() ||
+      // The server may not have the name of the person who posted it (an older server, or a list that does not carry
+      // it), but the person looking at their own listing is known: their own name is on their account.
+      (me && property.user_id === me.id ? me.full_name?.trim() : '') ||
+      t('property.owner'));
+}
+
+/** The most characters a marker's label shows before it is cut with "…". */
+export const MARKER_TITLE_MAX = 18;
+
+/**
+ * A listing's title as a marker label: whole words while they fit in `max` characters, then "…". A first word that is
+ * itself longer than that is cut where it is. Several spaces and line breaks count as one space.
+ */
+export function shortTitle(title: string, max: number = MARKER_TITLE_MAX): string {
+  const text = title.replace(/\s+/g, ' ').trim();
+  if (text.length <= max) return text;
+  const room = text.slice(0, max + 1);
+  const space = room.lastIndexOf(' ');
+  const cut = space > 0 ? room.slice(0, space) : text.slice(0, max);
+  return `${cut.replace(/[،,.:؛\s]+$/, '')}…`;
 }
 
 /** Ink for the things that are not a listing (clusters), so they never compete with the deal colours. */
@@ -66,6 +95,9 @@ const WHITE = '#FFFFFF';
 
 const BADGE = 38;
 const HALO = 56;
+/** The "you are here" disc, and the size its pulsing ring grows to (the view is that big). */
+const USER_CORE = 28;
+const USER_RING = 84;
 const TAG_MAX_WIDTH = 150;
 
 /** A small downward point under a badge, so its tip marks the exact spot. Gold-edged on a featured listing. */
@@ -136,19 +168,20 @@ function FeaturedGlow() {
 
 /**
  * A listing. The badge is a coloured disc: the colour says what it is offered for (emerald = sale, blue =
- * rent, gold = growi) and the white line icon says what it is (flat, house, plot, shop, villa). The price
- * appears above it once the map is close enough to leave room (`showPrice`), and always on the chosen one,
- * which also grows and gets a soft halo. A paid (featured) listing is the one that stands out: a gold ring round
+ * rent, gold = growi) and the white line icon says what it is (flat, house, plot, shop, villa). The listing's
+ * (shortened) title appears above it once the map is close enough to leave room (`showLabel`), and always on the
+ * chosen one, which also grows and gets a soft halo. The price is on the card that opens when the marker is tapped
+ * (and in the marker's accessibility label), not on the map. A paid (featured) listing is the one that stands out: a gold ring round
  * its badge, a gold glow that pulses, a gold tail and a small gold star, so it is found first on a crowded map.
  */
 function PropertyMarkerView({
   property,
   selected,
-  showPrice = false,
+  showLabel = false,
 }: {
   property: Property;
   selected: boolean;
-  showPrice?: boolean;
+  showLabel?: boolean;
 }) {
   const { t } = useTranslation();
   const format = useFormat();
@@ -170,15 +203,16 @@ function PropertyMarkerView({
         .join('، ')}
       accessibilityState={{ selected }}
     >
-      {showPrice || selected ? (
+      {showLabel || selected ? (
         <View style={[styles.tag, selected ? styles.tagSelected : null]}>
           <AppText
             variant="caption"
             color={selected ? colors.textOnPrimary : INK}
             numberOfLines={1}
             style={styles.tagText}
+            testID="marker-title"
           >
-            {price}
+            {shortTitle(property.title)}
           </AppText>
         </View>
       ) : null}
@@ -220,12 +254,12 @@ function PropertyMarkerView({
 function AgencyMarkerView({
   agency,
   selected,
-  showPrice: showName = false,
+  showLabel: showName = false,
 }: {
   agency: AgencyMapPin;
   selected: boolean;
-  /** Named `showPrice` like the listing marker so the map passes both the same prop. */
-  showPrice?: boolean;
+  /** Named `showLabel` like the listing marker so the map passes both the same prop. */
+  showLabel?: boolean;
 }) {
   return (
     <View
@@ -315,12 +349,69 @@ export function ClusterMarker({
 export const PropertyMarker = React.memo(PropertyMarkerView);
 export const AgencyMarker = React.memo(AgencyMarkerView);
 
-/** "You are here". Blue is the universal colour for it, which is why it is not a brand colour. */
-export function UserDot() {
+/** One beat of the "you are here" ring: how long it takes to grow from the dot to its full size and fade out. */
+export const USER_PULSE_MS = 1800;
+
+/**
+ * "You are here": a blue disc with a white locator in it, a soft steady halo round it, and a ring that grows out of
+ * the disc and fades, over and over, so the person's own place is found at a glance among the listings. Blue is the
+ * universal colour for it, which is why it is not a brand colour. The ring stops (the halo stays) for someone who has
+ * asked their phone for less motion. The view is as big as the ring ever gets, so nothing is cut off at its edge.
+ */
+export function UserDot({ testID }: { testID?: string }) {
   const { t } = useTranslation();
+  const pulse = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    let cancelled = false;
+    let loop: Animated.CompositeAnimation | null = null;
+    Promise.resolve(AccessibilityInfo.isReduceMotionEnabled())
+      .catch(() => false)
+      .then(reduce => {
+        if (cancelled || reduce) return;
+        loop = Animated.loop(
+          Animated.timing(pulse, {
+            toValue: 1,
+            duration: USER_PULSE_MS,
+            easing: Easing.out(Easing.cubic),
+            useNativeDriver: true,
+          }),
+        );
+        loop.start();
+      });
+    return () => {
+      cancelled = true;
+      loop?.stop();
+    };
+  }, [pulse]);
+  const scale = pulse.interpolate({
+    inputRange: [0, 1],
+    outputRange: [1, USER_RING / USER_CORE],
+  });
+  const opacity = pulse.interpolate({
+    inputRange: [0, 0.6, 1],
+    outputRange: [0.55, 0.2, 0],
+  });
   return (
-    <View style={styles.userHalo} accessibilityLabel={t('home.you')}>
-      <View style={styles.userDot} />
+    <View
+      style={styles.userBox}
+      accessibilityLabel={t('home.you')}
+      testID={testID}
+    >
+      <Animated.View
+        testID="user-pulse"
+        pointerEvents="none"
+        style={[styles.userPulse, { opacity, transform: [{ scale }] }]}
+      />
+      <View style={styles.userHalo} />
+      <View style={styles.userCore} testID="user-locator">
+        <Icon
+          name="pin"
+          size={USER_CORE - 10}
+          color={WHITE}
+          background={colors.info}
+          weight={2.2}
+        />
+      </View>
     </View>
   );
 }
@@ -444,20 +535,36 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
   },
   clusterFeatured: { borderColor: colors.accentBright, borderWidth: 3.5 },
-  userHalo: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: 'rgba(37,99,235,0.2)', // colors.info at 20%
+  userBox: {
+    width: USER_RING,
+    height: USER_RING,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  userDot: {
-    width: 16,
-    height: 16,
-    borderRadius: 8,
+  userPulse: {
+    position: 'absolute',
+    width: USER_CORE,
+    height: USER_CORE,
+    borderRadius: USER_CORE / 2,
+    borderWidth: 2,
+    borderColor: colors.info,
+    backgroundColor: 'rgba(37,99,235,0.25)', // colors.info at 25%
+  },
+  userHalo: {
+    position: 'absolute',
+    width: USER_CORE + 16,
+    height: USER_CORE + 16,
+    borderRadius: (USER_CORE + 16) / 2,
+    backgroundColor: 'rgba(37,99,235,0.2)', // colors.info at 20%
+  },
+  userCore: {
+    width: USER_CORE,
+    height: USER_CORE,
+    borderRadius: USER_CORE / 2,
     backgroundColor: colors.info,
     borderWidth: 3,
     borderColor: WHITE,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });

@@ -11,7 +11,7 @@ import Badge, { badgeTones, DealBadge } from './Badge';
 import BookmarkButton from './BookmarkButton';
 import CircleIconButton from './CircleIconButton';
 import Icon from './Icon';
-import Price from './Price';
+import PriceLine from './PriceLine';
 import PropertyFacts, { propertyPlace } from './PropertyFacts';
 
 interface Props {
@@ -27,12 +27,13 @@ const MEDIA_HEIGHT = 188;
  * - media: the first picture, or a quiet grey container with the kind's line icon when there is none. The deal
  *   badge sits on it at the start edge (solid emerald for a sale, blue for a rent, gold for a pledge, with the
  *   "featured" badge beside it if the listing is promoted) and the bookmark ribbon at the other edge;
- * - body, top to bottom: the title (the biggest text on the card), the price (the figure with its ؋ sign), the place
+ * - body, top to bottom: the title (the biggest text on the card), the price (the figure with its ؋ sign, and the
+ *   «جورآمد» / «مقطوع» badge beside it when the owner chose one), the place
  *   with a pin icon, and the facts as a grid, two to a row: the kind and the area above, the bedrooms and the
  *   bathrooms below, each with its own icon. My Listings and the details page show the same four in the same grid;
  * - the corner of the picture at the other edge holds two round buttons, one under the other, in the same white disc:
  *   the bookmark ribbon, and Share, which opens the phone's share sheet (WhatsApp included);
- * - the foot of the card is the listing's description (a few lines, cut with an ellipsis). A listing with no description
+ * - the foot of the card is the listing's description (two lines, cut with an ellipsis). A listing with no description
  *   shows nothing there at all: the section collapses.
  */
 export default function PropertyCard({ property, onPress }: Props) {
@@ -87,13 +88,7 @@ export default function PropertyCard({ property, onPress }: Props) {
           <AppText variant="heading" numberOfLines={2}>
             {property.title}
           </AppText>
-          <Price
-            amount={property.price}
-            currency={property.currency}
-            variant="title"
-            color={colors.primary}
-            style={styles.price}
-          />
+          <PriceLine property={property} priceStyle={styles.price} />
           {place ? (
             <View style={styles.place}>
               <Icon
@@ -122,7 +117,8 @@ export default function PropertyCard({ property, onPress }: Props) {
             <AppText
               variant="bodySm"
               color={colors.textSecondary}
-              numberOfLines={3}
+              numberOfLines={2}
+              ellipsizeMode="tail"
               style={styles.description}
               testID="card-description"
             >

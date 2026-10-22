@@ -1,9 +1,20 @@
 import React from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
+import {
+  ActivityIndicator,
+  Animated,
+  Pressable,
+  StyleSheet,
+  View,
+} from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { DEAL_TYPES, type DealType } from '@bongah/shared-types';
 import AppText from '../../components/AppText';
 import Icon, { type IconName } from '../../components/Icon';
+import {
+  inkBetween,
+  SelectionFill,
+  useSelection,
+} from '../../components/selection';
 import { colors, dealColors, radius, spacing, surfaces } from '../../theme';
 
 /** The round controls and the capsule that float over the map. One size, one flat white + 1 px border, so they read as a set. */
@@ -180,8 +191,10 @@ export function StatusPill({
 }
 
 /**
- * The pill at the foot of the map that swaps between the map and the list: both choices side by side, the
- * current one filled in emerald. Tapping the other one switches; tapping the current one does nothing.
+ * The pill at the foot of the map that swaps between the map and the list: both choices side by side. The current one
+ * is filled in emerald; choosing the other one passes the fill over to it (it fades and scales in on the new tab while
+ * it leaves the old one, and the icons and words change ink with it) instead of jumping. Tapping the current one does
+ * nothing.
  */
 export function ModeToggle({
   mode,
@@ -195,36 +208,78 @@ export function ModeToggle({
   listLabel: string;
   onChange: (mode: 'map' | 'list') => void;
 }) {
-  const segment = (value: 'map' | 'list', icon: IconName, label: string) => {
-    const selected = mode === value;
-    const ink = selected ? WHITE : colors.textMuted;
-    return (
-      <Pressable
-        key={value}
-        testID={`mode-${value}`}
-        accessibilityRole="button"
-        accessibilityLabel={label}
-        accessibilityState={{ selected }}
-        onPress={() => (selected ? undefined : onChange(value))}
-        style={[styles.modeSegment, selected ? styles.modeSelected : null]}
-      >
-        <Icon
-          name={icon}
-          size={18}
-          color={ink}
-          background={selected ? colors.primary : colors.surface}
-        />
-        <AppText variant="label" color={ink}>
-          {label}
-        </AppText>
-      </Pressable>
-    );
-  };
   return (
     <View testID="mode-toggle" style={styles.toggle}>
-      {segment('map', 'pin', mapLabel)}
-      {segment('list', 'list', listLabel)}
+      <ModeSegment
+        value="map"
+        icon="map-pin"
+        label={mapLabel}
+        selected={mode === 'map'}
+        onChange={onChange}
+      />
+      <ModeSegment
+        value="list"
+        icon="list"
+        label={listLabel}
+        selected={mode === 'list'}
+        onChange={onChange}
+      />
     </View>
+  );
+}
+
+function ModeSegment({
+  value,
+  icon,
+  label,
+  selected,
+  onChange,
+}: {
+  value: 'map' | 'list';
+  icon: IconName;
+  label: string;
+  selected: boolean;
+  onChange: (mode: 'map' | 'list') => void;
+}) {
+  const progress = useSelection(selected);
+  return (
+    <Pressable
+      testID={`mode-${value}`}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      accessibilityState={{ selected }}
+      onPress={() => (selected ? undefined : onChange(value))}
+      style={styles.modeSegment}
+    >
+      <SelectionFill value={progress} radius={20} />
+      {/* Two icons on top of each other, one in each ink, and the one that is not wanted fades out. */}
+      <View style={styles.modeIcon}>
+        <Animated.View
+          style={{
+            opacity: progress.interpolate({
+              inputRange: [0, 1],
+              outputRange: [1, 0],
+            }),
+          }}
+        >
+          <Icon name={icon} size={18} color={colors.textMuted} />
+        </Animated.View>
+        <Animated.View style={[StyleSheet.absoluteFill, { opacity: progress }]}>
+          <Icon
+            name={icon}
+            size={18}
+            color={WHITE}
+            background={colors.primary}
+          />
+        </Animated.View>
+      </View>
+      <AppText
+        variant="label"
+        animatedColor={inkBetween(progress, colors.textMuted, WHITE)}
+      >
+        {label}
+      </AppText>
+    </Pressable>
   );
 }
 
@@ -296,5 +351,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
     borderRadius: 20,
   },
-  modeSelected: { backgroundColor: colors.primary },
+  // The icon's own box, so the second ink can lie exactly over the first.
+  modeIcon: { width: 18, height: 18 },
 });

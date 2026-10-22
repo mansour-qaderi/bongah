@@ -9,6 +9,8 @@ import { Platform } from 'react-native';
  * HTTPS and have no trailing slash. It is the API's Render web service; change it here if the service is
  * renamed or moved behind a custom domain.
  */
+
+const DEV_API_HOST: string | null = 'http://192.168.0.105:3000';
 const PRODUCTION_API_URL = 'https://bongah.onrender.com';
 
 export const API_BASE_URL = PRODUCTION_API_URL;
@@ -46,6 +48,20 @@ export const GEOCODER_USER_AGENT = 'Bongah/1.0 (real-estate app, Afghanistan)';
 export const GEOCODER_TIMEOUT_MS = 8_000;
 /** The shared geocoder asks for about one request a second: this long between two questions about the same thing. */
 export const GEOCODER_GAP_MS = 1_100;
+
+/**
+ * Suggestions while typing a place, when the Bongah API cannot ask Google / Mapbox (no key on the server, the person
+ * is not signed in, or the server is down): Photon, komoot's OpenStreetMap search, which is built for search-as-you-type.
+ * (Nominatim's usage policy forbids that, so it is only asked once the typing has stopped; see GeocodingService.) A
+ * shared, fair-use server like the others: point it at your own instance before a public launch.
+ */
+export const PHOTON_URL = 'https://photon.komoot.io/api/';
+/**
+ * Driving routes when the API cannot give one: the public OSRM demo server on OpenStreetMap roads. Light use only
+ * (one route per trip, and again only when the driver leaves it); host OSRM or use a paid router before launch.
+ */
+export const OSRM_ROUTE_URL =
+  'https://router.project-osrm.org/route/v1/driving';
 
 /** Give up on a request after this long (slow mobile networks are expected, hanging forever is not). */
 export const REQUEST_TIMEOUT_MS = 20_000;

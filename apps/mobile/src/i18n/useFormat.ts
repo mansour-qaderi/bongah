@@ -6,7 +6,6 @@ import {
   compactAmount,
   formatCurrency,
   formatNumber,
-  sqmToJerib,
 } from './format';
 
 /** Number/price/area formatting bound to the current language. */
@@ -29,8 +28,6 @@ export function useFormat() {
       return `${words} ${t(`currencySymbol.${currency}`)}`;
     },
     area: (sqm: number) => `${formatNumber(sqm)} ${t('unit.sqm')}`,
-    jerib: (sqm: number) =>
-      `${formatNumber(sqmToJerib(sqm))} ${t('unit.jerib')}`,
     province: (value: string) => provinceLabel(value, language),
   };
 }

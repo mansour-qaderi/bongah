@@ -12,6 +12,7 @@ import {
   jsonResponse,
   pressableWith,
   render,
+  typeOptions,
 } from '../test-utils';
 
 const fetchMock = jest.fn();
@@ -136,12 +137,12 @@ describe('AddPropertyScreen', () => {
     expect(tree.root.findAllByType(TextInput)).toHaveLength(0);
   });
 
-  it('lists every property type the API accepts, each as its own chip', async () => {
+  it('lists every property type the API accepts, each as its own row of the type dropdown', async () => {
     mockAuth = { status: 'signedIn', user };
     const tree = await render(withQuery(<AddPropertyScreen {...addProps()} />));
-    const text = allText(tree.root);
+    const labels = (await typeOptions(tree.root)).map(row => row.label);
     for (const label of Object.values(prs.propertyType))
-      expect(text).toContain(label);
+      expect(labels).toContain(label);
     expect(Object.keys(prs.propertyType)).toEqual(
       expect.arrayContaining([
         'SHOP',
@@ -154,14 +155,14 @@ describe('AddPropertyScreen', () => {
     );
   });
 
-  it('groups the form into four titled cards, in the order a listing is described', async () => {
+  it('groups the form into four titled cards: the place first, then what it is, its price and the description', async () => {
     mockAuth = { status: 'signedIn', user };
     const tree = await render(withQuery(<AddPropertyScreen {...addProps()} />));
     const text = allText(tree.root);
     const order = [
+      prs.add.sectionPlace,
       prs.add.sectionBasics,
       prs.add.sectionPrice,
-      prs.add.sectionPlace,
       prs.add.sectionDetails,
     ].map(title => text.indexOf(title));
     expect(order.every(i => i >= 0)).toBe(true);

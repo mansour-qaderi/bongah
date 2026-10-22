@@ -2,8 +2,9 @@ import React, { useEffect, useRef } from 'react';
 import { StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 import { Camera, Map, type CameraRef } from '@maplibre/maplibre-react-native';
 import type { Bounds } from './cluster';
-import { fromLngLat, type Coordinate, type MapCamera } from './geo';
-import { BASE_MAP_STYLE } from './style';
+import { fromLngLat, type Coordinate, type LngLat, type MapCamera } from './geo';
+import { useMapStyle } from './mapStyleStore';
+import { styleFor } from './style';
 
 interface Props {
   /** Where to look. The map flies there whenever this changes (after the first draw). */
@@ -13,22 +14,41 @@ interface Props {
   /** Called with the tapped point. */
   onPress?: (coordinate: Coordinate) => void;
   /**
-   * Called when the person (or a fly-to) has finished moving the map: how far in, what is visible, and whether a
-   * finger (rather than a fly-to the app asked for) moved it.
+   * Called when the person (or a fly-to) has finished moving the map: where it is looking and how far in, what is
+   * visible, and whether a finger (rather than a fly-to the app asked for) moved it. `center` and `zoom` are what a
+   * screen keeps to put a map back exactly where it was (a tab switch, a fullscreen map closing).
    */
-  onViewChange?: (view: {
-    zoom: number;
-    bounds: Bounds;
-    userMoved: boolean;
-  }) => void;
+  onViewChange?: (view: MapViewChange) => void;
   style?: StyleProp<ViewStyle>;
   testID?: string;
+  /**
+   * Android only. A map inside something that scrolls, has rounded corners or sits under a header (a form, a card, a
+   * sheet) must be 'texture': the default 'surface' is a separate layer that Android draws over its neighbours and does
+   * not clip to its parent, so such a map spilled over the sheet's edges and header. Full-screen maps keep 'surface',
+   * which pans a little smoother.
+   */
+  androidView?: 'surface' | 'texture';
   children?: React.ReactNode;
 }
 
+/** What `onViewChange` reports. */
+export interface MapViewChange {
+  center: LngLat;
+  zoom: number;
+  bounds: Bounds;
+  userMoved: boolean;
+}
+
+/** The middle of a [west, south, east, north] box: the centre when the platform did not say it. */
+const middleOf = ([west, south, east, north]: Bounds): LngLat => [
+  (west + east) / 2,
+  (south + north) / 2,
+];
+
 /**
- * The one map every screen uses: MapLibre drawing OpenStreetMap tiles (see config.ts). Needs no
- * account or key. Rotation and tilt are off: they only confuse a property search.
+ * The one map every screen uses: MapLibre drawing OpenStreetMap tiles (see config.ts), or satellite photographs when
+ * the person switched to them (see mapStyleStore.ts). Needs no account or key. Rotation and tilt are off: they only
+ * confuse a property search.
  */
 export default function BaseMap({
   camera,
@@ -37,8 +57,11 @@ export default function BaseMap({
   onViewChange,
   style,
   testID = 'map',
+  androidView = 'surface',
   children,
 }: Props) {
+  // The street map or the satellite photographs, whichever the person chose (the one choice every map follows).
+  const { kind } = useMapStyle();
   const cameraRef = useRef<CameraRef>(null);
   const firstDraw = useRef(true);
   const [lng, lat] = camera.center;
@@ -62,7 +85,8 @@ export default function BaseMap({
       <Map
         testID={testID}
         style={styles.map}
-        mapStyle={BASE_MAP_STYLE}
+        androidView={androidView}
+        mapStyle={styleFor(kind)}
         dragPan={interactive}
         touchZoom={interactive}
         doubleTapZoom={interactive}
@@ -71,12 +95,15 @@ export default function BaseMap({
         touchPitch={false}
         compass={false}
         logo={false}
-        // No credit is drawn on the map. The OpenStreetMap credit its licence asks for is in the Account tab.
+        // No credit is drawn on the map. The OpenStreetMap and imagery credits their licences ask for are in the Account tab.
         attribution={false}
         onRegionDidChange={
           onViewChange
             ? event =>
                 onViewChange({
+                  center:
+                    event.nativeEvent.center ??
+                    middleOf(event.nativeEvent.bounds),
                   zoom: event.nativeEvent.zoom,
                   bounds: event.nativeEvent.bounds,
                   userMoved: event.nativeEvent.userInteraction === true,

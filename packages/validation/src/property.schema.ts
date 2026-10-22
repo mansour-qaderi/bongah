@@ -10,6 +10,7 @@ import {
   PROPERTY_UNIT_MAX_LENGTH,
 } from '@bongah/shared-types';
 import { cleanText, httpUrl, moneyAmount, multilineText, normalizePlaceName, placeName } from './common';
+import { plotBoundarySchema } from './plot.schema';
 
 // Field names are snake_case: they are the public wire format of the property endpoints.
 
@@ -81,6 +82,11 @@ const propertyShape = {
   /** Optional pin. Free for everyone. With one, the address may be left blank; without one it is required. */
   lat: latitude.optional(),
   lng: longitude.optional(),
+  /**
+   * Optional outline of the plot, drawn on the map (see plot.schema.ts). It needs a pin: the map finds listings by
+   * their pin, so an outline without one would never be shown. null removes it on an update.
+   */
+  boundary: plotBoundarySchema.nullish(),
   images: z.array(httpUrl).max(20).optional(),
 };
 
@@ -93,6 +99,10 @@ export const createPropertySchema = z
   .refine((value) => (value.lat === undefined) === (value.lng === undefined), {
     message: 'lat and lng must be sent together',
     path: ['lat'],
+  })
+  .refine((value) => value.boundary == null || value.lat !== undefined, {
+    message: 'A plot outline needs a map location',
+    path: ['boundary'],
   })
   // A mortgage duration belongs to a mortgage listing only.
   .refine((value) => value.mortgage_months == null || value.deal_type === 'MORTGAGE_GROWI', {

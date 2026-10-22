@@ -429,7 +429,8 @@ describe('ListingCard', () => {
       const tree = await withActions(property({ description: ` ${text} ` }));
       const desc = host(tree.root, 'card-description');
       expect(desc.props.children).toBe(text);
-      expect(desc.props.numberOfLines).toBe(3);
+      expect(desc.props.numberOfLines).toBe(2);
+      expect(desc.props.ellipsizeMode).toBe("tail");
       // Not in the body beside the picture or in the buttons' column.
       for (const id of ['listing-main', 'listing-side']) {
         expect(

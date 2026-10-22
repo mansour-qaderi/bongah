@@ -1,4 +1,4 @@
-import type { SubscriptionPackage } from '@bongah/shared-types';
+import type { PlotBoundary, SubscriptionPackage } from '@bongah/shared-types';
 import type { Property as PropertyRow } from '../generated/prisma/client.js';
 import type { PropertyDto } from './dto/property-response.dto.js';
 
@@ -19,8 +19,21 @@ export const WITH_AGENCY_NAME = {
   },
 } as const;
 
-/** A listing row, optionally with its agency (see WITH_AGENCY_NAME). Without it `agency_name` and `agency_plan` are null. */
+/**
+ * What a listing is loaded with when it is sent to the apps: its agency (see WITH_AGENCY_NAME) and its owner's name, so a
+ * private owner is shown by name ("owner_name"). Only the name is read; the owner's number stays behind the contact reveal.
+ */
+export const WITH_PARTIES = {
+  ...WITH_AGENCY_NAME,
+  user: { select: { fullName: true } },
+} as const;
+
+/**
+ * A listing row, optionally with its agency (see WITH_AGENCY_NAME) and its owner (see WITH_PARTIES). Without them
+ * `agency_name`, `agency_plan` and `owner_name` are null.
+ */
 export type PropertyRowWithAgency = PropertyRow & {
+  user?: { fullName: string | null } | null;
   agency?: {
     agencyName: string;
     subscriptions?: { packageType: SubscriptionPackage; startDate: Date; endDate: Date }[];
@@ -41,6 +54,17 @@ export function isFeaturedAt(row: Pick<PropertyRow, 'isFeatured' | 'featuredUnti
   return row.isFeatured && row.featuredUntil !== null && row.featuredUntil > now;
 }
 
+/**
+ * The stored outline as the API sends it. It was checked on the way in (plotBoundarySchema); this only makes sure a
+ * row edited by hand cannot send the apps something that is not a Polygon.
+ */
+export function readBoundary(value: PropertyRow['boundary'] | undefined): PlotBoundary | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const polygon = value as { type?: unknown; coordinates?: unknown };
+  if (polygon.type !== 'Polygon' || !Array.isArray(polygon.coordinates)) return null;
+  return { type: 'Polygon', coordinates: polygon.coordinates as number[][][] };
+}
+
 /** Converts a database row to the public snake_case shape. `now` decides whether a promotion is still running. */
 export function toPropertyDto(row: PropertyRowWithAgency, now: Date): PropertyDto {
   return {
@@ -48,6 +72,8 @@ export function toPropertyDto(row: PropertyRowWithAgency, now: Date): PropertyDt
     user_id: row.userId,
     agency_id: row.agencyId,
     agency_name: row.agency?.agencyName ?? null,
+    // A private owner's own name. An agency's listing is shown under the agency, so the staff member's name is not sent.
+    owner_name: row.agencyId === null ? row.user?.fullName?.trim() || null : null,
     agency_plan: runningPlanAt(row, now),
     title: row.title,
     description: row.description,
@@ -68,6 +94,7 @@ export function toPropertyDto(row: PropertyRowWithAgency, now: Date): PropertyDt
     address: row.address,
     lat: row.lat,
     lng: row.lng,
+    boundary: readBoundary(row.boundary),
     images: row.images,
     status: row.status,
     is_featured: isFeaturedAt(row, now),

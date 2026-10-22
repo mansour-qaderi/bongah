@@ -33,6 +33,7 @@ import Banner from '../../components/Banner';
 import Button from '../../components/Button';
 import ClusterListSheet from '../../components/ClusterListSheet';
 import FilterSheet from '../../components/FilterSheet';
+import NavigationModal from '../../components/NavigationModal';
 import LocationPermissionModal, {
   type LocationProblem,
 } from '../../components/LocationPermissionModal';
@@ -42,10 +43,11 @@ import PropertyBottomSheet from '../../components/PropertyBottomSheet';
 import { EmptyView, ErrorView, LoadingView } from '../../components/States';
 import { findProvince } from '../../constants/provinces';
 import { MAP_TILE_MAX_ZOOM } from '../../config';
-import { centroid, zoomToSeparate, type Bounds } from '../../map/cluster';
+import type { MapViewChange } from '../../map/BaseMap';
+import { useMapStyle } from '../../map/mapStyleStore';
+import { centroid, zoomToSeparate } from '../../map/cluster';
 import {
   AFGHANISTAN_CAMERA,
-  KABUL_CAMERA,
   provinceCamera,
   toLngLat,
   type Coordinate,
@@ -53,9 +55,14 @@ import {
 } from '../../map/geo';
 import type { MapItem } from '../../map/items';
 import { LOCATE_TIMEOUT_MS, locate } from '../../map/location';
+import { useWatchedPosition } from '../../map/useLiveLocation';
+import { useNavigationStart } from '../../map/useNavigationStart';
+import type { Bounds } from '../../map/cluster';
 import {
   areaFor,
+  areaOfBounds,
   boundsFromCamera,
+  inBounds,
   nextArea,
   type Area,
 } from '../../map/viewport';
@@ -88,14 +95,17 @@ type Selection =
 
 /** The map keeps fetching pages (50 listings each) until it has this many; the markers drawn are capped anyway. */
 const MAP_MAX_PAGES = 3;
-/** How close the map zooms to the person's own position. */
-const LOCATION_ZOOM = 14;
+/**
+ * How close the map zooms to the person's own position: street level (17), where plots, buildings and lanes are
+ * drawn and a listing next door is a separate pin, not a number in a cluster. The tiles go to 19.
+ */
+const LOCATION_ZOOM = 17;
 /** How long past the search's own time limit the "finding you" mark may stay in the top chip. */
 const LOCATING_GRACE_MS = 2_000;
 /** Never zoom out when a listing is chosen; zoom in to at least street-block level. */
 const SELECT_ZOOM = 13;
 /** Height of the card covering the map, so the chosen marker is centred in what is still visible. */
-const PROPERTY_CARD_PADDING = 320;
+const PROPERTY_CARD_PADDING = 360;
 const AGENCY_CARD_PADDING = 170;
 
 const cameraForProvince = (value: string | undefined): MapCamera => {
@@ -119,8 +129,11 @@ function activeFilterCount(filters: PropertyFilters): number {
  * at the foot, and the tab bar below. The list of listings is one tap away for people who prefer rows.
  *
  * The map asks the server only for what is on screen (plus a margin), so panning from Kabul to Herat to
- * Mazar fills each place in as it arrives. On start it asks for the phone's position once; if that is refused
- * or the GPS is off, a card explains and offers the settings, and the map simply stays on Kabul.
+ * Mazar fills each place in as it arrives. It does not start anywhere in particular: on start it asks for the phone's
+ * position and opens on it, at street level, and asks the server for what is around it (nothing is fetched for a place
+ * the person is not at while the GPS is still answering). If the position is refused or the GPS is off, a card explains
+ * and offers the settings, and the map shows the whole country. Once a fix has been had, the position keeps following
+ * the phone (the pulsing blue marker) for as long as Home is on screen.
  */
 export default function HomeScreen({ navigation }: Props) {
   const { t } = useTranslation();
@@ -128,23 +141,53 @@ export default function HomeScreen({ navigation }: Props) {
   const { width, height } = useWindowDimensions();
   const clearance = floatingBarClearance(insets.bottom);
 
+  const mapStyle = useMapStyle();
   const [filters, setFilters] = useState<PropertyFilters>({});
   // The map is the first thing people see; the list is one tap away.
   const [mode, setMode] = useState<ViewMode>('map');
   const [filterOpen, setFilterOpen] = useState(false);
   const [selection, setSelection] = useState<Selection>(null);
   const [clusterItems, setClusterItems] = useState<MapItem[] | null>(null);
-  const [camera, setCamera] = useState<MapCamera>(KABUL_CAMERA);
+  const [camera, setCamera] = useState<MapCamera>(AFGHANISTAN_CAMERA);
   const [me, setMe] = useState<Coordinate | null>(null);
   const [locating, setLocating] = useState(false);
+  // The first answer to "where is the phone?" (a fix, a refusal, or nothing) has come. Until it has, the map has no
+  // place to ask the server about: it would be the whole country, fetched only to be thrown away a second later.
+  const [located, setLocated] = useState(false);
+  // Home is on screen and the app in the foreground: the only time the GPS is listened to for the moving marker.
+  const [watching, setWatching] = useState(true);
   const [problem, setProblem] = useState<LocationProblem | null>(null);
   // Until the map reports what it shows, ask for the area its starting camera implies.
   const [area, setArea] = useState<Area>(() =>
     areaFor(
-      boundsFromCamera(KABUL_CAMERA.center, KABUL_CAMERA.zoom, width, height),
+      boundsFromCamera(
+        AFGHANISTAN_CAMERA.center,
+        AFGHANISTAN_CAMERA.zoom,
+        width,
+        height,
+      ),
     ),
   );
-  const zoom = useRef(KABUL_CAMERA.zoom);
+  const zoom = useRef(AFGHANISTAN_CAMERA.zoom);
+  // What the screen shows right now, exactly (no margin): the count under the map and the list are made from it.
+  const [viewBounds, setViewBounds] = useState<Bounds>(() =>
+    boundsFromCamera(
+      AFGHANISTAN_CAMERA.center,
+      AFGHANISTAN_CAMERA.zoom,
+      width,
+      height,
+    ),
+  );
+  // The part of the map the list shows: what the map showed when the person left it. Null: no map to follow (the
+  // list was reached by a province chosen in the filters), so the list is every listing that matches.
+  const [listArea, setListArea] = useState<Area | null>(null);
+  // Where the map is looking right now (a finger moves it without telling `camera`), so going to the list and back
+  // puts it exactly there instead of where it was last sent.
+  const lastView = useRef<{
+    center: MapCamera['center'];
+    zoom: number;
+    bounds: Bounds;
+  } | null>(null);
   // Set once the person has chosen where to look, so a slow first GPS fix does not yank the map away.
   const steered = useRef(false);
   // The person was sent to the phone's settings to allow location; ask again when they come back.
@@ -164,11 +207,36 @@ export default function HomeScreen({ navigation }: Props) {
     () => ({ ...filters, province: undefined }),
     [filters],
   );
-  const mapQuery = useMapProperties(mapFilters, area, mode === 'map');
-  const listQuery = usePropertyList(filters, mode === 'list');
+  const mapQuery = useMapProperties(
+    mapFilters,
+    area,
+    mode === 'map' && located,
+  );
+  // The list is the map's: the listings that were on screen when the person switched to it (the province, which
+  // only moves the map, is not sent), so the rows and their count are exactly the pins that were in view.
+  const listFilters = useMemo<PropertyFilters>(
+    () =>
+      listArea ? { ...filters, province: undefined, ...listArea } : filters,
+    [filters, listArea],
+  );
+  const listQuery = usePropertyList(listFilters, mode === 'list');
   const query = mode === 'map' ? mapQuery : listQuery;
   const properties = useMemo(() => flattenPages(query.data), [query.data]);
-  const total = query.data?.pages[0]?.meta.total ?? 0;
+  const total = listQuery.data?.pages[0]?.meta.total ?? 0;
+  // The map's count is of what is on screen, not of the margin fetched around it: the loaded listings whose pin is
+  // inside the view. While more pages are still to come it is "at least" this many.
+  const inView = useMemo(
+    () =>
+      mode === 'map'
+        ? properties.filter(
+            p =>
+              p.lat !== null &&
+              p.lng !== null &&
+              inBounds(p.lat, p.lng, viewBounds),
+          ).length
+        : 0,
+    [mode, properties, viewBounds],
+  );
 
   // Keep fetching pages (up to a limit) so the whole area fills in without button presses.
   const loadedPages = mapQuery.data?.pages.length ?? 0;
@@ -220,7 +288,12 @@ export default function HomeScreen({ navigation }: Props) {
     // The "finding you" mark in the top chip must never outlive the search: whatever the phone's location service
     // does (or never answers), it is gone shortly after the time the search itself is allowed to take.
     const watchdog = setTimeout(() => {
-      if (mounted.current && locateRun.current === run) setLocating(false);
+      if (mounted.current && locateRun.current === run) {
+        setLocating(false);
+        // The map's listings wait for the first answer about where the phone is; a question nobody answers must not
+        // hold them back for good, so the country is shown instead.
+        setLocated(true);
+      }
     }, LOCATE_TIMEOUT_MS + LOCATING_GRACE_MS);
     let result: Awaited<ReturnType<typeof locate>>;
     try {
@@ -232,15 +305,29 @@ export default function HomeScreen({ navigation }: Props) {
     setLocating(false);
     if (result.status === 'ok') {
       setMe(result.coordinate);
-      if (auto && steered.current) return;
-      steered.current = true;
-      flyTo(result.coordinate, LOCATION_ZOOM, 0);
+      if (!(auto && steered.current)) {
+        steered.current = true;
+        // The camera is set before `located` is, so the map (which is only drawn once the first answer is in) opens
+        // on the phone and never on the country.
+        flyTo(result.coordinate, LOCATION_ZOOM, 0);
+        // Ask the server about the place the map is flying to now, not about the country it started on.
+        const target = boundsFromCamera(
+          toLngLat(result.coordinate),
+          LOCATION_ZOOM,
+          width,
+          height,
+        );
+        setViewBounds(target);
+        setArea(areaFor(target));
+      }
     } else if (result.status === 'outside') {
-      // The phone is outside Afghanistan: the map stays on Kabul and says nothing. A banner about it only worried
-      // people who were simply travelling, and there is nothing for them to do.
+      // The phone is outside Afghanistan: the map keeps showing the country and says nothing. A banner about it only
+      // worried people who were simply travelling, and there is nothing for them to do.
     } else {
       setProblem(result.status);
     }
+    setLocated(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- the screen's size only decides the first guess of the area
   }, []);
 
   // Ask once, as soon as the app opens.
@@ -258,6 +345,33 @@ export default function HomeScreen({ navigation }: Props) {
     });
     return () => subscription.remove();
   }, [findMe]);
+
+  // The moving marker listens to the GPS only while Home is the screen in front and the app is in the foreground.
+  useEffect(() => {
+    let tab = true;
+    let foreground = AppState.currentState !== 'background';
+    const update = () => setWatching(tab && foreground);
+    const state = AppState.addEventListener('change', next => {
+      foreground = next === 'active';
+      update();
+    });
+    const focus = navigation.addListener('focus', () => {
+      tab = true;
+      update();
+    });
+    const blur = navigation.addListener('blur', () => {
+      tab = false;
+      update();
+    });
+    return () => {
+      state.remove();
+      focus();
+      blur();
+    };
+  }, [navigation]);
+  // Once a first fix has shown that location is allowed, the marker follows the phone (and falls back to that fix).
+  const live = useWatchedPosition(me !== null && watching);
+  const here = live?.coordinate ?? me;
 
   const openPhoneSettings = () => {
     awaitingSettings.current = true;
@@ -305,21 +419,60 @@ export default function HomeScreen({ navigation }: Props) {
     flyTo(centroid(items), target, 0);
   };
   const clearSelection = () => setSelection(null);
+
+  // «مسیریابی» in the listing's card: the same steps as on its page (find the phone first), then the route screen.
+  const [navTarget, setNavTarget] = useState<Property | null>(null);
+  const [navigating, setNavigating] = useState(false);
+  const nav = useNavigationStart(() => setNavigating(true));
+  const navDestination = useMemo<Coordinate | null>(
+    () =>
+      navTarget && navTarget.lat !== null && navTarget.lng !== null
+        ? { latitude: navTarget.lat, longitude: navTarget.lng }
+        : null,
+    [navTarget],
+  );
+  const navigateTo = (property: Property) => {
+    setNavTarget(property);
+    nav.start();
+  };
   const pickFromCluster = (item: MapItem) => {
     setClusterItems(null);
     if (item.kind === 'property') selectProperty(item.property);
     else selectAgency(item.agency);
   };
 
-  const onViewChange = useCallback(
-    (view: { zoom: number; bounds: Bounds; userMoved: boolean }) => {
-      // A finger moved the map: it is theirs now, and a late GPS fix must not take it back.
-      if (view.userMoved) steered.current = true;
-      zoom.current = view.zoom;
-      setArea(current => nextArea(current, view.bounds, mapComplete.current));
-    },
-    [],
-  );
+  const onViewChange = useCallback((view: MapViewChange) => {
+    // A finger moved the map: it is theirs now, and a late GPS fix must not take it back.
+    if (view.userMoved) steered.current = true;
+    zoom.current = view.zoom;
+    lastView.current = {
+      center: view.center,
+      zoom: view.zoom,
+      bounds: view.bounds,
+    };
+    setViewBounds(view.bounds);
+    setArea(current => nextArea(current, view.bounds, mapComplete.current));
+  }, []);
+
+  /**
+   * Map or list. The map is not kept alive behind the list, so it opens again from `camera`: leaving it first copies
+   * where it is looking into `camera` (same nonce, so nothing flies), and the map comes back exactly where it was left
+   * instead of on Kabul or on the last place the app sent it.
+   */
+  const changeMode = (next: ViewMode) => {
+    if (next === mode) return;
+    const view = lastView.current;
+    if (mode === 'map' && view) {
+      setCamera(current => ({
+        ...current,
+        center: view.center,
+        zoom: view.zoom,
+      }));
+    }
+    // To the list: it shows what the map was showing. Back to the map: the map's own view takes over again.
+    if (next === 'list') setListArea(view ? areaOfBounds(view.bounds) : null);
+    setMode(next);
+  };
 
   const applyFilters = (next: PropertyFilters) => {
     setFilters(next);
@@ -327,7 +480,11 @@ export default function HomeScreen({ navigation }: Props) {
     setFilterOpen(false);
     // Choosing a province takes the map there. Clearing it leaves the map where it is: on the map the
     // viewport already decides what is shown.
-    if (next.province) lookAtProvince(next.province);
+    if (next.province) {
+      lookAtProvince(next.province);
+      // A province chosen from the list is meant for the list: every listing there, not the old map's window.
+      setListArea(null);
+    }
   };
 
   const chooseDeal = (deal: DealType | undefined) => {
@@ -434,23 +591,11 @@ export default function HomeScreen({ navigation }: Props) {
           ) : null}
         </View>
         <View style={styles.listBody}>{list}</View>
-        <View
-          pointerEvents="box-none"
-          style={[styles.toggleDock, { bottom: clearance + spacing.md }]}
-        >
-          <ModeToggle
-            mode="list"
-            mapLabel={t('home.map')}
-            listLabel={t('home.list')}
-            onChange={setMode}
-          />
-        </View>
       </View>
     );
   } else {
     // The map is always on screen (even while loading or empty): the phone's position and the offices
     // are useful on their own, and a blank screen is the worst first impression for a map app.
-    const inView = mapQuery.data?.pages[0]?.meta.total ?? 0;
     const status = mapQuery.isError ? (
       <View style={styles.notice}>
         <Banner kind="error" message={errorMessage(mapQuery.error, t)}>
@@ -470,31 +615,46 @@ export default function HomeScreen({ navigation }: Props) {
         message={
           inView === 0
             ? t('home.noMapResults')
-            : t('home.mapShowing', { count: formatNumber(inView, 0) })
+            : t('home.mapShowing', {
+                count: `${formatNumber(inView, 0)}${
+                  mapQuery.hasNextPage ? '+' : ''
+                }`,
+              })
         }
       />
     );
 
     body = (
       <View style={styles.mapWrap}>
-        <PropertyMap
-          properties={properties}
-          agencies={agencies}
-          camera={camera}
-          selected={
-            selection?.kind === 'property'
-              ? { kind: 'property', id: selection.property.id }
-              : selection?.kind === 'agency'
-              ? { kind: 'agency', id: selection.agency.id }
-              : null
-          }
-          userLocation={me}
-          onSelectProperty={selectProperty}
-          onSelectAgency={selectAgency}
-          onOpenCluster={openCluster}
-          onPressMap={clearSelection}
-          onViewChange={onViewChange}
-        />
+        {located ? (
+          <PropertyMap
+            properties={properties}
+            agencies={agencies}
+            camera={camera}
+            selected={
+              selection?.kind === 'property'
+                ? { kind: 'property', id: selection.property.id }
+                : selection?.kind === 'agency'
+                ? { kind: 'agency', id: selection.agency.id }
+                : null
+            }
+            userLocation={here}
+            onSelectProperty={selectProperty}
+            onSelectAgency={selectAgency}
+            onOpenCluster={openCluster}
+            onPressMap={clearSelection}
+            onViewChange={onViewChange}
+          />
+        ) : (
+          // The map is not drawn until the phone has said where it is, so it opens on the phone: drawing the country
+          // first and then flying across it to the person's street is what this replaces.
+          <View style={styles.waiting} testID="map-waiting">
+            <ActivityIndicator size="large" color={colors.primary} />
+            <AppText variant="bodySm" color={colors.textSecondary}>
+              {t('home.locating')}
+            </AppText>
+          </View>
+        )}
         <View style={styles.overlay} pointerEvents="box-none">
           <View
             style={[styles.top, { paddingTop: insets.top + spacing.sm }]}
@@ -513,23 +673,23 @@ export default function HomeScreen({ navigation }: Props) {
                 pointerEvents="box-none"
               >
                 <RoundButton
+                  testID="map-style"
+                  icon="satellite"
+                  label={
+                    mapStyle.kind === 'satellite'
+                      ? t('map.styleStreet')
+                      : t('map.styleSatellite')
+                  }
+                  active={mapStyle.kind === 'satellite'}
+                  onPress={mapStyle.toggle}
+                />
+                <RoundButton
                   testID="locate"
                   icon="locate"
                   label={t('home.locate')}
                   size={LOCATE_SIZE}
                   accent
                   onPress={() => findMe(false)}
-                />
-              </View>
-              <View
-                pointerEvents="box-none"
-                style={[styles.toggleDock, { bottom: clearance + spacing.md }]}
-              >
-                <ModeToggle
-                  mode="map"
-                  mapLabel={t('home.map')}
-                  listLabel={t('home.list')}
-                  onChange={setMode}
                 />
               </View>
             </>
@@ -556,6 +716,8 @@ export default function HomeScreen({ navigation }: Props) {
             }
             onOpenDetails={openDetails}
             onClose={clearSelection}
+            onNavigate={navigateTo}
+            navigating={nav.finding}
           />
         </View>
       </View>
@@ -565,6 +727,23 @@ export default function HomeScreen({ navigation }: Props) {
   return (
     <View style={styles.root}>
       {body}
+
+      {/* One switch for both screens, so the fill can pass from one tab to the other instead of the switch being
+          drawn again (and so starting already moved) when the screen under it changes. With a listing's card open
+          the tab bar and the switch step aside. */}
+      {mode === 'list' || selection === null ? (
+        <View
+          pointerEvents="box-none"
+          style={[styles.toggleDock, { bottom: clearance + spacing.md }]}
+        >
+          <ModeToggle
+            mode={mode}
+            mapLabel={t('home.map')}
+            listLabel={t('home.list')}
+            onChange={changeMode}
+          />
+        </View>
+      ) : null}
 
       <ClusterListSheet
         items={clusterItems}
@@ -584,6 +763,22 @@ export default function HomeScreen({ navigation }: Props) {
         onOpenSettings={openPhoneSettings}
         onClose={() => setProblem(null)}
       />
+      {/* The same card, for a phone that cannot be found when directions to a listing were asked for. */}
+      <LocationPermissionModal
+        problem={nav.problem}
+        onOpenSettings={nav.openSettings}
+        onClose={nav.closeProblem}
+      />
+      {navDestination && navTarget ? (
+        <NavigationModal
+          visible={navigating}
+          destination={navDestination}
+          title={navTarget.title}
+          deal={navTarget.deal_type}
+          type={navTarget.type}
+          onClose={() => setNavigating(false)}
+        />
+      ) : null}
     </View>
   );
 }
@@ -591,6 +786,13 @@ export default function HomeScreen({ navigation }: Props) {
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.background },
   mapWrap: { flex: 1 },
+  waiting: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.md,
+    backgroundColor: colors.neutralSoft,
+  },
   overlay: { ...StyleSheet.absoluteFill },
   top: {
     gap: spacing.sm,

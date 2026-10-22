@@ -3,7 +3,6 @@ import {
   ActivityIndicator,
   FlatList,
   Image,
-  Pressable,
   ScrollView,
   StyleSheet,
   View,
@@ -19,24 +18,29 @@ import { usePropertyDetail } from '../../api/hooks';
 import { useAuth } from '../../auth/AuthContext';
 import { useContactActions } from '../../contact/useContactActions';
 import AppText from '../../components/AppText';
-import Button from '../../components/Button';
 import Badge, { badgeTones, DealBadge } from '../../components/Badge';
 import BookmarkButton from '../../components/BookmarkButton';
+import CircleIconButton from '../../components/CircleIconButton';
 import ContactActionBar from '../../components/ContactActionBar';
 import ContactLockSheet from '../../components/ContactLockSheet';
+import FeaturedFrameButton from '../../components/FeaturedFrameButton';
 import Icon from '../../components/Icon';
-import { JeribConversion } from '../../components/JeribInfo';
+import LocationPermissionModal from '../../components/LocationPermissionModal';
+import NavigationModal from '../../components/NavigationModal';
 import Price from '../../components/Price';
-import PromotionSheet from '../../components/PromotionSheet';
 import PropertyFacts, { propertyPlace } from '../../components/PropertyFacts';
 import PropertyLocationMap from '../../components/PropertyLocationMap';
 import { Screen } from '../../components/Screen';
 import { ErrorView, LoadingView } from '../../components/States';
 import { formatPhone } from '../../i18n/format';
 import { useFormat } from '../../i18n/useFormat';
+import { useSellerLabel } from '../../map/markers';
 import { useApproxLocation } from '../../map/useApproxLocation';
+import { useInlineRoute } from '../../map/useInlineRoute';
+import { useNavigationStart } from '../../map/useNavigationStart';
+import { useShareListing } from '../../share/listingShare';
 import type { RootStackParamList } from '../../navigation/types';
-import { colors, fonts, spacing, surfaces } from '../../theme';
+import { colors, spacing, surfaces } from '../../theme';
 import { durationLabel } from './mortgage';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'PropertyDetails'>;
@@ -76,36 +80,6 @@ export default function PropertyDetailsScreen({ route, navigation }: Props) {
   return <PropertyBody property={query.data} navigation={navigation} />;
 }
 
-/**
- * The owner's way to edit the listing: a pencil with its name beside it, in the same row and the same white, edged
- * style as the bookmark. (A phone has no hover, so the name is written out where a tooltip would have been.)
- */
-function EditListingButton({
-  label,
-  accessibilityLabel,
-  onPress,
-}: {
-  label: string;
-  accessibilityLabel: string;
-  onPress: () => void;
-}) {
-  return (
-    <Pressable
-      testID="edit-listing"
-      accessibilityRole="button"
-      accessibilityLabel={accessibilityLabel}
-      onPress={onPress}
-      hitSlop={6}
-      style={({ pressed }) => [styles.editButton, pressed && styles.pressed]}
-    >
-      <Icon name="edit" size={18} color={colors.primary} weight={1.9} />
-      <AppText variant="bodySm" color={colors.primary} style={styles.editLabel}>
-        {label}
-      </AppText>
-    </Pressable>
-  );
-}
-
 /** The loaded listing, its contact details and the Call / WhatsApp / Chat bar pinned below. */
 function PropertyBody({
   property,
@@ -120,7 +94,11 @@ function PropertyBody({
   const hasDescription = (property.description ?? '').trim().length > 0;
   const { user } = useAuth();
   const { width } = useWindowDimensions();
-  const [promoting, setPromoting] = useState(false);
+  const share = useShareListing();
+  const [navigating, setNavigating] = useState(false);
+  // «مسیریابی» is the fullscreen button on the map card: it finds the phone first (permission, a phone abroad, a switched-off
+  // GPS are all answered there), then opens the big map with the route, the distance, the time and the speed.
+  const nav = useNavigationStart(() => setNavigating(true));
 
   const actions = useContactActions({
     id: property.id,
@@ -131,9 +109,17 @@ function PropertyBody({
   const revealed = actions.contact;
 
   const place = propertyPlace(property, format.province);
+  // Who is selling, said under the price: the agency's name, else the owner's own name (the listing carries it; the
+  // contact, once opened, says it too), and only "owner" for someone who never gave a name.
+  const sellerOf = useSellerLabel();
+  const seller =
+    revealed?.agency_name ?? revealed?.full_name ?? sellerOf(property);
   // Where the map shows the listing: its pin, or (when it was posted with a written address only) the place that
   // address comes to.
   const where = useApproxLocation(property);
+  // The route from the phone, drawn on the small map when the phone's position is already known (no prompt is shown
+  // for it; the fullscreen button is what asks).
+  const inline = useInlineRoute(where.status === 'pinned' ? where.coordinate : null);
   // The location card says what the line under the title does not: the neighbourhood, the district and the written
   // address, each only when that line has not said it already.
   const addressLine = [
@@ -172,9 +158,90 @@ function PropertyBody({
           />
         ) : null}
 
+        {/* The header, in this order: the title, the price (the deal's badge at the far end of it, as on a card in
+            "آگهی‌های من"), the seller directly under the price. Then the specs card, and the Call / Chat bar below. */}
         <View style={[styles.section, styles.header]}>
           <View style={styles.row}>
-            <View style={styles.badges}>
+            <AppText variant="pageTitle" style={styles.title}>
+              {property.title}
+            </AppText>
+            {/* Share and Bookmark side by side, and for the owner Edit first: all three are the same round button. */}
+            <View style={styles.actions} testID="header-actions">
+              {isOwner ? (
+                <CircleIconButton
+                  testID="edit-listing"
+                  icon="edit"
+                  label={t('property.editListing')}
+                  onPress={() =>
+                    navigation.navigate('AddProperty', {
+                      propertyId: property.id,
+                    })
+                  }
+                />
+              ) : null}
+              <CircleIconButton
+                testID="share-listing"
+                icon="share"
+                label={`${t('property.share')}: ${property.title}`}
+                onPress={() => share(property)}
+              />
+              <BookmarkButton propertyId={property.id} title={property.title} />
+            </View>
+          </View>
+          <View style={styles.priceBox} testID="price-box">
+            <View style={styles.priceMain}>
+              {/* What the price is for: the monthly rent, the sale price, the amount of a mortgage. */}
+              <AppText variant="caption" color={colors.textMuted}>
+                {t(`dealPrice.${property.deal_type}`)}
+              </AppText>
+              {/* The price with its terms («مقطوع» / «جورآمد») beside it on the same line, sat on the same baseline. */}
+              <View style={styles.priceLine} testID="price-line">
+                <Price
+                  amount={property.price}
+                  currency={property.currency}
+                  variant="pageTitle"
+                  color={colors.primary}
+                  testID="price"
+                />
+                {property.price_terms ? (
+                  <Badge
+                    label={t(`priceTerms.${property.price_terms}`)}
+                    tone={badgeTones.neutral}
+                  />
+                ) : null}
+              </View>
+              {property.mortgage_months ? (
+                <AppText
+                  variant="bodySm"
+                  color={colors.textSecondary}
+                  testID="mortgage-duration"
+                >
+                  {`${t('mortgage.forDuration')}: ${durationLabel(
+                    property.mortgage_months,
+                    t,
+                  )}`}
+                </AppText>
+              ) : null}
+              {/* The seller, directly under the price. */}
+              <View style={styles.seller} testID="seller">
+                <Icon
+                  name={property.agency_name ? 'dashboard' : 'user'}
+                  size={16}
+                  color={colors.accentText}
+                  weight={1.9}
+                />
+                <AppText
+                  variant="label"
+                  color={colors.accentText}
+                  numberOfLines={1}
+                  style={styles.placeText}
+                >
+                  {seller}
+                </AppText>
+              </View>
+            </View>
+            {/* The deal's tag at the far end (the left, in Dari and Pashto), the "featured" badge under it. */}
+            <View style={styles.tags} testID="deal-tags">
               <DealBadge deal={property.deal_type} />
               {property.is_featured ? (
                 <Badge
@@ -183,23 +250,19 @@ function PropertyBody({
                 />
               ) : null}
             </View>
-            {/* The owner's Edit sits with the bookmark, as a small icon button, not as a button in the page. */}
-            <View style={styles.actions}>
-              {isOwner ? (
-                <EditListingButton
-                  label={t('my.edit')}
-                  accessibilityLabel={t('property.editListing')}
-                  onPress={() =>
-                    navigation.navigate('AddProperty', {
-                      propertyId: property.id,
-                    })
-                  }
-                />
-              ) : null}
-              <BookmarkButton propertyId={property.id} title={property.title} />
-            </View>
           </View>
-          <AppText variant="pageTitle">{property.title}</AppText>
+        </View>
+
+        <View style={[styles.section, styles.card]}>
+          <AppText variant="section">{t('property.specs')}</AppText>
+          {/* The same icon grid as the Home list and My Listings. */}
+          <PropertyFacts
+            property={property}
+            withType
+            withUnit
+            layout="grid"
+            divider={false}
+          />
           {place ? (
             <View style={styles.place}>
               <Icon
@@ -218,52 +281,6 @@ function PropertyBody({
               </AppText>
             </View>
           ) : null}
-          <View style={styles.priceBox}>
-            {/* What the price is for: the monthly rent, the sale price, the amount of a mortgage. */}
-            <AppText variant="caption" color={colors.textMuted}>
-              {t(`dealPrice.${property.deal_type}`)}
-            </AppText>
-            <Price
-              amount={property.price}
-              currency={property.currency}
-              variant="pageTitle"
-              color={colors.primary}
-              testID="price"
-            />
-            {property.price_terms || property.mortgage_months ? (
-              <View style={styles.terms}>
-                {property.mortgage_months ? (
-                  <AppText
-                    variant="bodySm"
-                    color={colors.textSecondary}
-                    testID="mortgage-duration"
-                  >
-                    {`${t('mortgage.forDuration')}: ${durationLabel(
-                      property.mortgage_months,
-                      t,
-                    )}`}
-                  </AppText>
-                ) : null}
-                {property.price_terms ? (
-                  <Badge
-                    label={t(`priceTerms.${property.price_terms}`)}
-                    tone={badgeTones.neutral}
-                  />
-                ) : null}
-              </View>
-            ) : null}
-          </View>
-        </View>
-
-        <View style={[styles.section, styles.card]}>
-          <AppText variant="section">{t('property.specs')}</AppText>
-          {/* The same icon grid as the Home list and My Listings. */}
-          <PropertyFacts
-            property={property}
-            withType
-            layout="grid"
-            divider={false}
-          />
           {property.type === 'GARDEN' || property.type === 'VILLA' ? (
             <AppText variant="caption" color={colors.primaryDark}>
               {t('property.gardenVillaNote')}
@@ -271,8 +288,16 @@ function PropertyBody({
           ) : null}
         </View>
 
-        {/* What a jerib is and what this area comes to in jerib: folded away, one tap to read. */}
-        <JeribConversion areaSqm={property.area_sqm} style={styles.fold} />
+        {/* For its owner, the featured frame, as a gold-edged row like the one at the foot of the listing form. (Directions
+            are the fullscreen button on the map card.) */}
+        {isOwner ? (
+          <View style={[styles.section, styles.actionsBlock]} testID="listing-actions">
+            <AppText variant="caption" color={colors.textMuted}>
+              {t('property.yourListing')}
+            </AppText>
+            <FeaturedFrameButton property={property} />
+          </View>
+        ) : null}
 
         <View style={[styles.section, styles.card]}>
           <AppText variant="section">{t('property.description')}</AppText>
@@ -299,7 +324,18 @@ function PropertyBody({
             </AppText>
           ) : null}
           {where.status === 'pinned' ? (
-            <PropertyLocationMap at={where.coordinate} />
+            <>
+              <PropertyLocationMap
+                at={where.coordinate}
+                boundary={property.boundary}
+                deal={property.deal_type}
+                type={property.type}
+                from={inline.here}
+                route={inline.route}
+                onFullscreen={nav.start}
+                fullscreenBusy={nav.finding}
+              />
+            </>
           ) : where.status === 'approximate' ? (
             <>
               <PropertyLocationMap at={where.coordinate} zoom={where.zoom} />
@@ -344,27 +380,24 @@ function PropertyBody({
           </View>
         ) : null}
 
-        {isOwner ? (
-          <View style={styles.section}>
-            <AppText variant="caption" color={colors.textMuted}>
-              {t('property.yourListing')}
-            </AppText>
-            <Button
-              icon="up"
-              title={t('property.promote')}
-              variant="secondary"
-              onPress={() => setPromoting(true)}
-            />
-          </View>
-        ) : null}
       </ScrollView>
 
-      {isOwner ? (
-        <PromotionSheet
-          property={promoting ? property : null}
-          onClose={() => setPromoting(false)}
+      <LocationPermissionModal
+        problem={nav.problem}
+        onOpenSettings={nav.openSettings}
+        onClose={nav.closeProblem}
+      />
+      {where.status === 'pinned' ? (
+        <NavigationModal
+          visible={navigating}
+          destination={where.coordinate}
+          title={property.title}
+          deal={property.deal_type}
+          type={property.type}
+          onClose={() => setNavigating(false)}
         />
-      ) : (
+      ) : null}
+      {isOwner ? null : (
         <>
           <ContactActionBar actions={actions} signedIn={user !== null} />
           <ContactLockSheet
@@ -397,22 +430,31 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     gap: spacing.md,
   },
-  badges: { flex: 1, flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
+  title: { flex: 1 },
+  seller: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs, marginTop: spacing.xs },
+  // The deal's tag, with the "featured" badge under it.
+  tags: { alignItems: 'center', gap: spacing.xs },
+  priceMain: { flex: 1, gap: 2 },
   place: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
   placeText: { flexShrink: 1 },
   priceBox: {
     ...surfaces.tile,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing.md,
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.md,
   },
-  terms: {
+  // The price and its terms badge: one line, one baseline.
+  priceLine: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    alignItems: 'center',
-    gap: spacing.sm,
-    marginTop: spacing.xs,
+    alignItems: 'baseline',
+    columnGap: spacing.sm,
+    rowGap: spacing.xs,
   },
   finding: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  actionsBlock: { gap: spacing.md },
   card: {
     ...surfaces.card,
     marginHorizontal: spacing.lg,
@@ -422,19 +464,4 @@ const styles = StyleSheet.create({
     gap: spacing.lg,
   },
   actions: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
-  editButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: spacing.xs,
-    height: 40,
-    paddingHorizontal: spacing.md,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.surface,
-  },
-  pressed: { opacity: 0.8 },
-  editLabel: { fontFamily: fonts.semibold },
-  fold: { marginHorizontal: spacing.lg, marginTop: spacing.md },
 });

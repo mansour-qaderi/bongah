@@ -49,6 +49,11 @@ jest.mock('../src/i18n/rtl', () => ({
 
 afterEach(() => queryClient.clear());
 
+const allLabels = (root: ReactTestRenderer.ReactTestInstance) =>
+  root
+    .findAll(n => typeof n.props.accessibilityLabel === 'string')
+    .map(n => n.props.accessibilityLabel as string);
+
 /** The app opens on the splash screen; this waits it out (it hands over to the map by itself). */
 const pastSplash = () =>
   ReactTestRenderer.act(async () => {
@@ -75,6 +80,13 @@ test('the app opens on the map in Dari, and the list shows Persian digits and th
   await pastSplash();
   await flush();
   await flush();
+  await flush(); // the listings wait for the first answer about where the phone is
+  // The splash timer and the first answer are real timers: give the pin up to five seconds to appear.
+  for (let i = 0; i < 50 && !allLabels(tree.root).some(l => l.includes('۱٫۲ میلیون ؋')); i += 1) {
+    await ReactTestRenderer.act(async () => {
+      await new Promise<void>(resolve => setTimeout(() => resolve(), 100));
+    });
+  }
 
   // Map first: a marker that says what it is, what for, the short price (Afghani sign) and who is selling.
   let text = allText(tree.root);
@@ -90,7 +102,10 @@ test('the app opens on the map in Dari, and the list shows Persian digits and th
   expect(spoken[0]).toContain(prs.dealType.SALE);
   expect(spoken[0]).toContain(prs.property.owner);
   // Only what is on screen is asked for: an area of the map, 50 to a page.
-  expect(fetchMock.mock.calls[0][0]).toMatch(
+  const asked = (fetchMock.mock.calls as unknown as [string][])
+    .map(call => call[0])
+    .find(url => url.includes('/properties?'));
+  expect(asked).toMatch(
     /\/properties\?min_lat=[\d.]+&max_lat=[\d.]+&min_lng=[\d.]+&max_lng=[\d.]+&page=1&limit=50$/,
   );
 

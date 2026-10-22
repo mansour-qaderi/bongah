@@ -163,19 +163,13 @@ export default function BalanceScreen({ navigation }: Props) {
             {t('ladder.explain', { listing: listingCost, frame: frameCost })}
           </AppText>
 
+          {/* Only the offer, when it can be taken. The button below already says what it costs; a grey line of
+              "not yet" under the explanation only repeated it. */}
           {canUnlock ? (
             <Banner
               kind="promo"
               message={t('ladder.unlockOffer', { total: listingCost })}
             />
-          ) : exhausted ? (
-            <AppText variant="caption" color={colors.textMuted}>
-              {t('ladder.unlockNeeds', { total: listingCost })}
-            </AppText>
-          ) : quota && quota.limit !== null ? (
-            <AppText variant="caption" color={colors.textMuted}>
-              {t('ladder.unlockWait', { total: listingCost })}
-            </AppText>
           ) : null}
           {quota && quota.limit !== null ? (
             <Button

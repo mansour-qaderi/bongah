@@ -131,3 +131,44 @@ export const mapParts = (root: ReactTestInstance, name: string) =>
   root.findAll(
     node => node.props.mockName === name && typeof node.type === 'string',
   );
+
+/**
+ * Chooses a property type on the listing form, which has it as a dropdown: opens the box, then taps the row.
+ * `value` is the type's code ("LAND", "GARAGE"), not its Dari name.
+ */
+export async function chooseType(root: ReactTestInstance, value: string) {
+  await ReactTestRenderer.act(async () => {
+    root
+      .find(n => n.props.testID === 'type-select' && typeof n.props.onPress === 'function')
+      .props.onPress();
+  });
+  await ReactTestRenderer.act(async () => {
+    root
+      .find(
+        n =>
+          n.props.testID === `type-select-option-${value}` &&
+          typeof n.props.onPress === 'function',
+      )
+      .props.onPress();
+  });
+}
+
+/** Opens the property-type dropdown and returns its rows in the order they are listed ({ value: "LAND", label: "زمین" }). */
+export async function typeOptions(root: ReactTestInstance) {
+  await ReactTestRenderer.act(async () => {
+    root
+      .find(n => n.props.testID === 'type-select' && typeof n.props.onPress === 'function')
+      .props.onPress();
+  });
+  return root
+    .findAll(
+      n =>
+        typeof n.props.testID === 'string' &&
+        n.props.testID.startsWith('type-select-option-') &&
+        typeof n.props.onPress === 'function',
+    )
+    .map(n => ({
+      value: (n.props.testID as string).replace('type-select-option-', ''),
+      label: allText(n),
+    }));
+}

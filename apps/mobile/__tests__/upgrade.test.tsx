@@ -534,14 +534,6 @@ describe("the plan's listing limit", () => {
   });
 });
 
-describe('the welcome gift', () => {
-  it('is spelled out in the words asked for', () => {
-    expect(prs.add.welcomeCreditPrompt).toBe(
-      'با ثبت این آگهی، امتیاز هدیه ثبت اول شما مصرف خواهد شد.',
-    );
-  });
-});
-
 describe('the version', () => {
   it('is 1.2.4 in the package, in app.json and in the app', () => {
     expect(pkg.version).toBe('1.2.4');

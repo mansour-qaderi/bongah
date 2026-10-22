@@ -484,6 +484,23 @@ describe.skipIf(!hasDb)('Properties (e2e)', () => {
       expect(JSON.stringify(list.body)).not.toContain(owner.phone);
     });
 
+    it("shows a private owner's name on the public listing, and no name for an agency's listing", async () => {
+      const owner = await ctx.user();
+      await ctx.prisma.user.update({ where: { id: owner.id }, data: { fullName: 'Ahmad Zia' } });
+      const listing = await seed(owner);
+      const detail = await ctx.get(`/properties/${listing.id}`).expect(200);
+      expect(detail.body.owner_name).toBe('Ahmad Zia');
+      expect(JSON.stringify(detail.body)).not.toContain(owner.phone);
+      const list = await ctx.get(`/properties?province=${listing.province}&limit=50`).expect(200);
+      expect(list.body.data.find((p: { id: string }) => p.id === listing.id).owner_name).toBe('Ahmad Zia');
+
+      const agency = await ctx.agency(true);
+      const agencyListing = (await ctx.post('/properties', propertyBody(), agency.token).expect(201)).body;
+      const agencyDetail = await ctx.get(`/properties/${agencyListing.id}`).expect(200);
+      expect(agencyDetail.body.owner_name).toBeNull();
+      expect(agencyDetail.body.agency_name).toBe('Test Agency');
+    });
+
     it('hides archived and unknown listings and rejects malformed ids', async () => {
       const [viewer, owner] = [await ctx.user(), await ctx.user()];
       const archived = await seed(owner, { status: 'ARCHIVED' });
