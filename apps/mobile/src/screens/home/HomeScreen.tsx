@@ -40,7 +40,8 @@ import LocationPermissionModal, {
 import PropertyCard from '../../components/PropertyCard';
 import PropertyMap from '../../components/PropertyMap';
 import PropertyBottomSheet from '../../components/PropertyBottomSheet';
-import { EmptyView, ErrorView, LoadingView } from '../../components/States';
+import EmptyState from '../../components/EmptyState';
+import { ErrorView, LoadingView } from '../../components/States';
 import { findProvince } from '../../constants/provinces';
 import { MAP_TILE_MAX_ZOOM } from '../../config';
 import type { MapViewChange } from '../../map/BaseMap';
@@ -537,7 +538,27 @@ export default function HomeScreen({ navigation }: Props) {
         />
       );
     } else if (properties.length === 0) {
-      list = <EmptyView message={t('home.noResults')} />;
+      // Nothing in this list. When the filters, or the part of the map the list follows, are what is hiding the
+      // listings, the button takes them off (all the listings, everywhere); with none of those there is nothing to widen.
+      const widen = filterCount > 0 || listArea !== null;
+      list = (
+        <EmptyState
+          illustration="search"
+          testID="home-empty"
+          title={t('home.noResults')}
+          hint={t('home.noResultsHint')}
+          actionIcon="search"
+          actionLabel={widen ? t('home.browseListings') : undefined}
+          onAction={
+            widen
+              ? () => {
+                  setFilters({});
+                  setListArea(null);
+                }
+              : undefined
+          }
+        />
+      );
     } else {
       list = (
         <FlatList

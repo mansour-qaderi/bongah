@@ -9,11 +9,9 @@ import { getProperty } from '../../api/endpoints';
 import { errorMessage } from '../../api/errors';
 import { queryKeys } from '../../api/hooks';
 import AppText from '../../components/AppText';
-import Button from '../../components/Button';
-import EmptyIllustration from '../../components/EmptyIllustration';
+import EmptyState from '../../components/EmptyState';
 import PropertyCard from '../../components/PropertyCard';
 import { Screen } from '../../components/Screen';
-import { EmptyView } from '../../components/States';
 import { formatNumber } from '../../i18n/format';
 import { useSaved } from '../../favorites/store';
 import type { RootStackParamList } from '../../navigation/types';
@@ -71,24 +69,14 @@ export default function SavedListingsScreen({ navigation }: Props) {
   if (ordered.length === 0) {
     return (
       <Screen edges={['left', 'right']}>
-        <EmptyView
-          message={t('saved.empty')}
-          illustration={<EmptyIllustration />}
-        >
-          <AppText
-            variant="caption"
-            color={colors.textMuted}
-            style={styles.hint}
-          >
-            {t('saved.emptyHint')}
-          </AppText>
-          <Button
-            icon="search"
-            title={t('saved.browse')}
-            variant="outline"
-            onPress={() => navigation.navigate('Tabs', { screen: 'Home' })}
-          />
-        </EmptyView>
+        <EmptyState
+          illustration="saved"
+          title={t('saved.empty')}
+          hint={t('saved.emptyHint')}
+          actionIcon="search"
+          actionLabel={t('saved.browse')}
+          onAction={() => navigation.navigate('Tabs', { screen: 'Home' })}
+        />
       </Screen>
     );
   }
@@ -165,7 +153,6 @@ export default function SavedListingsScreen({ navigation }: Props) {
 const styles = StyleSheet.create({
   list: { paddingTop: spacing.md, paddingBottom: spacing.xxl },
   count: { paddingHorizontal: spacing.lg, paddingBottom: spacing.sm },
-  hint: { textAlign: 'center' },
   // A card-sized grey block while a saved listing is on its way, so the list does not jump when it arrives.
   placeholder: {
     ...surfaces.card,

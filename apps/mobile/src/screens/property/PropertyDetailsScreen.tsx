@@ -288,33 +288,7 @@ function PropertyBody({
           ) : null}
         </View>
 
-        {/* For its owner, the featured frame, as a gold-edged row like the one at the foot of the listing form. (Directions
-            are the fullscreen button on the map card.) */}
-        {isOwner ? (
-          <View style={[styles.section, styles.actionsBlock]} testID="listing-actions">
-            <AppText variant="caption" color={colors.textMuted}>
-              {t('property.yourListing')}
-            </AppText>
-            <FeaturedFrameButton property={property} />
-          </View>
-        ) : null}
-
-        <View style={[styles.section, styles.card]}>
-          <AppText variant="section">{t('property.description')}</AppText>
-          {/* An owner may leave the description out (it is stored as ''): say so politely instead of an empty card. */}
-          {hasDescription ? (
-            <AppText variant="bodySm">{property.description}</AppText>
-          ) : (
-            <AppText
-              variant="bodySm"
-              color={colors.textMuted}
-              testID="no-description"
-            >
-              {t('property.noDescription')}
-            </AppText>
-          )}
-        </View>
-
+        {/* The page's order: header, specs, where it is (the map), then for its owner the frame, then the description. */}
         <View style={[styles.section, styles.card]}>
           <AppText variant="section">{t('property.location')}</AppText>
           {/* The province and district are already under the title; here only the address the owner wrote. */}
@@ -357,6 +331,33 @@ function PropertyBody({
           ) : (
             <AppText variant="caption" color={colors.textMuted}>
               {t('map.noExact')}
+            </AppText>
+          )}
+        </View>
+
+        {/* For its owner, the featured frame, as a gold-edged row like the one at the foot of the listing form. (Directions
+            are the fullscreen button on the map card.) */}
+        {isOwner ? (
+          <View style={[styles.section, styles.actionsBlock]} testID="listing-actions">
+            <AppText variant="caption" color={colors.textMuted}>
+              {t('property.yourListing')}
+            </AppText>
+            <FeaturedFrameButton property={property} />
+          </View>
+        ) : null}
+
+        <View style={[styles.section, styles.card]}>
+          <AppText variant="section">{t('property.description')}</AppText>
+          {/* An owner may leave the description out (it is stored as ''): say so politely instead of an empty card. */}
+          {hasDescription ? (
+            <AppText variant="bodySm">{property.description}</AppText>
+          ) : (
+            <AppText
+              variant="bodySm"
+              color={colors.textMuted}
+              testID="no-description"
+            >
+              {t('property.noDescription')}
             </AppText>
           )}
         </View>

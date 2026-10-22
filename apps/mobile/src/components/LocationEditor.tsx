@@ -121,7 +121,7 @@ export default function LocationEditor({
         <View style={styles.side}>
           <CircleIconButton
             testID={`${testID}-locate`}
-            icon="pin"
+            icon="locate"
             tone="brand"
             label={t('home.locate')}
             loading={locating}

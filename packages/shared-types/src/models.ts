@@ -26,7 +26,7 @@ import type {
   SubscriptionStatus,
   TransactionPurpose,
   TransactionStatus,
-} from './constants';
+} from "./constants";
 
 // These are API wire types, not database entities: field names are snake_case exactly as
 // the REST API sends them, and dates are ISO-8601 strings.
@@ -95,7 +95,7 @@ export interface AgencyMapPin {
  * outer ring first, each ring closed. The same shape agvmap stores for a plot.
  */
 export interface PlotBoundary {
-  type: 'Polygon';
+  type: "Polygon";
   coordinates: number[][][];
 }
 
@@ -246,7 +246,7 @@ export interface SendOtpResponse {
 
 export interface VerifyOtpResponse {
   access_token: string;
-  token_type: 'Bearer';
+  token_type: "Bearer";
   /** Seconds until the access token expires. */
   expires_in: number;
   /** True when this login created the account (the app can then ask for a name). */
@@ -428,7 +428,7 @@ export interface ContactAccess {
 
 /** The body of the 403 returned when a reveal is not allowed any more today. */
 export interface ContactLimitReachedBody extends ApiErrorBody {
-  code: 'CONTACT_LIMIT_REACHED';
+  code: "CONTACT_LIMIT_REACHED";
   quota: ContactQuota;
 }
 
@@ -493,7 +493,7 @@ export interface ChatConversation {
   property: ChatPropertySummary;
   counterpart: ChatCounterpart;
   /** Whether the signed-in user is the one asking about the listing or the one who owns it. */
-  my_role: 'BUYER' | 'SELLER';
+  my_role: "BUYER" | "SELLER";
   last_message: ChatMessage | null;
   /** Messages from the other person that the signed-in user has not read. */
   unread_count: number;
@@ -540,7 +540,13 @@ export interface ChatReadEvent {
 /** The acknowledgement of `message:send`. */
 export type ChatSendAck =
   | { ok: true; message: ChatMessage }
-  | { ok: false; code: string; message: string; status: number; retry_after?: number };
+  | {
+      ok: false;
+      code: string;
+      message: string;
+      status: number;
+      retry_after?: number;
+    };
 
 // ───────────── Wallet, payments and receipts ─────────────
 
@@ -567,7 +573,11 @@ export interface Receipt {
   property: { id: string; title: string } | null;
   amount: number;
   currency: Currency;
-  payer: { full_name: string | null; phone_number: string; agency_name: string | null };
+  payer: {
+    full_name: string | null;
+    phone_number: string;
+    agency_name: string | null;
+  };
   /** HesabPay's own reference for the payment, for support questions. */
   reference: string;
 }
@@ -678,7 +688,13 @@ export interface PropertyImageItem extends PropertyImageUploaded {
 /** The answer for one row of a bulk request. `index` is the row's position in the request. */
 export type BulkRowResult<T> =
   | { index: number; ok: true; property: T }
-  | { index: number; ok: false; code: string; message: string; errors?: { field: string; message: string }[] };
+  | {
+      index: number;
+      ok: false;
+      code: string;
+      message: string;
+      errors?: { field: string; message: string }[];
+    };
 
 export interface BulkResponse<T> {
   total: number;
@@ -707,7 +723,12 @@ export interface AbuseReportItem {
   reporter: AdminPerson;
   /** The reported account (for a listing report: the listing's owner when it was filed). */
   target_user: AdminPerson;
-  target_property: { id: string; title: string; status: PropertyStatus; removed_by_admin_at: string | null } | null;
+  target_property: {
+    id: string;
+    title: string;
+    status: PropertyStatus;
+    removed_by_admin_at: string | null;
+  } | null;
   resolved_at: string | null;
   resolved_by: string | null;
   resolution_note: string | null;
@@ -718,7 +739,11 @@ export interface AdminUserItem extends AdminPerson {
   ban_reason: string | null;
   last_login_at: string | null;
   created_at: string;
-  agency: { id: string; agency_name: string; verification_status: AgencyVerificationStatus } | null;
+  agency: {
+    id: string;
+    agency_name: string;
+    verification_status: AgencyVerificationStatus;
+  } | null;
   open_reports_against: number;
 }
 
@@ -812,7 +837,12 @@ export interface AdminOverview {
   revenue: {
     all_time: MoneyByCurrency[];
     in_range: MoneyByCurrency[];
-    by_purpose: { purpose: TransactionPurpose; currency: Currency; total: number; count: number }[];
+    by_purpose: {
+      purpose: TransactionPurpose;
+      currency: Currency;
+      total: number;
+      count: number;
+    }[];
     /** Only days that had revenue. */
     daily: { day: string; currency: Currency; total: number }[];
   };
@@ -905,7 +935,6 @@ export interface TestPushResult {
 export interface PlaceSuggestion {
   id: string;
   provider: GeoProvider;
-  /** The place's own name: "شفاخانه جمهوریت", "کافه براسان". */
   title: string;
   /** Where it is, wide to narrow, without the title: "ناحیه ۲، کابل". Empty when the provider said nothing more. */
   subtitle: string;

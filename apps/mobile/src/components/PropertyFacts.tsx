@@ -93,6 +93,11 @@ interface Props {
   layout?: 'row' | 'grid';
   /** Grid layout: draw the hairline above it (default), or leave it off when the grid starts a card of its own. */
   divider?: boolean;
+  /**
+   * Also say how the price is meant («مقطوع» fixed, «جورآمد» negotiable), as the last cell of the grid, when the owner
+   * said so. The cards use it: the price stays alone on its line and its terms sit with the other figures.
+   */
+  withPriceTerms?: boolean;
 }
 
 /**
@@ -106,6 +111,7 @@ export default function PropertyFacts({
   withUnit,
   layout = 'row',
   divider = true,
+  withPriceTerms = false,
 }: Props) {
   const { t } = useTranslation();
   const format = useFormat();
@@ -140,6 +146,14 @@ export default function PropertyFacts({
       key: 'bathrooms',
       icon: 'shower',
       text: `${formatNumber(property.bathrooms, 0)} ${t('property.bathrooms')}`,
+    });
+  }
+
+  if (withPriceTerms && property.price_terms) {
+    facts.push({
+      key: 'priceTerms',
+      icon: 'coin',
+      text: t(`priceTerms.${property.price_terms}`),
     });
   }
 

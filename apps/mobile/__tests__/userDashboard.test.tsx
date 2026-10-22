@@ -125,7 +125,7 @@ describe('Saved listings', () => {
     expect(prs.saved.empty).toBe('هیچ آگهی نشان نشده است');
     expect(allText(tree.root)).toContain('هیچ آگهی نشان نشده است');
     expect(
-      tree.root.findAll(node => node.props.testID === 'empty-illustration'),
+      tree.root.findAll(node => node.props.testID === 'empty-illustration-saved'),
     ).not.toHaveLength(0);
     // And there is a way out of the empty page.
     expect(allText(tree.root)).toContain(prs.saved.browse);

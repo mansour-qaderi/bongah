@@ -11,7 +11,7 @@ import Badge, { badgeTones, DealBadge } from './Badge';
 import BookmarkButton from './BookmarkButton';
 import CircleIconButton from './CircleIconButton';
 import Icon from './Icon';
-import PriceLine from './PriceLine';
+import Price from './Price';
 import PropertyFacts, { propertyPlace } from './PropertyFacts';
 
 interface Props {
@@ -88,7 +88,13 @@ export default function PropertyCard({ property, onPress }: Props) {
           <AppText variant="heading" numberOfLines={2}>
             {property.title}
           </AppText>
-          <PriceLine property={property} priceStyle={styles.price} />
+          <Price
+            amount={property.price}
+            currency={property.currency}
+            variant="title"
+            color={colors.primary}
+            style={styles.price}
+          />
           {place ? (
             <View style={styles.place}>
               <Icon
@@ -110,6 +116,7 @@ export default function PropertyCard({ property, onPress }: Props) {
           <PropertyFacts
             property={property}
             withType
+            withPriceTerms
             layout="grid"
             divider={false}
           />
