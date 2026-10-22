@@ -279,13 +279,45 @@ describe('FilterSheet', () => {
       )
       .map(node => allText(node));
 
-  it('slides up with compact chips, a price range and an apply button', async () => {
+  /** The kinds of property: the closed dropdown box, and the rows of its sheet. */
+  const typeBox = (tree: ReactTestRenderer.ReactTestRenderer) =>
+    tree.root.findAll(
+      n =>
+        n.props.testID === 'filter-type-select' &&
+        typeof n.props.onPress === 'function',
+    )[0];
+  const typeRow = (tree: ReactTestRenderer.ReactTestRenderer, key: string) =>
+    tree.root.findAll(
+      n =>
+        n.props.testID === `filter-type-select-option-${key}` &&
+        typeof n.props.onPress === 'function',
+    )[0];
+  const openTypes = (tree: ReactTestRenderer.ReactTestRenderer) =>
+    act(async () => {
+      typeBox(tree).props.onPress();
+    });
+  /** Ticks (or un-ticks) rows in the sheet of kinds, which stays open between taps. */
+  const tickTypes = async (
+    tree: ReactTestRenderer.ReactTestRenderer,
+    ...keys: string[]
+  ) => {
+    await openTypes(tree);
+    for (const key of keys) {
+      await act(async () => {
+        typeRow(tree, key).props.onPress();
+      });
+    }
+  };
+
+  it('slides up with a kind dropdown, a price range and an apply button', async () => {
     const { tree } = await open();
     const text = allText(tree.root);
     expect(text).toContain(prs.home.filters);
     expect(text).toContain(prs.home.applyFilters);
     expect(text).toContain(prs.home.priceRange);
-    expect(text).toContain(prs.propertyType.HOUSE_HAWILI);
+    // The kinds are one box that says «همه انواع», not a block of chips.
+    expect(allText(typeBox(tree))).toContain(prs.home.allTypes);
+    expect(text).not.toContain(prs.propertyType.HOUSE_HAWILI);
     expect(text).toContain(prs.dealType.RENT);
     // With no limit set there is nothing to say about the range (no "from no limit to no limit").
     expect(text).not.toContain(prs.home.noLimit);
@@ -308,8 +340,39 @@ describe('FilterSheet', () => {
     for (const input of tree.root.findAllByType(TextInput)) {
       expect(String(input.props.placeholder ?? '')).not.toBe('۰');
     }
-    // The district box has a hint too.
+    // The district box has a hint too, and is called «آدرس کامل».
+    expect(prs.home.district).toBe('آدرس کامل');
     expect(hint(prs.home.district)).toBe(prs.home.districtPlaceholder);
+  });
+
+  it('has the currency as the same compact pills as under the price in the listing form, not a segmented bar', async () => {
+    const { tree } = await open();
+    const group = tree.root.findAll(
+      n => (n.type as unknown) === 'View' && n.props.testID === 'filter-currency',
+    )[0];
+    const pills = group.findAll(
+      n =>
+        typeof n.props.onPress === 'function' &&
+        n.props.accessibilityState?.selected !== undefined,
+    );
+    expect(pills.map(p => allText(p).trim())).toEqual([
+      prs.currency.AFGHANI,
+      prs.currency.USD,
+    ]);
+    expect(pills.map(p => p.props.accessibilityState.selected)).toEqual([
+      true,
+      false,
+    ]);
+    expect(
+      tree.root.findAll(n => n.props.accessibilityRole === 'tablist'),
+    ).toHaveLength(0);
+    await tap(tree, prs.currency.USD);
+    expect(
+      group
+        .findAll(n => typeof n.props.onPress === 'function')
+        .filter(p => p.props.accessibilityState?.selected)
+        .map(p => allText(p).trim()),
+    ).toEqual([prs.currency.USD]);
   });
 
   it('changes the price examples with the currency', async () => {
@@ -399,7 +462,7 @@ describe('FilterSheet', () => {
 
   it('applies exactly what was chosen, with the currency only when a price is set', async () => {
     const { tree, onApply } = await open();
-    await tap(tree, prs.propertyType.APARTMENT);
+    await tickTypes(tree, 'APARTMENT');
     await tap(tree, prs.dealType.RENT);
     await act(async () => {
       inputLabelled(tree.root, prs.home.maxPrice).props.onChangeText('20000');
@@ -416,25 +479,26 @@ describe('FilterSheet', () => {
     );
   });
 
-  describe('the type chips are multi-select', () => {
-    const selected = (tree: ReactTestRenderer.ReactTestRenderer) =>
+  describe('the kind dropdown is multi-select', () => {
+    const ticked = (tree: ReactTestRenderer.ReactTestRenderer) =>
       tree.root
         .findAll(
           n =>
             typeof n.props.onPress === 'function' &&
+            typeof n.props.testID === 'string' &&
+            n.props.testID.startsWith('filter-type-select-option-') &&
             n.props.accessibilityState?.selected === true,
         )
-        .map(n => allText(n).trim());
+        .map(n => n.props.testID.replace('filter-type-select-option-', ''))
+        .filter(key => key !== 'all');
 
-    it('applies every type that was chosen, so a house and an apartment can be searched together', async () => {
+    it('applies every kind that was ticked, so a house and an apartment can be searched together', async () => {
       const { tree, onApply } = await open();
-      await tap(tree, prs.propertyType.HOUSE_HAWILI);
-      await tap(tree, prs.propertyType.APARTMENT);
-      expect(selected(tree)).toEqual(
-        expect.arrayContaining([
-          prs.propertyType.HOUSE_HAWILI,
-          prs.propertyType.APARTMENT,
-        ]),
+      await tickTypes(tree, 'HOUSE_HAWILI', 'APARTMENT');
+      expect(ticked(tree)).toEqual(['HOUSE_HAWILI', 'APARTMENT']);
+      // The sheet stayed open between the taps; the closed box names both.
+      expect(allText(typeBox(tree))).toContain(
+        `${prs.propertyType.HOUSE_HAWILI}، ${prs.propertyType.APARTMENT}`,
       );
       await tap(tree, prs.home.applyFilters);
       expect(onApply.mock.calls[0][0].types).toEqual([
@@ -444,35 +508,56 @@ describe('FilterSheet', () => {
       expect(onApply.mock.calls[0][0]).not.toHaveProperty('type');
     });
 
-    it('takes a type off when it is tapped again, and sends none when none is left', async () => {
+    it('takes a kind off when it is tapped again, and sends none when none is left', async () => {
       const { tree, onApply } = await open({ types: ['LAND', 'APARTMENT'] });
-      await tap(tree, prs.propertyType.LAND);
+      await tickTypes(tree, 'LAND');
       await tap(tree, prs.home.applyFilters);
       expect(onApply.mock.calls[0][0].types).toEqual(['APARTMENT']);
 
       const again = await open({ types: ['LAND'] });
-      await tap(again.tree, prs.propertyType.LAND);
-      expect(selected(again.tree)).toContain(prs.home.allTypes);
+      await tickTypes(again.tree, 'LAND');
+      expect(allText(typeBox(again.tree))).toContain(prs.home.allTypes);
+      expect(ticked(again.tree)).toEqual([]);
       await tap(again.tree, prs.home.applyFilters);
       expect(again.onApply.mock.calls[0][0].types).toBeUndefined();
     });
 
-    it('"all types" clears every chosen type at once', async () => {
+    it('has «همه انواع» as the first row, which clears every tick at once', async () => {
       const { tree, onApply } = await open({ types: ['LAND', 'APARTMENT'] });
-      await tap(tree, prs.home.allTypes);
+      await openTypes(tree);
+      expect(ticked(tree).sort()).toEqual(['APARTMENT', 'LAND']);
+      await act(async () => {
+        typeRow(tree, 'all').props.onPress();
+      });
+      expect(typeRow(tree, 'all').props.accessibilityState.selected).toBe(true);
       await tap(tree, prs.home.applyFilters);
       expect(onApply.mock.calls[0][0].types).toBeUndefined();
     });
 
-    it('opens with the types already in the filter', async () => {
+    it('opens with the kinds already in the filter, named in the box and ticked in the sheet', async () => {
       const { tree } = await open({ types: ['LAND', 'GARDEN'] });
-      expect(selected(tree)).toEqual(
-        expect.arrayContaining([
-          prs.propertyType.LAND,
-          prs.propertyType.GARDEN,
-        ]),
+      expect(allText(typeBox(tree))).toContain(
+        `${prs.propertyType.LAND}، ${prs.propertyType.GARDEN}`,
       );
-      expect(selected(tree)).not.toContain(prs.home.allTypes);
+      await openTypes(tree);
+      expect(ticked(tree)).toEqual(expect.arrayContaining(['LAND', 'GARDEN']));
+      expect(typeRow(tree, 'all').props.accessibilityState.selected).toBe(false);
+    });
+
+    it('narrows the list as one types, and stays open until it is closed', async () => {
+      const { tree } = await open();
+      await openTypes(tree);
+      await act(async () => {
+        tree.root
+          .findAll(n => n.props.testID === 'filter-type-select-search')[0]
+          .props.onChangeText(prs.propertyType.LAND);
+      });
+      expect(typeRow(tree, 'LAND')).toBeDefined();
+      expect(typeRow(tree, 'APARTMENT')).toBeUndefined();
+      await act(async () => {
+        typeRow(tree, 'LAND').props.onPress();
+      });
+      expect(typeRow(tree, 'LAND')).toBeDefined();
     });
   });
 

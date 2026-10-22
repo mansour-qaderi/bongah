@@ -21,6 +21,7 @@ import { useFormat } from '../i18n/useFormat';
 import { colors, radius, spacing } from '../theme';
 import AppText from './AppText';
 import { propertyTypeLabel } from '../i18n/propertyType';
+import { propertyLineIcon } from '../map/markers';
 import Button from './Button';
 import BottomSheet from './BottomSheet';
 import Card from './Card';
@@ -28,7 +29,7 @@ import { Chip } from './Chip';
 import { KeyboardAwareScrollView } from './KeyboardAware';
 import ProvincePicker from './ProvincePicker';
 import RangeSlider from './RangeSlider';
-import SegmentedControl from './SegmentedControl';
+import { MultiSelectField } from './SelectField';
 import TextField from './TextField';
 
 interface Props {
@@ -58,6 +59,7 @@ export default function FilterSheet({
 
   const [province, setProvince] = useState<Province | null>(null);
   const [district, setDistrict] = useState('');
+  // Any number of kinds at once; none means all of them.
   const [types, setTypes] = useState<PropertyType[]>([]);
   const [deal, setDeal] = useState<DealType | undefined>();
   const [currency, setCurrency] = useState<Currency>('AFGHANI');
@@ -82,12 +84,6 @@ export default function FilterSheet({
     );
     setError(false);
   }, [visible, value]);
-
-  /** Adds the type to the chosen ones, or takes it out again: any number of types can be on at once. */
-  const toggleType = (p: PropertyType) =>
-    setTypes(current =>
-      current.includes(p) ? current.filter(x => x !== p) : [...current, p],
-    );
 
   const apply = () => {
     const min = readPrice(minText);
@@ -199,24 +195,22 @@ export default function FilterSheet({
           </Card>
 
           <Card>
-            <AppText variant="label">{t('home.type')}</AppText>
-            <View style={styles.wrap}>
-              <Chip
-                compact
-                label={t('home.allTypes')}
-                selected={types.length === 0}
-                onPress={() => setTypes([])}
-              />
-              {PROPERTY_TYPES.map(p => (
-                <Chip
-                  compact
-                  key={p}
-                  label={propertyTypeLabel(p, t)}
-                  selected={types.includes(p)}
-                  onPress={() => toggleType(p)}
-                />
-              ))}
-            </View>
+            {/* The same box and sheet as the kind of property in the listing form, for a choice of several. */}
+            <MultiSelectField
+              testID="filter-type-select"
+              label={t('home.type')}
+              title={t('home.type')}
+              searchPlaceholder={t('add.typeSearch')}
+              allLabel={t('home.allTypes')}
+              values={types}
+              onChange={setTypes}
+              options={PROPERTY_TYPES.map(p => ({
+                value: p,
+                label: propertyTypeLabel(p, t),
+                icon: propertyLineIcon(p),
+              }))}
+              flush
+            />
 
             <AppText variant="label">{t('home.dealType')}</AppText>
             <View style={styles.wrap}>
@@ -241,14 +235,18 @@ export default function FilterSheet({
           <Card>
             <View style={styles.priceHead}>
               <AppText variant="label">{t('home.priceRange')}</AppText>
-              <SegmentedControl
-                options={CURRENCIES.map(c => ({
-                  value: c,
-                  label: t(`currency.${c}`),
-                }))}
-                value={currency}
-                onChange={setCurrency}
-              />
+              {/* The same pills as under the price in the listing form. */}
+              <View style={styles.wrap} testID="filter-currency">
+                {CURRENCIES.map(c => (
+                  <Chip
+                    compact
+                    key={c}
+                    label={t(`currency.${c}`)}
+                    selected={currency === c}
+                    onPress={() => setCurrency(c)}
+                  />
+                ))}
+              </View>
             </View>
             {summary ? (
               <AppText variant="label" color={colors.primaryDark}>

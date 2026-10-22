@@ -630,6 +630,16 @@ describe('PropertyDetailsScreen: layout and the jerib helper', () => {
       });
     });
 
+    it('puts the location card right above the featured-frame row: specs, location, frame, description', async () => {
+      const tree = await asOwner();
+      const text = allText(tree.root);
+      const at = (word: string) => text.indexOf(word);
+      expect(at(prs.property.specs)).toBeGreaterThan(-1);
+      expect(at(prs.property.specs)).toBeLessThan(at(prs.property.location));
+      expect(at(prs.property.location)).toBeLessThan(at(prs.property.yourListing));
+      expect(at(prs.property.yourListing)).toBeLessThan(at(prs.property.description));
+    });
+
     it('offers «پوشش با کادر ویژه» as the same gold-edged row as the featured switch at the foot of the listing form', async () => {
       const tree = await asOwner();
       const row = tree.root.findAll(

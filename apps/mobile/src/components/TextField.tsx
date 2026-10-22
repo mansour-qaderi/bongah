@@ -164,7 +164,11 @@ export default function TextField({
     <View style={styles.wrapper}>
       {label ? (
         <View style={styles.labelRow} testID="label-row">
-          <AppText variant="label" color={colors.textSecondary}>
+          <AppText
+            variant="label"
+            style={styles.labelText}
+            color={colors.textSecondary}
+          >
             {label}
             {required ? (
               <AppText variant="label" color={colors.danger}>
@@ -236,6 +240,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: spacing.sm,
     marginBottom: spacing.xs,
+  },
+  labelText: {
+    flex: 1,
   },
   input: {
     minHeight: 48,

@@ -16,20 +16,6 @@ import { matchProvince, type Province } from '../constants/provinces';
 import { isInsideAfghanistan, type Coordinate } from './geo';
 import { lookUpPlace, nearestProvince, type PlaceGuess } from './geocode';
 
-/**
- * Where places come from, best first:
- *
- *  1. Google Places or Mapbox Search, through the Bongah API (`/geo/*`), which holds the keys. They know Afghanistan's
- *     cafés, shops, hospitals (شفاخانه), universities and landmarks, much of which OpenStreetMap has never been told
- *     about. A spot like "کافه براسان" in Zaranj is a business listing, not a mapped street, and that is the gap.
- *  2. OpenStreetMap, asked by the phone itself: Photon for the suggestions while typing (built for that), Nominatim
- *     for "what is at this spot" and for a typed address once the typing has stopped (its policy forbids
- *     search-as-you-type). This is what answers when the server has no key, the person is not signed in (the server's
- *     search is for signed-in people only), or the server cannot be reached.
- *
- * Nothing here throws: every function says "found", "nothing", or "failed", and the form works with the person typing.
- */
-
 /** Where a suggestion came from: one of the server's providers, or OpenStreetMap asked directly. */
 export type PlaceSource = GeoProvider | 'osm';
 
@@ -55,7 +41,6 @@ export type SuggestResult =
 export interface ResolvedPlace {
   coordinate: Coordinate;
   zoom: number;
-  /** "شفاخانه جمهوریت": what goes into the address field. */
   title: string;
   /** The rest of its address, for the line under the field. */
   address: string;
@@ -131,7 +116,8 @@ interface PhotonFeature {
   };
 }
 
-const textOf = (value: unknown) => (typeof value === 'string' ? value.trim() : '');
+const textOf = (value: unknown) =>
+  typeof value === 'string' ? value.trim() : '';
 
 /** Photon's answer as dropdown rows: inside Afghanistan, named, no repeats, wide parts of the address as the subtitle. */
 export function optionsFromPhoton(body: unknown): PlaceOption[] {
@@ -196,7 +182,10 @@ async function getJson(
   try {
     const response = await fetch(url, {
       signal: timeout.signal,
-      headers: { 'User-Agent': GEOCODER_USER_AGENT, Accept: 'application/json' },
+      headers: {
+        'User-Agent': GEOCODER_USER_AGENT,
+        Accept: 'application/json',
+      },
     });
     if (!response.ok) return null;
     return await response.json();
@@ -215,8 +204,9 @@ async function photonSuggest(
 ): Promise<PlaceOption[] | null> {
   const b = AFGHANISTAN_BOUNDS;
   let url =
-    `${PHOTON_URL}?q=${encodeURIComponent(query)}&limit=${MAX_SUGGESTIONS + 4}` +
-    `&bbox=${b.minLng},${b.minLat},${b.maxLng},${b.maxLat}`;
+    `${PHOTON_URL}?q=${encodeURIComponent(query)}&limit=${
+      MAX_SUGGESTIONS + 4
+    }` + `&bbox=${b.minLng},${b.minLat},${b.maxLng},${b.maxLat}`;
   if (near) url += `&lat=${near.latitude}&lon=${near.longitude}`;
   const body = await getJson(url, signal);
   return body === null ? null : optionsFromPhoton(body);
@@ -321,7 +311,11 @@ const fromDetails = (
  */
 export async function resolvePlace(
   option: PlaceOption,
-  { session, language, signal }: { session?: string; language?: Language; signal?: AbortSignal } = {},
+  {
+    session,
+    language,
+    signal,
+  }: { session?: string; language?: Language; signal?: AbortSignal } = {},
 ): Promise<ResolvedPlace | null> {
   const zoom = zoomForCategory(option.category);
   if (option.coordinate) {

@@ -499,6 +499,11 @@ describe('MyListingsScreen', () => {
   it('invites a first listing when there are none', async () => {
     const { tree, nav } = await mine([]);
     expect(allText(tree.root)).toContain(prs.my.empty);
+    // An empty folder with a list (not the bookmark house of «ذخیره‌شده‌ها»), the title, a friendly line and a button: with
+    // no listings there is no floating button, so this one is the way to post the first.
+    expect(tree.root.findAll(n => n.props.testID === 'empty-illustration-folder').length).toBeGreaterThan(0);
+    expect(tree.root.findAll(n => n.props.testID === 'empty-illustration-saved')).toHaveLength(0);
+    expect(allText(tree.root)).toContain(prs.my.emptyHint);
     await press(tree.root, prs.my.newListing);
     expect(nav.navigate).toHaveBeenCalledWith('AddProperty');
   });
@@ -571,10 +576,22 @@ describe('MyListingsScreen', () => {
     });
 
     it('says so when a tab has no listings, instead of showing the other tabs', async () => {
-      const { tree } = await mine([property({ id: 'a', title: 'آگهی فعال' })]);
+      const { tree, nav } = await mine([property({ id: 'a', title: 'آگهی فعال' })]);
       await press(tree.root, tab('SOLD', 0));
       expect(titles(tree.root)).toEqual([]);
       expect(allText(tree.root)).toContain(prs.my.emptyFilter);
+      // Not a bare line: the folder picture and a friendly line, and no second «ثبت آگهی جدید»: the floating one is
+      // already on screen, so exactly one such button is there.
+      expect(tree.root.findAll(n => n.props.testID === 'empty-illustration-folder').length).toBeGreaterThan(0);
+      expect(tree.root.findAll(n => n.props.testID === 'empty-illustration-saved')).toHaveLength(0);
+      expect(allText(tree.root)).toContain(prs.my.emptyFilterHint);
+      expect(tree.root.findAll(n => n.props.testID === 'my-empty-filter-action')).toHaveLength(0);
+      const post = tree.root.findAll(
+        n => typeof n.type === 'string' && n.props.accessibilityLabel === prs.my.newListing,
+      );
+      expect(post).toHaveLength(1);
+      await press(tree.root, prs.my.newListing);
+      expect(nav.navigate).toHaveBeenCalledWith('AddProperty');
       // The tabs stay, so the owner can go back.
       await press(tree.root, tab('ALL', 1));
       expect(titles(tree.root)).toEqual(['آگهی فعال']);

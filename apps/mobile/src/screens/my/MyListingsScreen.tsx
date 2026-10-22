@@ -29,6 +29,7 @@ import PromotionSheet from '../../components/PromotionSheet';
 import Fab from '../../components/Fab';
 import ListingCard, { type ListingAction } from '../../components/ListingCard';
 import { Screen } from '../../components/Screen';
+import EmptyState from '../../components/EmptyState';
 import { EmptyView, ErrorView, LoadingView } from '../../components/States';
 import { formatNumber } from '../../i18n/format';
 import { markDeleted, useDeletedListings } from '../../listings/deleted';
@@ -246,16 +247,15 @@ export default function MyListingsScreen({ navigation }: Props) {
     );
   else if (properties.length === 0)
     body = (
-      <EmptyView message={t('my.empty')}>
-        <AppText variant="caption" color={colors.textMuted} style={styles.hint}>
-          {t('my.emptyHint')}
-        </AppText>
-        <Button
-          icon="plus"
-          title={t('my.newListing')}
-          onPress={() => navigation.navigate('AddProperty')}
-        />
-      </EmptyView>
+      <EmptyState
+        illustration="folder"
+        testID="my-empty"
+        title={t('my.empty')}
+        hint={t('my.emptyHint')}
+        actionIcon="plus"
+        actionLabel={t('my.newListing')}
+        onAction={() => navigation.navigate('AddProperty')}
+      />
     );
   else
     body = (
@@ -285,7 +285,14 @@ export default function MyListingsScreen({ navigation }: Props) {
           </ChipRow>
         </View>
         {shown.length === 0 ? (
-          <EmptyView message={t('my.emptyFilter')} />
+          // No button here: the floating «ثبت آگهی جدید» is on screen whenever there are listings (and there are, in
+          // another tab), so a second one would only repeat it.
+          <EmptyState
+            illustration="folder"
+            testID="my-empty-filter"
+            title={t('my.emptyFilter')}
+            hint={t('my.emptyFilterHint')}
+          />
         ) : (
           <FlatList
             // A new list for each tab: nothing of the last tab's rows (or its scroll position) is carried over.

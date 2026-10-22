@@ -1,38 +1,8 @@
-import React from 'react';
-import { StyleSheet } from 'react-native';
-import ReactTestRenderer from 'react-test-renderer';
-import PriceLine from '../src/components/PriceLine';
 import { ICON_SHAPES } from '../src/components/iconShapes';
 import { initI18n } from '../src/i18n';
 
-const draw = (element: React.ReactElement) => {
-  let tree!: ReactTestRenderer.ReactTestRenderer;
-  ReactTestRenderer.act(() => {
-    tree = ReactTestRenderer.create(element);
-  });
-  return tree;
-};
-
 beforeAll(async () => {
   await initI18n();
-});
-
-describe('the price and its terms', () => {
-  it('sit on one baseline, wrapping rather than squeezing, whatever line height the price has', () => {
-    const tree = draw(
-      <PriceLine
-        property={{ price: 2_500_000, currency: 'AFGHANI', price_terms: 'FIXED' }}
-        priceStyle={{ lineHeight: 34 }}
-      />,
-    );
-    const root = tree.toJSON() as ReactTestRenderer.ReactTestRendererJSON;
-    const row = StyleSheet.flatten(root.props.style as never);
-    expect(row).toMatchObject({
-      flexDirection: 'row',
-      flexWrap: 'wrap',
-      alignItems: 'baseline',
-    });
-  });
 });
 
 describe('the map icons', () => {

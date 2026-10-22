@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { useMutation } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
@@ -25,6 +25,9 @@ import TextField from './TextField';
 import { showToast } from './Toast';
 import { useErrorToast } from './useErrorToast';
 
+/** How long the thank-you stays on screen. */
+export const THANKS_TOAST_MS = 4000;
+
 interface Props {
   visible: boolean;
   onClose: () => void;
@@ -35,7 +38,12 @@ interface Props {
 /**
  * "نظرات و پیشنهادات": a sheet with what the message is about (a suggestion, a problem, thanks, anything else) and the
  * message itself. It goes to the Bongah team through `POST /feedback` and needs a signed-in account, so a visitor sees
- * the sign-in prompt instead. After sending, the sheet says thank you and the form starts empty the next time.
+ * the sign-in prompt instead.
+ *
+ * When the server has taken the message the sheet closes at once and a thank-you toast stays for `THANKS_TOAST_MS`.
+ * The toast is shown once the sheet has slid away, not before: a sheet is a native modal with a toast host of its own,
+ * and a toast shown while it is still on its way out would be drawn there and vanish with it. A message the server
+ * refuses keeps the sheet open, with what was typed still in it, and says why in a toast.
  */
 export default function FeedbackSheet({ visible, onClose, onSignIn }: Props) {
   const { t } = useTranslation();
@@ -44,7 +52,25 @@ export default function FeedbackSheet({ visible, onClose, onSignIn }: Props) {
   const [message, setMessage] = useState('');
   const [problem, setProblem] = useState<string | null>(null);
 
-  const mutation = useMutation({ mutationFn: sendFeedback });
+  // The thank-you waits for the sheet to be gone (see above); `open` is read from the mutation's callback.
+  const thanksPending = useRef(false);
+  const open = useRef(visible);
+  open.current = visible;
+  const thank = () =>
+    showToast(t('feedback.thanks'), 'success', THANKS_TOAST_MS);
+
+  const mutation = useMutation({
+    mutationFn: sendFeedback,
+    onSuccess: () => {
+      if (open.current) {
+        thanksPending.current = true;
+        onClose();
+      } else {
+        // Closed by hand while the message was on its way: nothing is sliding away any more.
+        thank();
+      }
+    },
+  });
   useErrorToast(
     mutation.error ? errorMessage(mutation.error, t) : null,
     mutation.error,
@@ -53,6 +79,7 @@ export default function FeedbackSheet({ visible, onClose, onSignIn }: Props) {
   // Each time the sheet opens it starts clean (a sent message must not come back).
   useEffect(() => {
     if (!visible) return;
+    thanksPending.current = false;
     setCategory('SUGGESTION');
     setMessage('');
     setProblem(null);
@@ -79,7 +106,6 @@ export default function FeedbackSheet({ visible, onClose, onSignIn }: Props) {
   };
 
   const signedIn = status === 'signedIn';
-  const sent = mutation.isSuccess;
 
   let body: React.ReactNode;
   let footer: React.ReactNode;
@@ -95,16 +121,6 @@ export default function FeedbackSheet({ visible, onClose, onSignIn }: Props) {
           }}
         />
       </EmptyView>
-    );
-  } else if (sent) {
-    body = <EmptyView message={t('feedback.success')} />;
-    footer = (
-      <Button
-        icon="close"
-        title={t('common.close')}
-        onPress={onClose}
-        style={styles.main}
-      />
     );
   } else {
     body = (
@@ -163,6 +179,11 @@ export default function FeedbackSheet({ visible, onClose, onSignIn }: Props) {
       title={t('feedback.title')}
       heightRatio={0.8}
       footer={footer}
+      onDismissed={() => {
+        if (!thanksPending.current) return;
+        thanksPending.current = false;
+        thank();
+      }}
     >
       {body}
     </BottomSheet>

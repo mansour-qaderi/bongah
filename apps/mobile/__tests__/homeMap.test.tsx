@@ -1365,6 +1365,44 @@ describe('Home map: moving around', () => {
     expect(allText(empty.root)).toContain(prs.home.noResults);
     expect(allText(empty.root)).not.toContain(countOf('۰'));
   });
+
+  describe('the empty list', () => {
+    const emptyAction = (root: ReactTestRenderer.ReactTestInstance) =>
+      root.findAll(
+        n => n.props.testID === 'home-empty-action' && typeof n.props.onPress === 'function',
+      )[0];
+
+    it('is the picture, the title and a friendly line, and offers no button when nothing is hiding the listings', async () => {
+      serve([]);
+      const tree = await render(home());
+      await settle();
+      await press(tree.root, prs.home.list);
+      await settle();
+      // The map-and-magnifier picture; never the bookmark house, which belongs to «ذخیره‌شده‌ها».
+      expect(hasId(tree.root, 'empty-illustration-search')).toBe(true);
+      expect(hasId(tree.root, 'empty-illustration-saved')).toBe(false);
+      expect(allText(tree.root)).toContain(prs.home.noResultsHint);
+      expect(emptyAction(tree.root)).toBeUndefined();
+    });
+
+    it('offers «مشاهده آگهی‌ها» when the filters hide them, which takes the filters off and asks again', async () => {
+      serve([]);
+      const tree = await render(home());
+      await settle();
+      await act(async () => {
+        tree.root.findByType(FilterSheet).props.onApply({ types: ['LAND'] });
+      });
+      await press(tree.root, prs.home.list);
+      await settle();
+      const button = emptyAction(tree.root);
+      expect(allText(button)).toContain(prs.home.browseListings);
+      expect(propertyCalls().at(-1)!.query.types).toBe('LAND');
+      await act(async () => button.props.onPress());
+      await settle();
+      expect(propertyCalls().at(-1)!.query.types).toBeUndefined();
+      expect(emptyAction(tree.root)).toBeUndefined();
+    });
+  });
 });
 
 // ---------------------------------------------------------------------------------------------------------------

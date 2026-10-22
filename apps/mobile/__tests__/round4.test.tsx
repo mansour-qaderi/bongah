@@ -1,5 +1,5 @@
 import React from 'react';
-import { StyleSheet } from 'react-native';
+import { Modal, StyleSheet } from 'react-native';
 import ReactTestRenderer from 'react-test-renderer';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import {
@@ -23,10 +23,12 @@ import {
   allText,
   callsTo,
   inputLabelled,
+  jsonResponse,
   mockApi,
   pressableWith,
   render as renderTree,
 } from '../test-utils';
+import { captureToasts } from '../test-utils/toasts';
 import { APP_VERSION } from '../src/appInfo';
 import FeedbackSheet from '../src/components/FeedbackSheet';
 import ListingCard from '../src/components/ListingCard';
@@ -161,7 +163,14 @@ beforeEach(async () => {
   await kv.remove(KV_KEYS.favorites);
   resetSavedForTests();
 });
+const capturing: ReturnType<typeof captureToasts>[] = [];
+const captured = () => {
+  const toasts = captureToasts();
+  capturing.push(toasts);
+  return toasts;
+};
 afterEach(async () => {
+  capturing.splice(0).forEach(toasts => toasts.restore());
   await act(async () => {
     mounted.splice(0).forEach(tree => tree.unmount());
   });
@@ -557,7 +566,36 @@ describe('FeedbackSheet', () => {
     );
   });
 
-  it('sends the chosen kind, the message and the app version, then says thank you', async () => {
+  /** The sheet the way its owner holds it: open until `onClose` says otherwise. */
+  const openStateful = async () => {
+    const closed = jest.fn();
+    const Host = () => {
+      const [visible, setVisible] = React.useState(true);
+      return (
+        <FeedbackSheet
+          visible={visible}
+          onClose={() => {
+            closed();
+            setVisible(false);
+          }}
+          onSignIn={jest.fn()}
+        />
+      );
+    };
+    const tree = await show(withQuery(<Host />));
+    await settle();
+    return { tree, closed };
+  };
+  const sheetOpen = (root: ReactTestRenderer.ReactTestInstance) =>
+    root.findAllByType(Modal).some(m => m.props.visible);
+  const sendOne = async (root: ReactTestRenderer.ReactTestInstance) => {
+    await press(root, prs.feedback.category.PROBLEM);
+    await write(root, 'نقشه در بخش ثبت آگهی کند باز می‌شود.');
+    await press(root, prs.feedback.send);
+    await settle();
+  };
+
+  it('sends the chosen kind, the message and the app version', async () => {
     mockApi(fetchMock, {
       'POST /feedback': {
         status: 201,
@@ -565,11 +603,7 @@ describe('FeedbackSheet', () => {
       },
     });
     const { tree } = await open();
-    await press(tree.root, prs.feedback.category.PROBLEM);
-    await write(tree.root, 'نقشه در بخش ثبت آگهی کند باز می‌شود.');
-    await press(tree.root, prs.feedback.send);
-    await settle();
-
+    await sendOne(tree.root);
     const sent = callsTo(fetchMock).find(c => c.path === '/feedback');
     expect(sent?.method).toBe('POST');
     expect(sent?.body).toEqual({
@@ -577,7 +611,77 @@ describe('FeedbackSheet', () => {
       message: 'نقشه در بخش ثبت آگهی کند باز می‌شود.',
       app_version: APP_VERSION,
     });
-    expect(allText(tree.root)).toContain(prs.feedback.success);
+  });
+
+  it('closes by itself once the server has the message, and thanks the person with a 4-second toast after the sheet has slid away', async () => {
+    const toasts = captured();
+    mockApi(fetchMock, {
+      'POST /feedback': {
+        status: 201,
+        body: { id: 'f1', created_at: '2026-10-16T00:00:00Z' },
+      },
+    });
+    const { tree, closed } = await openStateful();
+    expect(sheetOpen(tree.root)).toBe(true);
+    await sendOne(tree.root);
+    // Closed without a tap, and no "sent" page left in the sheet to close by hand.
+    expect(closed).toHaveBeenCalledTimes(1);
+    expect(allText(tree.root)).not.toContain(prs.feedback.thanks);
+    await act(async () => {
+      await new Promise<void>(resolve => setTimeout(resolve, 400));
+    });
+    expect(sheetOpen(tree.root)).toBe(false);
+    // Said once, in the root's toast (the sheet's own host is gone by now), for four seconds.
+    expect(toasts.calls).toEqual([[prs.feedback.thanks, 'success', 4000]]);
+  });
+
+  it('thanks at once when the sheet was already closed by hand while the message was on its way', async () => {
+    const toasts = captured();
+    let answer!: (reply: unknown) => void;
+    fetchMock.mockImplementation(
+      () => new Promise(resolve => (answer = resolve)),
+    );
+    const { tree } = await openStateful();
+    await press(tree.root, prs.feedback.category.PROBLEM);
+    await write(tree.root, 'نقشه در بخش ثبت آگهی کند باز می‌شود.');
+    await press(tree.root, prs.feedback.send);
+    await act(async () => {
+      tree.root
+        .findAll(
+          n =>
+            n.props.accessibilityLabel === prs.common.close &&
+            typeof n.props.onPress === 'function',
+        )[0]
+        .props.onPress();
+    });
+    await act(async () => {
+      await new Promise<void>(resolve => setTimeout(resolve, 400));
+    });
+    expect(toasts.calls).toHaveLength(0);
+    await act(async () => answer(jsonResponse(201, { id: 'f1', created_at: '2026-10-16T00:00:00Z' })));
+    await settle();
+    expect(toasts.calls).toEqual([[prs.feedback.thanks, 'success', 4000]]);
+  });
+
+  it('stays open, keeps what was typed and says why in a toast when the server refuses', async () => {
+    const toasts = captured();
+    mockApi(fetchMock, {
+      'POST /feedback': { status: 500, body: { message: 'boom' } },
+    });
+    const { tree, closed } = await openStateful();
+    await sendOne(tree.root);
+    await act(async () => {
+      await new Promise<void>(resolve => setTimeout(resolve, 400));
+    });
+    expect(closed).not.toHaveBeenCalled();
+    expect(sheetOpen(tree.root)).toBe(true);
+    expect(
+      inputLabelled(tree.root, prs.feedback.messageLabel).props.value,
+    ).toBe('نقشه در بخش ثبت آگهی کند باز می‌شود.');
+    expect(toasts.calls).toHaveLength(1);
+    expect(toasts.calls[0][1]).toBe('error');
+    expect(toasts.calls[0][0]).not.toBe(prs.feedback.thanks);
+    expect(toasts.calls[0][0].length).toBeGreaterThan(0);
   });
 
   it('shows a visitor the sign-in prompt, which closes the sheet and goes to sign-in', async () => {
