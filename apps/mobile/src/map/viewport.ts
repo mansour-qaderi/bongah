@@ -83,6 +83,23 @@ export function areaFor(bounds: Bounds, margin: number = AREA_MARGIN): Area {
   };
 }
 
+/** The exact box a screen shows, with no margin and no grid: what "in view" means for a count or for the list. */
+export function areaOfBounds(bounds: Bounds): Area {
+  const [west, south, east, north] = bounds;
+  return {
+    min_lat: round(clamp(south, -90, 90)),
+    max_lat: round(clamp(north, -90, 90)),
+    min_lng: round(clamp(west, -180, 180)),
+    max_lng: round(clamp(east, -180, 180)),
+  };
+}
+
+/** Whether a point is on screen (the edges count). */
+export function inBounds(lat: number, lng: number, bounds: Bounds): boolean {
+  const [west, south, east, north] = bounds;
+  return lat >= south && lat <= north && lng >= west && lng <= east;
+}
+
 const sizeOf = (area: Area) =>
   (area.max_lat - area.min_lat) * (area.max_lng - area.min_lng);
 

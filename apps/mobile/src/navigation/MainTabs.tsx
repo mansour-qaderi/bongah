@@ -73,7 +73,7 @@ export default function MainTabs() {
           options={{
             title: t('nav.home'),
             headerShown: false,
-            tabBarIcon: icon('pin'),
+            tabBarIcon: icon('map-pin'),
           }}
         />
         <Tab.Screen

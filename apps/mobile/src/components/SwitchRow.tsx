@@ -75,3 +75,6 @@ const styles = StyleSheet.create({
   gold: { borderWidth: 2.5, borderColor: colors.accentBright },
   text: { flex: 1, gap: spacing.xs },
 });
+
+/** The row's own look, for the other rows that must read as the same thing (the featured frame on a listing's page). */
+export const rowStyles = styles;

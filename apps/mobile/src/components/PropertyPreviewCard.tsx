@@ -1,15 +1,20 @@
 import React from 'react';
-import { Image, Pressable, StyleSheet, View } from 'react-native';
+import {
+  ActivityIndicator,
+  Image,
+  Pressable,
+  StyleSheet,
+  View,
+} from 'react-native';
 import { useTranslation } from 'react-i18next';
 import type { Property } from '@bongah/shared-types';
 import { useAuth } from '../auth/AuthContext';
 import { useContactActions } from '../contact/useContactActions';
 import { useFormat } from '../i18n/useFormat';
-import { propertyTypeLabel } from '../i18n/propertyType';
 import { propertyLineIcon, useSellerLabel } from '../map/markers';
 import { colors, dealColors, radius, spacing } from '../theme';
 import AppText from './AppText';
-import { DealBadge } from './Badge';
+import Badge, { badgeTones, DealBadge } from './Badge';
 import ContactActionBar from './ContactActionBar';
 import ContactLockSheet from './ContactLockSheet';
 import Icon from './Icon';
@@ -21,12 +26,21 @@ interface Props {
   /** Open the full details page. */
   onOpen: () => void;
   onClose: () => void;
+  /**
+   * «مسیریابی»: the button in the card that starts directions to this listing. Left out, there is no button (a listing
+   * without an exact pin has nowhere to drive to).
+   */
+  onNavigate?: () => void;
+  /** The phone is being located for those directions: the button shows a spinner. */
+  navigating?: boolean;
 }
 
 /**
- * The card that slides up over the map when a listing is tapped: picture, price, title, the key facts and,
- * pinned to its bottom edge, Call / WhatsApp / Chat. The actions are the same ones as on the details page
- * (same metering and sign-in rules), because they come from the same hook.
+ * The card that slides up over the map when a listing is tapped, laid out like a card in «آگهی‌های من» and in this
+ * order: the title, the price, the seller directly under the price, with the deal's badge at the far end (the
+ * left) and the picture at the start; then the same icon grid of facts; then, pinned to the bottom edge, Call /
+ * Chat. The actions are the same ones as on the details page (same metering and sign-in rules), because they come
+ * from the same hook.
  *
  * Render it with `key={property.id}` so each listing gets its own contact state.
  */
@@ -34,6 +48,8 @@ export default function PropertyPreviewCard({
   property,
   onOpen,
   onClose,
+  onNavigate,
+  navigating = false,
 }: Props) {
   const { t } = useTranslation();
   const format = useFormat();
@@ -55,7 +71,7 @@ export default function PropertyPreviewCard({
         onPress={onOpen}
         style={styles.body}
       >
-        <View style={styles.row}>
+        <View style={styles.row} testID="preview-top">
           <View style={styles.thumb}>
             {image ? (
               <Image
@@ -74,40 +90,43 @@ export default function PropertyPreviewCard({
             )}
           </View>
 
-          <View style={styles.info}>
-            <View style={styles.priceRow}>
-              <Price
-                amount={property.price}
-                currency={property.currency}
-                variant="heading"
-                color={colors.primaryDark}
-              />
-              {property.is_featured ? (
-                <View style={styles.badge}>
-                  <AppText variant="caption" color={colors.textOnAccent}>
-                    {t('property.featured')}
-                  </AppText>
-                </View>
-              ) : null}
-            </View>
+          <View style={styles.info} testID="preview-main">
             <AppText variant="label" numberOfLines={2}>
               {property.title}
             </AppText>
-            <View style={styles.kindRow}>
-              <AppText variant="caption" color={colors.textMuted}>
-                {propertyTypeLabel(property.type, t)}
-              </AppText>
-              <DealBadge deal={property.deal_type} />
-            </View>
-            <AppText variant="caption" color={colors.accentText}>
+            <Price
+              amount={property.price}
+              currency={property.currency}
+              variant="heading"
+              color={colors.primaryDark}
+            />
+            <AppText
+              variant="caption"
+              color={colors.accentText}
+              numberOfLines={1}
+              testID="preview-seller"
+            >
               {property.agency_name ? '🏛️ ' : ''}
               {seller}
             </AppText>
           </View>
+
+          {/* The deal's tag at the far end (the top-left corner), the "featured" badge under it. */}
+          <View style={styles.tags} testID="preview-tags">
+            <DealBadge deal={property.deal_type} />
+            {property.is_featured ? (
+              <Badge label={t('property.featured')} tone={badgeTones.warning} />
+            ) : null}
+          </View>
         </View>
 
         <View style={styles.facts}>
-          <PropertyFacts property={property} />
+          <PropertyFacts
+            property={property}
+            withType
+            layout="grid"
+            divider={false}
+          />
           <View style={styles.place}>
             <Icon name="pin" size={14} color={colors.textMuted} weight={1.9} />
             <AppText
@@ -118,6 +137,35 @@ export default function PropertyPreviewCard({
             >
               {propertyPlace(property, format.province)}
             </AppText>
+            {onNavigate ? (
+              <Pressable
+                testID="preview-navigate"
+                accessibilityRole="button"
+                accessibilityLabel={t('route.button')}
+                accessibilityState={{ busy: navigating, disabled: navigating }}
+                disabled={navigating}
+                onPress={onNavigate}
+                hitSlop={8}
+                style={({ pressed }) => [
+                  styles.navigate,
+                  pressed ? styles.navigatePressed : null,
+                ]}
+              >
+                {navigating ? (
+                  <ActivityIndicator size="small" color={colors.primary} />
+                ) : (
+                  <Icon
+                    name="navigate"
+                    size={16}
+                    color={colors.primary}
+                    weight={1.9}
+                  />
+                )}
+                <AppText variant="label" color={colors.primary}>
+                  {t('route.short')}
+                </AppText>
+              </Pressable>
+            ) : null}
           </View>
         </View>
       </Pressable>
@@ -129,9 +177,7 @@ export default function PropertyPreviewCard({
         hitSlop={12}
         style={styles.close}
       >
-        <AppText variant="heading" color={colors.textMuted}>
-          ×
-        </AppText>
+        <Icon name="close" size={14} color={colors.textSecondary} weight={2} />
       </Pressable>
 
       {actions.isOwner ? (
@@ -182,18 +228,37 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   thumbImage: { width: '100%', height: '100%' },
-  // Leaves room for the close button on the far edge.
-  info: { flex: 1, gap: 2, paddingEnd: spacing.xl },
-  priceRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
-  kindRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
-  badge: {
-    backgroundColor: colors.accentBright,
-    borderRadius: radius.pill,
-    paddingHorizontal: spacing.sm,
-  },
+  info: { flex: 1, gap: 2 },
+  tags: { alignItems: 'center', gap: spacing.xs },
   facts: { gap: spacing.sm },
-  place: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
-  placeText: { flexShrink: 1 },
-  close: { position: 'absolute', top: spacing.sm, end: spacing.md },
+  place: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  placeText: { flex: 1 },
+  // Directions, at the far end of the place's own line: a small outlined pill in the brand colour.
+  navigate: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    height: 36,
+    paddingHorizontal: spacing.md,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: colors.primary,
+    backgroundColor: colors.surface,
+  },
+  navigatePressed: { opacity: 0.8 },
+  // On the picture's corner, so the far end (top-left) is the deal's tag and nothing sits on it.
+  close: {
+    position: 'absolute',
+    top: spacing.sm,
+    start: spacing.sm,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   owner: { textAlign: 'center', padding: spacing.md },
 });

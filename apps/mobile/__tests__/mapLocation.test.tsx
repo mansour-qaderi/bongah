@@ -14,6 +14,8 @@ import {
   pressableWith,
   render as renderTree,
   tapMap,
+  chooseType,
+  typeOptions,
 } from '../test-utils';
 
 const fetchMock = jest.fn();
@@ -36,12 +38,13 @@ jest.mock('../src/navigation/useRequireAuth', () => ({
 // Imported after the mocks so the screens pick them up.
 import HomeScreen from '../src/screens/home/HomeScreen';
 import AddPropertyScreen, {
-  ADDRESS_SYNC_DELAY_MS,
   LOOKUP_DELAY_MS,
 } from '../src/screens/property/AddPropertyScreen';
+import { SUGGEST_DELAY_MS } from '../src/components/PlaceSearchField';
 import PropertyDetailsScreen from '../src/screens/property/PropertyDetailsScreen';
 import PropertyMap from '../src/components/PropertyMap';
-import { AFGHANISTAN_CAMERA } from '../src/map/geo';
+import { AFGHANISTAN_CAMERA, provinceCamera } from '../src/map/geo';
+import { findProvince } from '../src/constants/provinces';
 
 const user = {
   id: 'u1',
@@ -145,18 +148,6 @@ const press = (root: ReactTestRenderer.ReactTestInstance, label: string) =>
   act(async () => {
     pressableWith(root, label).props.onPress();
   });
-/** Picks a segmented-control option (a "tab"), not another button that happens to say the same word (the jerib ℹ). */
-const pressTab = (root: ReactTestRenderer.ReactTestInstance, label: string) =>
-  act(async () => {
-    root
-      .findAll(
-        n =>
-          n.props.accessibilityRole === 'tab' &&
-          typeof n.props.onPress === 'function' &&
-          allText(n).includes(label),
-      )[0]
-      .props.onPress();
-  });
 const type = (
   root: ReactTestRenderer.ReactTestInstance,
   label: string,
@@ -231,7 +222,7 @@ async function fillForm(root: ReactTestRenderer.ReactTestInstance) {
   await type(root, prs.dealPrice.SALE, '1200000');
   await type(root, prs.add.area, '120');
   await addRooms(root);
-  await type(root, prs.add.address, WRITTEN_ADDRESS);
+  await type(root, prs.add.place, WRITTEN_ADDRESS);
   await press(root, prs.home.selectProvince); // opens the province list
   await press(root, 'کابل');
 }
@@ -259,7 +250,7 @@ describe('AddPropertyScreen: location is free and has two ways in', () => {
 
     expect(mapParts(tree.root, 'Map')).toHaveLength(1);
     const text = allText(tree.root);
-    expect(text).toContain(prs.map.tapToPlace);
+    expect(text).toContain(prs.add.locationHint);
     expect(text).not.toContain('۳۰');
     expect(text).not.toContain('؋ ۳۰');
     expect(
@@ -281,7 +272,7 @@ describe('AddPropertyScreen: location is free and has two ways in', () => {
     answerGeocoder(KABUL_SPOT, routes);
     const tree = await render(screenElement(AddPropertyScreen, navigation()));
     await settle();
-    expect(allText(tree.root)).toContain(prs.add.addressRequired);
+    expect(allText(tree.root)).toContain(prs.add.locationHint);
 
     await fillBasics(tree.root);
     await press(tree.root, prs.add.submit);
@@ -294,8 +285,8 @@ describe('AddPropertyScreen: location is free and has two ways in', () => {
     answerGeocoder(KABUL_SPOT, routes);
     const tree = await render(screenElement(AddPropertyScreen, navigation()));
     await settle();
-    const field = inputLabelled(tree.root, prs.add.address);
-    expect(field.props.placeholder).toBe(prs.add.addressPlaceholder);
+    const field = inputLabelled(tree.root, prs.add.place);
+    expect(field.props.placeholder).toBe(prs.add.placePlaceholder);
     expect(field.props.multiline).toBe(true);
     // The old boxes ("ناحیه یا ولسوالی", "محله") are gone.
     expect(() => inputLabelled(tree.root, 'ناحیه یا ولسوالی')).toThrow();
@@ -310,7 +301,7 @@ describe('AddPropertyScreen: location is free and has two ways in', () => {
     await type(tree.root, prs.add.descriptionLabel, 'خانه نو با دو اتاق خواب');
     await type(tree.root, prs.dealPrice.SALE, '1200000');
     await type(tree.root, prs.add.area, '120');
-    await type(tree.root, prs.add.address, WRITTEN_ADDRESS);
+    await type(tree.root, prs.add.place, WRITTEN_ADDRESS);
     await press(tree.root, prs.home.selectProvince);
     await press(tree.root, 'کابل');
     expect(allText(tree.root)).toMatch(
@@ -337,13 +328,13 @@ describe('AddPropertyScreen: location is free and has two ways in', () => {
     answerGeocoder(KABUL_SPOT, routes);
     const tree = await render(screenElement(AddPropertyScreen, navigation()));
     await settle();
-    await press(tree.root, prs.propertyType.LAND);
+    await chooseType(tree.root, 'LAND');
     expect(allText(tree.root)).not.toContain(prs.add.bedrooms);
     await type(tree.root, prs.add.titleField, 'زمین رهایشی');
     await type(tree.root, prs.add.descriptionLabel, 'خانه نو با دو اتاق خواب');
     await type(tree.root, prs.dealPrice.SALE, '900000');
     await type(tree.root, prs.add.area, '300');
-    await type(tree.root, prs.add.address, WRITTEN_ADDRESS);
+    await type(tree.root, prs.add.place, WRITTEN_ADDRESS);
     await press(tree.root, prs.home.selectProvince);
     await press(tree.root, 'کابل');
     await press(tree.root, prs.add.submit);
@@ -383,17 +374,17 @@ describe('AddPropertyScreen: location is free and has two ways in', () => {
       tapMap(tree.root, 'location-picker-map', [69.1, 34.5]),
     );
     expect(mapParts(tree.root, 'ViewAnnotation')).toHaveLength(1);
-    expect(allText(tree.root)).toContain(prs.add.addressOptional);
+    expect(allText(tree.root)).toContain(prs.add.locationHint);
     await afterLookupDelay();
 
     expect(geocoderCalls()).toHaveLength(1);
     expect(String(geocoderCalls()[0][0])).toContain('lat=34.5');
     expect(String(geocoderCalls()[0][0])).toContain('lon=69.1');
-    expect(allText(tree.root)).toContain(prs.add.filled);
+    expect(allText(tree.root)).not.toContain(prs.map.tapToPlace);
     // One address field, written wide to narrow; the district and neighbourhood ride along unseen.
     expect(
-      inputLabelled(tree.root, optional(prs.add.address)).props.value,
-    ).toBe('ناحیه سوم، شهر نو، سرک چهارم');
+      inputLabelled(tree.root, prs.add.place).props.value,
+    ).toBe('کابل، ناحیه سوم، شهر نو، سرک چهارم');
 
     await press(tree.root, prs.add.submit);
     await settle();
@@ -403,11 +394,11 @@ describe('AddPropertyScreen: location is free and has two ways in', () => {
       province: 'کابل',
       district: 'ناحیه سوم',
       neighborhood: 'شهر نو',
-      address: 'ناحیه سوم، شهر نو، سرک چهارم',
+      address: 'کابل، ناحیه سوم، شهر نو، سرک چهارم',
     });
   });
 
-  it('publishes with a pin and no written address when the service knows nothing, guessing the province', async () => {
+  it('does not publish a pin with no written address, even when the service knows nothing; the address then unlocks it', async () => {
     answerGeocoder('down', routes);
     const tree = await render(screenElement(AddPropertyScreen, navigation()));
     await settle();
@@ -418,13 +409,37 @@ describe('AddPropertyScreen: location is free and has two ways in', () => {
     await afterLookupDelay();
     expect(allText(tree.root)).toContain(prs.add.provinceGuessed);
 
+    // The pin is not enough: the address is always required.
+    await press(tree.root, prs.add.submit);
+    await settle();
+    expect(posted()).toBeUndefined();
+    expect(allText(tree.root)).toContain(prs.add.addressMissing);
+
+    await type(tree.root, prs.add.place, 'کابل، کوچه‌ی سوم');
     await press(tree.root, prs.add.submit);
     await settle();
     expect(posted()?.body).toMatchObject({
       lat: 34.5,
       lng: 69.1,
       province: 'کابل',
+      address: 'کابل، کوچه‌ی سوم',
     });
+  });
+
+  it('publishes an address with no pin at all: the pin is optional', async () => {
+    answerGeocoder('down', routes);
+    const tree = await render(screenElement(AddPropertyScreen, navigation()));
+    await settle();
+    await fillBasics(tree.root);
+    await press(tree.root, prs.home.selectProvince);
+    await press(tree.root, 'هرات');
+    await type(tree.root, prs.add.place, 'هرات، شهر نو، سرک دوم');
+    await press(tree.root, prs.add.submit);
+    await settle();
+    const body = posted()?.body;
+    expect(body).toMatchObject({ address: 'هرات، شهر نو، سرک دوم' });
+    expect(body).not.toHaveProperty('lat');
+    expect(body).not.toHaveProperty('lng');
   });
 
   it('asks the service once for a burst of taps, about the last spot', async () => {
@@ -448,14 +463,14 @@ describe('AddPropertyScreen: location is free and has two ways in', () => {
       tapMap(tree.root, 'location-picker-map', [69.1, 34.5]),
     );
     await afterLookupDelay();
-    await type(tree.root, optional(prs.add.address), 'خانه‌ی شماره ۵');
+    await type(tree.root, prs.add.place, 'خانه‌ی شماره ۵');
 
     await act(async () =>
       tapMap(tree.root, 'location-picker-map', [69.2, 34.6]),
     );
     await afterLookupDelay();
     expect(
-      inputLabelled(tree.root, optional(prs.add.address)).props.value,
+      inputLabelled(tree.root, prs.add.place).props.value,
     ).toBe('خانه‌ی شماره ۵');
   });
 
@@ -476,12 +491,15 @@ describe('AddPropertyScreen: location is free and has two ways in', () => {
 describe('AddPropertyScreen: the form itself', () => {
   const routes = { 'POST /properties': { status: 201, body: listing() } };
 
-  it('lists the property types in the agreed order', async () => {
+  it('lists the property types in the agreed order, in a dropdown that shows only the chosen one until opened', async () => {
     answerGeocoder(KABUL_SPOT, routes);
     const tree = await render(screenElement(AddPropertyScreen, navigation()));
     await settle();
-    const text = allText(tree.root);
-    const order = [
+    const closed = allText(tree.root);
+    expect(closed).toContain(prs.propertyType.HOUSE_HAWILI);
+    expect(closed).not.toContain(prs.propertyType.VILLA);
+    const rows = await typeOptions(tree.root);
+    expect(rows.map(row => row.label)).toEqual([
       prs.propertyType.HOUSE_HAWILI,
       prs.propertyType.APARTMENT,
       prs.propertyType.SHOP,
@@ -491,9 +509,7 @@ describe('AddPropertyScreen: the form itself', () => {
       prs.propertyType.VILLA,
       prs.propertyType.GARAGE,
       prs.propertyType.OTHER,
-    ].map(label => text.indexOf(label));
-    expect(order.every(index => index >= 0)).toBe(true);
-    expect([...order].sort((a, b) => a - b)).toEqual(order);
+    ]);
   });
 
   it('puts rooms and bathrooms next to price and area, and sends what the steppers say', async () => {
@@ -518,7 +534,7 @@ describe('AddPropertyScreen: the form itself', () => {
     answerGeocoder(KABUL_SPOT, routes);
     const tree = await render(screenElement(AddPropertyScreen, navigation()));
     await settle();
-    await press(tree.root, prs.propertyType.LAND);
+    await chooseType(tree.root, 'LAND');
     expect(allText(tree.root)).not.toContain(prs.add.bedrooms);
   });
 
@@ -611,26 +627,14 @@ describe('AddPropertyScreen: a sliding sheet with friendly hints', () => {
     expect(sheetOf(tree.root).length).toBeGreaterThan(0);
   });
 
-  it('gives the shop, office, garden, villa, garage and other each a chip of its own, not a grouped one', async () => {
+  it('gives the shop, office, garden, villa, garage and other each a row of its own, not a grouped one', async () => {
     const { tree } = await open();
-    for (const kind of [
-      'SHOP',
-      'OFFICE',
-      'GARDEN',
-      'VILLA',
-      'GARAGE',
-      'OTHER',
-    ] as const) {
-      const chip = tree.root.findAll(
-        n =>
-          n.props.accessibilityRole === 'button' &&
-          typeof n.props.onPress === 'function' &&
-          allText(n).trim() === prs.propertyType[kind],
-      );
-      expect(chip.length).toBeGreaterThan(0);
+    const rows = await typeOptions(tree.root);
+    for (const kind of ['SHOP', 'OFFICE', 'GARDEN', 'VILLA', 'GARAGE', 'OTHER'] as const) {
+      expect(rows.find(row => row.value === kind)?.label.trim()).toBe(prs.propertyType[kind]);
     }
-    // No label joins two kinds into one chip any more.
-    expect(allText(tree.root)).not.toMatch(
+    // No label joins two kinds into one row any more.
+    expect(rows.map(row => row.label).join(' ')).not.toMatch(
       /دکان و دفتر|باغ و ویلا|گاراج و غیره/,
     );
   });
@@ -653,7 +657,7 @@ describe('AddPropertyScreen: a sliding sheet with friendly hints', () => {
       'OTHER',
       'HOUSE_HAWILI',
     ] as const) {
-      await press(tree.root, prs.propertyType[kind]);
+      await chooseType(tree.root, kind);
       const hint = placeholderOf(tree.root, prs.add.titleField);
       expect(hint).toBe(prs.add.titleExamples[kind]);
       seen.add(hint);
@@ -678,8 +682,8 @@ describe('AddPropertyScreen: a sliding sheet with friendly hints', () => {
     expect(placeholderOf(root, prs.add.descriptionLabel)).toBe(
       prs.add.descriptionPlaceholder,
     );
-    expect(placeholderOf(root, prs.add.address)).toBe(
-      prs.add.addressPlaceholder,
+    expect(placeholderOf(root, prs.add.place)).toBe(
+      prs.add.placePlaceholder,
     );
     for (const input of root.findAllByType(TextInput)) {
       expect(String(input.props.placeholder ?? '')).not.toBe('۰');
@@ -687,25 +691,109 @@ describe('AddPropertyScreen: a sliding sheet with friendly hints', () => {
     }
   });
 
-  it('shows a dollar example once dollars are chosen, and a jerib example for jerib', async () => {
+  it('shows a dollar example once dollars are chosen', async () => {
     const { tree } = await open();
     await press(tree.root, prs.currency.USD);
     expect(placeholderOf(tree.root, prs.dealPrice.SALE)).toBe('۲۵,۰۰۰');
-    await pressTab(tree.root, prs.unit.jerib);
-    expect(placeholderOf(tree.root, prs.add.area)).toBe('۲');
   });
 
-  it('has the jerib info next to the area, with this area worked out', async () => {
+  it('has only square metres for the area: no unit tabs, no jerib info, the typed area is written back in square metres', async () => {
     const { tree } = await open();
     await type(tree.root, prs.add.area, '1000');
+    const text = allText(tree.root);
+    expect(text).not.toContain('جریب');
+    expect(tree.root.findAll(n => n.props.testID === 'jerib-info')).toHaveLength(0);
+    expect(text).toContain('۱,۰۰۰ متر مربع');
+  });
+});
+
+describe('AddPropertyScreen: the form in its new order', () => {
+  const routes = { 'POST /properties': { status: 201, body: listing() } };
+  const open = async () => {
+    answerGeocoder(KABUL_SPOT, routes);
+    const tree = await render(screenElement(AddPropertyScreen, navigation()));
+    await settle();
+    return tree;
+  };
+  const priceChips = (root: ReactTestRenderer.ReactTestInstance, label: string) =>
+    root.findAll(
+      n =>
+        n.props.accessibilityRole === 'button' &&
+        typeof n.props.onPress === 'function' &&
+        allText(n).trim() === label,
+    );
+
+  it('starts with the place: its card, then the main details, then price and the description', async () => {
+    const tree = await open();
+    const text = allText(tree.root);
+    const at = (needle: string) => text.indexOf(needle);
+    expect(at(prs.add.sectionPlace)).toBeGreaterThanOrEqual(0);
+    expect(at(prs.add.sectionPlace)).toBeLessThan(at(prs.add.titleField));
+    expect(at(prs.add.sectionPlace)).toBeLessThan(at(prs.add.type));
+    // The map's instruction is in that first card too, ahead of the title field.
+    expect(at(prs.add.locationHint)).toBeGreaterThanOrEqual(0);
+    expect(at(prs.add.locationHint)).toBeLessThan(at(prs.add.titleField));
+  });
+
+  it('has one help line for the map and no other: the address hint, the title above and the tap hint under it are gone', async () => {
+    const tree = await open();
+    const text = allText(tree.root);
+    expect(text).toContain(prs.add.locationHint);
+    expect(prs.add.locationHint).toBe('برای پیدا کردن بهتر موقعیت (خانه، دکان، ...) آن را در نقشه نشان دهید');
+    expect(text.split(prs.add.locationHint)).toHaveLength(2); // once
+    expect(text).not.toContain(prs.map.tapToPlace);
+    expect(text).not.toContain('گذاشتن نقطه روی نقشه اختیاری است');
+    expect(text).not.toContain('نقطه‌ی ملک را روی نقشه لمس کنید');
+    expect(tree.root.findAll(n => n.props.testID === 'location-hint').length).toBeGreaterThan(0);
+  });
+
+  it('shows the currency as two compact pills, the same chips as the price terms, with the chosen one filled', async () => {
+    const tree = await open();
+    const afghani = priceChips(tree.root, prs.currency.AFGHANI);
+    const dollar = priceChips(tree.root, prs.currency.USD);
+    expect(afghani.length).toBeGreaterThan(0);
+    expect(dollar.length).toBeGreaterThan(0);
+    // They are chips (a button with a selected state), not tabs of a segmented bar.
+    expect(tree.root.findAll(n => n.props.accessibilityRole === 'tab' && [prs.currency.AFGHANI, prs.currency.USD].includes(allText(n).trim()))).toHaveLength(0);
+    expect(afghani[0].props.accessibilityState).toMatchObject({ selected: true });
+    expect(dollar[0].props.accessibilityState).toMatchObject({ selected: false });
     await act(async () => {
-      tree.root
-        .findAll(n => n.props.testID === 'jerib-info')
-        .find(n => typeof n.props.onPress === 'function')!
-        .props.onPress();
+      dollar[0].props.onPress();
     });
-    expect(allText(tree.root)).toContain(prs.property.jeribInfoTitle);
-    expect(allText(tree.root)).toContain('۱,۰۰۰ متر مربع، یعنی حدود ۰٫۵ جریب');
+    expect(priceChips(tree.root, prs.currency.USD)[0].props.accessibilityState).toMatchObject({ selected: true });
+    expect(priceChips(tree.root, prs.currency.AFGHANI)[0].props.accessibilityState).toMatchObject({ selected: false });
+  });
+
+  it('chooses the property type in a dropdown you can search', async () => {
+    const tree = await open();
+    const box = tree.root.find(n => n.props.testID === 'type-select' && typeof n.props.onPress === 'function');
+    expect(allText(box)).toContain(prs.propertyType.HOUSE_HAWILI);
+    await act(async () => box.props.onPress());
+    const search = tree.root.find(n => n.props.testID === 'type-select-search');
+    const rows = () =>
+      tree.root.findAll(n => String(n.props.testID ?? '').startsWith('type-select-option-') && typeof n.props.onPress === 'function');
+    expect(rows()).toHaveLength(9);
+    // Typing part of a name narrows the list.
+    await act(async () => search.props.onChangeText('آپار'));
+    expect(rows().map(r => r.props.testID)).toEqual(['type-select-option-APARTMENT']);
+    await act(async () => search.props.onChangeText('دف'));
+    expect(rows().map(r => r.props.testID)).toEqual(['type-select-option-OFFICE']);
+    await act(async () => search.props.onChangeText('zzz'));
+    expect(rows()).toHaveLength(0);
+    expect(tree.root.findAll(n => n.props.testID === 'type-select-empty').length).toBeGreaterThan(0);
+    // Picking a row sets the type and closes the list.
+    await act(async () => search.props.onChangeText(''));
+    await act(async () => rows().find(r => r.props.testID === 'type-select-option-LAND')!.props.onPress());
+    expect(allText(tree.root.find(n => n.props.testID === 'type-select' && typeof n.props.onPress === 'function'))).toContain(prs.propertyType.LAND);
+    // (The sheet slides away over a moment, so what is checked is that the box no longer says it is open.)
+    expect(tree.root.find(n => n.props.testID === 'type-select' && typeof n.props.onPress === 'function').props.accessibilityState).toMatchObject({ expanded: false });
+  });
+
+  it('keeps no chip grid for the type, so the form stays short', async () => {
+    const tree = await open();
+    for (const kind of ['VILLA', 'GARAGE', 'SHOP']) {
+      expect(priceChips(tree.root, (prs.propertyType as Record<string, string>)[kind])).toHaveLength(0);
+    }
   });
 });
 
@@ -999,7 +1087,7 @@ describe('AddPropertyScreen: the unit of the property', () => {
   it('keeps what was written when the type is changed', async () => {
     const tree = await open();
     await type(tree.root, unitLabel, 'واحد ۳');
-    await press(tree.root, prs.propertyType.APARTMENT);
+    await chooseType(tree.root, 'APARTMENT');
     expect(inputLabelled(tree.root, unitLabel).props.value).toBe('واحد ۳');
   });
 });
@@ -1011,11 +1099,26 @@ describe('AddPropertyScreen: the form moves the map', () => {
     jest.requireMock('@maplibre/maplibre-react-native').__flyTo as jest.Mock;
   const searches = () =>
     fetchMock.mock.calls.filter(([url]) => String(url).startsWith(SEARCH));
+  /**
+   * Waits out the pause after the typing, the place suggestions (which find nothing here: neither the API nor
+   * Photon is answered) and the written address's own search that follows.
+   */
   const afterSyncDelay = () =>
     act(async () => {
       await new Promise<void>(resolve =>
-        setTimeout(() => resolve(), ADDRESS_SYNC_DELAY_MS + 80),
+        setTimeout(() => resolve(), SUGGEST_DELAY_MS + 120),
       );
+    });
+  /** Typing in the place field as a person does: it has the focus (text set from outside is not a search). */
+  const typePlace = (
+    root: ReactTestRenderer.ReactTestInstance,
+    label: string,
+    text: string,
+  ) =>
+    act(async () => {
+      const input = inputLabelled(root, label);
+      input.props.onFocus?.();
+      input.props.onChangeText(text);
     });
 
   /** The geocoder answering a written address (search) as well as a pin (reverse). */
@@ -1048,7 +1151,7 @@ describe('AddPropertyScreen: the form moves the map', () => {
     await press(tree.root, 'هرات');
     flyTo().mockClear();
 
-    await type(tree.root, prs.add.address, 'پوهنتون جامی');
+    await typePlace(tree.root, prs.add.place, 'پوهنتون جامی');
     expect(searches()).toHaveLength(0); // it waits for the typing to stop
     await afterSyncDelay();
 
@@ -1067,9 +1170,9 @@ describe('AddPropertyScreen: the form moves the map', () => {
     answer(HERAT);
     const tree = await render(screenElement(AddPropertyScreen, navigation()));
     await settle();
-    await type(tree.root, prs.add.address, 'هرات');
-    await type(tree.root, prs.add.address, 'هرات، جاده');
-    await type(tree.root, prs.add.address, 'هرات، جاده ملک');
+    await typePlace(tree.root, prs.add.place, 'هرات');
+    await typePlace(tree.root, prs.add.place, 'هرات، جاده');
+    await typePlace(tree.root, prs.add.place, 'هرات، جاده ملک');
     await afterSyncDelay();
     expect(searches()).toHaveLength(1);
     expect(decodeURIComponent(String(searches()[0][0]))).toContain(
@@ -1091,18 +1194,43 @@ describe('AddPropertyScreen: the form moves the map', () => {
     answer([]);
     const tree = await render(screenElement(AddPropertyScreen, navigation()));
     await settle();
-    await type(tree.root, prs.add.address, 'جایی که نیست');
+    await typePlace(tree.root, prs.add.place, 'جایی که نیست');
     await afterSyncDelay();
     expect(allText(tree.root)).toContain(prs.add.mapNotFound);
-    expect(inputLabelled(tree.root, prs.add.address).props.value).toBeTruthy();
+    expect(inputLabelled(tree.root, prs.add.place).props.value).toBeTruthy();
     expect(flyTo()).not.toHaveBeenCalled();
+  });
+
+  it('goes to the chosen province when the written address is not on the map, and says so', async () => {
+    answer([]);
+    const tree = await render(screenElement(AddPropertyScreen, navigation()));
+    await settle();
+    await press(tree.root, prs.home.selectProvince);
+    await press(tree.root, 'هرات');
+    flyTo().mockClear();
+
+    await typePlace(tree.root, prs.add.place, 'جایی که نیست');
+    await afterSyncDelay();
+    // The province is added to the question, so there is a second one (the first part alone), a pause later.
+    await act(async () => {
+      await new Promise<void>(resolve => setTimeout(() => resolve(), 1500));
+    });
+    const herat = provinceCamera(findProvince('هرات')!);
+    expect(flyTo()).toHaveBeenCalledWith(
+      expect.objectContaining({ center: herat.center }),
+    );
+    expect(allText(tree.root)).toContain(
+      prs.add.mapNotFoundProvince.replace('{{province}}', 'هرات'),
+    );
+    // What was typed is kept.
+    expect(inputLabelled(tree.root, prs.add.place).props.value).toBe('جایی که نیست');
   });
 
   it('stays quiet and keeps working when the address service is down', async () => {
     answer('down');
     const tree = await render(screenElement(AddPropertyScreen, navigation()));
     await settle();
-    await type(tree.root, prs.add.address, 'کابل، شهر نو');
+    await typePlace(tree.root, prs.add.place, 'کابل، شهر نو');
     await afterSyncDelay();
     expect(flyTo()).not.toHaveBeenCalled();
     expect(allText(tree.root)).not.toContain(prs.add.mapNotFound);
@@ -1121,8 +1249,8 @@ describe('AddPropertyScreen: the form moves the map', () => {
     );
     await afterLookupDelay();
     expect(
-      inputLabelled(tree.root, optional(prs.add.address)).props.value,
-    ).toBe('ناحیه سوم، شهر نو، سرک چهارم');
+      inputLabelled(tree.root, prs.add.place).props.value,
+    ).toBe('کابل، ناحیه سوم، شهر نو، سرک چهارم');
     await afterSyncDelay();
     expect(searches()).toHaveLength(0);
   });
@@ -1135,9 +1263,9 @@ describe('AddPropertyScreen: the form moves the map', () => {
       tapMap(tree.root, 'location-picker-map', [69.1, 34.5]),
     );
     await afterLookupDelay();
-    await type(
+    await typePlace(
       tree.root,
-      optional(prs.add.address),
+      prs.add.place,
       'ناحیه سوم، شهر نو، سرک پنجم',
     );
     await afterSyncDelay();
@@ -1174,8 +1302,8 @@ describe('AddPropertyScreen: the map fills the form', () => {
     expect(String(geocoderCalls().at(-1)![0])).toContain('lat=34.5');
     expect(String(geocoderCalls().at(-1)![0])).toContain('lon=69.1');
     expect(
-      inputLabelled(tree.root, optional(prs.add.address)).props.value,
-    ).toBe('ناحیه سوم، شهر نو، سرک چهارم');
+      inputLabelled(tree.root, prs.add.place).props.value,
+    ).toBe('کابل، ناحیه سوم، شهر نو، سرک چهارم');
 
     await fillBasicsOnly(tree.root);
     await press(tree.root, prs.add.submit);

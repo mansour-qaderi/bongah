@@ -216,9 +216,8 @@ describe('BalanceScreen', () => {
       prs.ladder.unlockQuota.replace('{{total}}', listing),
     );
     expect(unlock.props.disabled).toBe(true);
-    expect(allText(tree.root)).toContain(
-      prs.ladder.unlockWait.replace('{{total}}', listing),
-    );
+    // No grey "your free listing is not used up yet" line under the explanation: the disabled button says it.
+    expect(allText(tree.root)).not.toContain('هنوز تمام نشده است');
   });
 
   it('spends seven ladders on one more listing once the month is used up', async () => {
@@ -239,16 +238,19 @@ describe('BalanceScreen', () => {
     expect(toasts.messages).toContain(prs.ladder.unlocked);
   });
 
-  it('says three are needed when fewer are held and the month is used up', async () => {
+  it('keeps the unlock button off, without an extra line, when fewer are held and the month is used up', async () => {
     mockApi(fetchMock, {
       'GET /wallet': wallet(2, { used: 1 }),
       'GET /pricing': PRICING,
     });
     const [n, el] = balance();
     const tree = await mount(el);
-    expect(allText(tree.root)).toContain(
-      prs.ladder.unlockNeeds.replace('{{total}}', listing),
-    );
+    expect(
+      pressableWith(
+        tree.root,
+        prs.ladder.unlockQuota.replace('{{total}}', listing),
+      ).props.disabled,
+    ).toBe(true);
     await press(tree, prs.ladder.inviteFriends);
     expect(n.navigate).toHaveBeenCalledWith('Referral');
   });

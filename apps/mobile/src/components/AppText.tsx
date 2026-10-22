@@ -1,11 +1,22 @@
 import React from 'react';
-import { StyleSheet, Text, type TextProps, type TextStyle } from 'react-native';
+import {
+  Animated,
+  StyleSheet,
+  Text,
+  type TextProps,
+  type TextStyle,
+} from 'react-native';
 import { toPersianDigits } from '../i18n/format';
 import { colors, fontFamilyFor, typography, type TextVariant } from '../theme';
 
 interface Props extends TextProps {
   variant?: TextVariant;
   color?: string;
+  /**
+   * A colour that moves (an `Animated` interpolation, for a tab's label while its pill fills in). It replaces `color`,
+   * and the text is then drawn by `Animated.Text`.
+   */
+  animatedColor?: Animated.AnimatedInterpolation<string>;
   /**
    * Keep the digits as they are (codes, links, ids that a person copies or types back). Everything else shows
    * Persian digits whatever was put in, so no screen has to remember to convert a number.
@@ -36,6 +47,7 @@ function persianChildren(children: React.ReactNode): React.ReactNode {
 export default function AppText({
   variant = 'body',
   color = colors.text,
+  animatedColor,
   style,
   latinDigits = false,
   children,
@@ -49,9 +61,17 @@ export default function AppText({
   const { fontWeight, ...textStyle } = flat;
   if (fontWeight !== undefined)
     textStyle.fontFamily = fontFamilyFor(fontWeight);
+  const content = latinDigits ? children : persianChildren(children);
+  if (animatedColor) {
+    return (
+      <Animated.Text {...rest} style={[textStyle, { color: animatedColor }]}>
+        {content}
+      </Animated.Text>
+    );
+  }
   return (
     <Text {...rest} style={textStyle}>
-      {latinDigits ? children : persianChildren(children)}
+      {content}
     </Text>
   );
 }

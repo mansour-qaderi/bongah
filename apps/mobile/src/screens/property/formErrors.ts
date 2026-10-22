@@ -1,6 +1,5 @@
 import type { TFunction } from 'i18next';
 import { ApiError } from '../../api/client';
-import { formatNumber } from '../../i18n/format';
 
 /** The error text under each field of the listing form, by field. */
 export type FieldErrors = Partial<Record<string, string>>;
@@ -10,6 +9,9 @@ export type FieldErrors = Partial<Record<string, string>>;
  * the form can show it under the right field and scroll to the first one.
  */
 export const FORM_FIELDS = [
+  'address',
+  'province',
+  'location',
   'title',
   'type',
   'unit',
@@ -21,9 +23,6 @@ export const FORM_FIELDS = [
   'area_sqm',
   'bedrooms',
   'bathrooms',
-  'location',
-  'province',
-  'address',
   'description',
   'images',
 ] as const;
@@ -44,7 +43,7 @@ const LABEL_KEYS = {
   bathrooms: 'add.bathrooms',
   location: 'add.location',
   province: 'add.province',
-  address: 'add.address',
+  address: 'add.place',
   description: 'add.descriptionLabel',
   images: 'add.images',
 } as const satisfies Record<FormField, string>;
@@ -53,8 +52,10 @@ const LABEL_KEYS = {
 export function formFieldFor(name: string): FormField | null {
   const head = name.split('.')[0].trim();
   switch (head) {
+    // An outline belongs to the same map as the pin.
     case 'lat':
     case 'lng':
+    case 'boundary':
       return 'location';
     // The district and neighbourhood have no box of their own: what is wrong with them is wrong with the address.
     case 'district':
@@ -184,20 +185,34 @@ export function serverFieldErrors(
 export const failingFields = (errors: FieldErrors): FormField[] =>
   FORM_FIELDS.filter(field => Boolean(errors[field]));
 
+/** A field's label as the toast lists it: without its "(اختیاری)" note. */
+const labelOf = (field: FormField, t: TFunction): string =>
+  t(LABEL_KEYS[field]).replace(/\s*\([^)]*\)\s*$/, '');
+
 /**
- * The words of the toast: the first field that needs fixing, named, with what is wrong with it, and how many more
- * there are. ("قیمت: قیمت را به عدد … و ۱ مورد دیگر")
+ * The words of the toast, one sentence that names every field that needs the person, so nothing is left to guess:
+ * "لطفاً فیلدهای ضروری (عنوان آگهی، مساحت) را تکمیل نمایید." for what is missing, "لطفاً فیلدهای (قیمت) را اصلاح
+ * نمایید." for what is filled in wrongly, or both in one sentence. What exactly is wrong with each stays under its own
+ * field. (A field is "missing" when its error is the one `fieldMessage` gives for a missing value.)
  */
 export function toastForErrors(errors: FieldErrors, t: TFunction): string {
   const fields = failingFields(errors);
   if (fields.length === 0) return '';
-  const first = fields[0];
-  const head = `${t(LABEL_KEYS[first]).replace(/\s*\([^)]*\)\s*$/, '')}: ${
-    errors[first]
-  }`;
-  return fields.length > 1
-    ? `${head} ${t('add.error.more', {
-        count: formatNumber(fields.length - 1, 0),
-      })}`
-    : head;
+  const missing: string[] = [];
+  const invalid: string[] = [];
+  for (const field of fields) {
+    (errors[field] === fieldMessage(field, 'required', t) ? missing : invalid).push(
+      labelOf(field, t),
+    );
+  }
+  const list = (names: string[]) => names.join('، ');
+  if (missing.length > 0 && invalid.length > 0) {
+    return t('add.error.completeAndFix', {
+      missing: list(missing),
+      invalid: list(invalid),
+    });
+  }
+  return missing.length > 0
+    ? t('add.error.completeFields', { fields: list(missing) })
+    : t('add.error.fixFields', { fields: list(invalid) });
 }

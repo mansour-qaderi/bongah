@@ -1,7 +1,7 @@
 import React, { useCallback, useMemo, useRef, useState } from 'react';
 import { Marker } from '@maplibre/maplibre-react-native';
 import type { AgencyMapPin, Property } from '@bongah/shared-types';
-import BaseMap from '../map/BaseMap';
+import BaseMap, { type MapViewChange } from '../map/BaseMap';
 import {
   clusterPoints,
   inBounds,
@@ -43,11 +43,7 @@ interface Props {
    * The map settled: how far in it is and what part of the world it shows. Lets the screen fly to a chosen
    * listing without zooming out, and ask the server for just what is on screen.
    */
-  onViewChange?: (view: {
-    zoom: number;
-    bounds: Bounds;
-    userMoved: boolean;
-  }) => void;
+  onViewChange?: (view: MapViewChange) => void;
   /** Empty map was tapped: not a marker, not a cluster and not inside a plot. */
   onPressMap?: () => void;
 }
@@ -65,7 +61,7 @@ const hasFeatured = (cluster: Cluster<MapItem>): boolean =>
 
 /** The most markers drawn at once. Each one is a native view, so this keeps panning smooth. */
 const MAX_MARKERS = 120;
-/** From here on, markers carry their price (or name): the map is close enough that there is room for it. */
+/** From here on, markers carry their title (or an office's name): the map is close enough that there is room for it. */
 export const LABEL_ZOOM = 14;
 
 /**
@@ -196,7 +192,7 @@ export default function PropertyMap({
             <PropertyMarker
               property={item.property}
               selected={isSelected}
-              showPrice={showLabels}
+              showLabel={showLabels}
             />
           </Marker>
         ) : (
@@ -210,7 +206,7 @@ export default function PropertyMap({
             <AgencyMarker
               agency={item.agency}
               selected={isSelected}
-              showPrice={showLabels}
+              showLabel={showLabels}
             />
           </Marker>
         );

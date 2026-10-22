@@ -24,6 +24,10 @@ interface Props {
    * job too (the map is not ours), and it ends the same way.
    */
   onClose: () => void;
+  /** «مسیریابی» in the card: directions to the listing (the card shows no such button when this is left out). */
+  onNavigate?: (property: Property) => void;
+  /** The phone is being located for those directions. */
+  navigating?: boolean;
 }
 
 const ENTER_MS = 260;
@@ -56,6 +60,8 @@ export default function PropertyBottomSheet({
   property,
   onOpenDetails,
   onClose,
+  onNavigate,
+  navigating = false,
 }: Props) {
   const insets = useSafeAreaInsets();
   // What is drawn. It follows `property`, but outlives it while the sheet slides away.
@@ -179,6 +185,12 @@ export default function PropertyBottomSheet({
           property={content}
           onOpen={() => onOpenDetails(content)}
           onClose={() => closeRef.current()}
+          onNavigate={
+            onNavigate && content.lat !== null && content.lng !== null
+              ? () => onNavigate(content)
+              : undefined
+          }
+          navigating={navigating}
         />
         {/* The sheet reaches the screen's edge (the tab bar steps aside), so its colour continues under the
             gesture bar / home indicator instead of leaving the map showing through. */}

@@ -206,6 +206,15 @@ describe('AccountScreen dashboard', () => {
   });
 });
 
+describe('AccountScreen: no jerib converter', () => {
+  it('has no «تبدیل مساحت به جریب» line, and no jerib anywhere on the screen', async () => {
+    const { tree } = await mount();
+    const text = allText(tree.root);
+    expect(text).not.toContain('جریب');
+    expect(tree.root.findAll(n => String(n.props.testID ?? '').startsWith('jerib'))).toHaveLength(0);
+  });
+});
+
 describe('AccountScreen balance line', () => {
   const rowOf = (tree: ReactTestRenderer.ReactTestRenderer) =>
     pressableWith(tree.root, prs.account.balanceTitle);

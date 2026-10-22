@@ -1,11 +1,19 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  AppState,
+  Linking,
+  Modal,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
   View,
 } from 'react-native';
+import {
+  SafeAreaProvider,
+  SafeAreaView,
+} from 'react-native-safe-area-context';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
@@ -42,12 +50,17 @@ import Button from '../../components/Button';
 import Card from '../../components/Card';
 import { Chip } from '../../components/Chip';
 import FramePayStep from '../../components/FramePayStep';
-import JeribInfoButton from '../../components/JeribInfo';
 import LadderUnlockBanner from '../../components/LadderUnlockBanner';
 import { KeyboardAwareScrollView } from '../../components/KeyboardAware';
+import LocationEditor from '../../components/LocationEditor';
+import LocationPermissionModal, {
+  type LocationProblem,
+} from '../../components/LocationPermissionModal';
 import PinSection from '../../components/PinSection';
+import PlaceSearchField from '../../components/PlaceSearchField';
 import ProvincePicker from '../../components/ProvincePicker';
 import SegmentedControl from '../../components/SegmentedControl';
+import SelectField from '../../components/SelectField';
 import Stepper from '../../components/Stepper';
 import SwitchRow from '../../components/SwitchRow';
 import { showToast } from '../../components/Toast';
@@ -58,13 +71,14 @@ import {
   provinceValue,
   type Province,
 } from '../../constants/provinces';
+import { hasRoomsFor } from '../../constants/propertyRooms';
 import {
   formatDate,
   formatNumber,
-  jeribToSqm,
   parseNumberInput,
 } from '../../i18n/format';
 import { propertyTypeLabel } from '../../i18n/propertyType';
+import { propertyLineIcon } from '../../map/markers';
 import { useFormat } from '../../i18n/useFormat';
 import {
   AFGHANISTAN_CAMERA,
@@ -76,8 +90,11 @@ import {
 } from '../../map/geo';
 import {
   findAddressLoosely as findOnMap,
-  lookUpPlace,
+  nearestProvince,
 } from '../../map/geocode';
+import type { MapViewChange } from '../../map/BaseMap';
+import { describeSpot, type ResolvedPlace } from '../../map/GeocodingService';
+import { locate } from '../../map/location';
 import type { RootStackParamList } from '../../navigation/types';
 import { useFeaturedCreditSpend } from '../../payments/useFeaturedCreditSpend';
 import { colors, radius, spacing } from '../../theme';
@@ -91,25 +108,21 @@ import {
   type FormField,
 } from './formErrors';
 import { monthsFromInput, splitMonths, type DurationUnit } from './mortgage';
+import { addressFrom, swapProvince } from '../../utils/addressLine';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'AddProperty'>;
-type AreaUnit = 'sqm' | 'jerib';
 type ViewNode = React.ComponentRef<typeof View>;
 /** What the pin's address lookup did: still asking, filled the form in, or the service could not say. */
 type Lookup = 'idle' | 'finding' | 'filled' | 'failed';
 /** What the map did about a written address: still looking, moved there, or did not know the place. */
-type MapSync = 'idle' | 'finding' | 'found' | 'none';
+type MapSync = 'idle' | 'finding' | 'found' | 'none' | 'province';
 
 const MAX_IMAGE_LINKS = 10;
 /** After the last tap on the map, wait this long before asking for the address: one question per settled pin. */
 export const LOOKUP_DELAY_MS = 700;
-/** After the last key in the address, wait this long before asking the map where it is. */
-export const ADDRESS_SYNC_DELAY_MS = 1000;
+/** How far in the map looks at the phone's position: a few streets, enough to find the property's own. */
+export const MY_POSITION_ZOOM = 16;
 const roundTo2 = (n: number) => Math.round(n * 100) / 100;
-
-/** Land, gardens, garages and "other" have no rooms to count. */
-const NO_ROOMS: readonly PropertyType[] = ['LAND', 'GARDEN', 'GARAGE', 'OTHER'];
-const hasRoomsFor = (type: PropertyType) => !NO_ROOMS.includes(type);
 
 /**
  * Only a house, an apartment or an office is "unit 3 of a building". Asking it of land, a garden, a garage or a shop
@@ -122,27 +135,27 @@ export const UNIT_TYPES: readonly PropertyType[] = [
 ];
 export const hasUnitFor = (type: PropertyType) => UNIT_TYPES.includes(type);
 
-/** The place a pin found, written the way a person would say it: wide to narrow, one line. */
-const addressFrom = (place: {
-  district: string;
-  neighborhood: string;
-  street: string;
-}) =>
-  [place.district, place.neighborhood, place.street].filter(Boolean).join('، ');
-
 /**
  * Post a listing, or (with a `propertyId`) change one of mine.
  *
- * The form and the map follow each other. Choose a province or write an address and the map flies there (it never
- * moves the pin, which only the person places); tap the map or drag the pin and the province and the address are
- * filled in from where it landed. Neither direction overwrites what the person typed.
+ * The form and the map follow each other. One field, "آدرس یا اسم مکان", takes an address or the name of a place
+ * nearby (a hospital, a university, a café) and suggests places as the person types (Google / Mapbox through the API,
+ * OpenStreetMap otherwise, see GeocodingService); picking one flies the map there and fills in the province. Tap the
+ * map or drag the pin, and the province and the address are filled in from where it is.
+ * Neither direction overwrites what the person typed, and only the person places the pin.
  *
- * Where it is can be said two ways: put a pin on the map, which is free for everyone and fills in the province and
- * the address by itself, or write the address out as one line ("زرنج، ناحیه ۵، پهلوی شفاخانه ABC، داخل کوچه
- * موتررو"). With a pin the address is optional; without one it is required. The district and neighbourhood are no
- * longer asked for: the pin supplies them (they feed the district filter) and a written address carries them in its
- * own words. Typed text is never overwritten by a later pin move: the address only follows the pin while the
- * person has not written their own.
+ * The map opens on the phone's position (the permission is asked for once, when the form opens) and can be made
+ * fullscreen for an exact pin. The property's place is its pin and only that: a pin in the colour of the deal (green
+ * for a sale, blue for a rent, orange for a mortgage), put by a tap and moved by dragging. There is no outline to
+ * draw and no area worked out from the map: the area is the number the person types.
+ *
+ * The address is always required, written out as one line ("نیمروز، زرنج، ناحیه ۴، پهلوی شفاخانه، داخل کوچه
+ * موتررو"); the pin is not. When the form opens the phone's position fills the province and the address in (if nobody
+ * has written or chosen anything yet); a pin writes the whole line, province first, into the field
+ * when it is empty; and a written address is looked up and the map goes there (to the province when the map does not
+ * know the address). The province is still stored on its own (the filters and the DB need it): it comes from the pin,
+ * the chosen place or the phone, and its small "تغییر" row under the field shows only while it is unknown or was only
+ * guessed.
  *
  * It is a sheet, not a page: a transparent route (see RootNavigator) holds a bottom sheet that slides up over the
  * screen it was opened from, exactly like the filter sheet, with the main button pinned at its foot. Anything that
@@ -177,7 +190,6 @@ export default function AddPropertyScreen({ navigation, route }: Props) {
   // The id of the listing just saved while its frame still has to be paid for: the sheet shows the payment step.
   const [payingFrame, setPayingFrame] = useState<string | null>(null);
   const [areaText, setAreaText] = useState('');
-  const [areaUnit, setAreaUnit] = useState<AreaUnit>('sqm');
   const [bedrooms, setBedrooms] = useState<number | null>(null);
   const [bathrooms, setBathrooms] = useState<number | null>(null);
   const [province, setProvince] = useState<Province | null>(null);
@@ -195,10 +207,35 @@ export default function AddPropertyScreen({ navigation, route }: Props) {
   // Where the map looks. It moves when a province is picked by hand or an existing listing is loaded, never
   // because a pin was just placed (it is already there) or the province was filled in from the pin.
   const [camera, setCamera] = useState<MapCamera>(AFGHANISTAN_CAMERA);
+  const [fullscreen, setFullscreen] = useState(false);
+  // Where the map is looking now (a finger moves it without telling `camera`), so the other map opens exactly there.
+  const view = useRef<{ center: MapCamera['center']; zoom: number } | null>(
+    null,
+  );
+  const keepView = useCallback((next: MapViewChange) => {
+    view.current = { center: next.center, zoom: next.zoom };
+  }, []);
+  // The phone's position (the blue dot), and the search for it.
+  const [me, setMe] = useState<Coordinate | null>(null);
+  const [locating, setLocating] = useState(false);
+  const [locationProblem, setLocationProblem] =
+    useState<LocationProblem | null>(null);
+  const [outside, setOutside] = useState(false);
+  // What the place field did with a chosen row: flew the map there, or could not find it.
+  const [placeNote, setPlaceNote] = useState<
+    { kind: 'chosen'; name: string } | { kind: 'notResolved' } | null
+  >(null);
+
+  const clearError = (field: string) =>
+    setErrors(current =>
+      current[field] ? { ...current, [field]: undefined } : current,
+    );
 
   // What the pin filled in last, so a later move only replaces what the person has not changed by hand.
   const filledWith = useRef({ address: '' });
   const provinceIsAuto = useRef(false);
+  // Fills the province and the address in from a spot (see findAddress, defined below the early returns).
+  const describePlace = useRef<(point: Coordinate) => void>(() => undefined);
   // The latest typed values, for the address lookup, which finishes after the person may have kept typing.
   const typed = useRef({ address, province });
   typed.current = { address, province };
@@ -206,10 +243,16 @@ export default function AddPropertyScreen({ navigation, route }: Props) {
   const lookupAbort = useRef<AbortController | null>(null);
   const syncAbort = useRef<AbortController | null>(null);
   const syncNonce = useRef(0);
-  // An address the map must not chase: the one a pin wrote, or the one a listing being edited came with.
-  const ignoredAddress = useRef('');
+  // Set once the map was sent somewhere on purpose (a province, a place, a listing being edited), so a slow first
+  // GPS fix does not pull it away again.
+  const steered = useRef(false);
+  const mounted = useRef(true);
+  // The latest pin, for the handlers that run after an await or a timer.
+  const pinRef = useRef(coordinate);
+  pinRef.current = coordinate;
   useEffect(
     () => () => {
+      mounted.current = false;
       if (lookupTimer.current) clearTimeout(lookupTimer.current);
       lookupAbort.current?.abort();
       syncAbort.current?.abort();
@@ -217,35 +260,110 @@ export default function AddPropertyScreen({ navigation, route }: Props) {
     [],
   );
 
-  // The written address (and the province it is in) say where the map should look. Waits for the typing to stop.
-  useEffect(() => {
-    const text = address.trim();
-    if (text.length < 3 || text === ignoredAddress.current.trim()) {
-      syncAbort.current?.abort();
-      setMapSync('idle');
-      return;
-    }
-    const timer = setTimeout(async () => {
-      syncAbort.current?.abort();
-      const abort = new AbortController();
-      syncAbort.current = abort;
-      setMapSync('finding');
-      const result = await findOnMap(text, province?.name.prs, abort.signal);
-      if (abort.signal.aborted) return;
-      if (result.status === 'found') {
-        syncNonce.current += 1;
-        setCamera({
-          center: toLngLat(result.coordinate),
-          zoom: result.zoom,
-          nonce: syncNonce.current,
-        });
-        setMapSync('found');
-      } else {
-        setMapSync(result.status === 'none' ? 'none' : 'idle');
+  /** Sends the map somewhere, and remembers it as where the map is looking (the next view event refines it). */
+  const moveCamera = useCallback((next: MapCamera) => {
+    view.current = { center: next.center, zoom: next.zoom };
+    setCamera(next);
+  }, []);
+
+  /** Points the map at a spot. Every move gets a new nonce, so flying back to the same place still flies. */
+  const lookAt = useCallback(
+    (at: Coordinate, zoom: number) => {
+      syncNonce.current += 1;
+      moveCamera({ center: toLngLat(at), zoom, nonce: syncNonce.current });
+    },
+    [moveCamera],
+  );
+
+  /**
+   * Where is the phone? `auto` is the look when the form opens: it asks for the permission (once; the phone remembers
+   * the answer), shows the blue dot, and moves the map only while nobody has steered it and there is no pin. The
+   * button (not auto) always moves it and explains a refusal or a GPS that is off.
+   */
+  const locateMe = useCallback(
+    async (auto: boolean) => {
+      setLocating(true);
+      const result = await locate({ ask: true });
+      if (!mounted.current) return;
+      setLocating(false);
+      if (result.status === 'ok') {
+        setMe(result.coordinate);
+        if (auto && (steered.current || pinRef.current)) return;
+        lookAt(result.coordinate, MY_POSITION_ZOOM);
+        // The form has just opened on the phone's position: the province and the address start from it (only what is
+        // still empty; the person's own words and choices are never overwritten). No pin is placed: that is theirs.
+        if (auto) describePlace.current(result.coordinate);
+      } else if (!auto && result.status !== 'outside') {
+        setLocationProblem(result.status);
       }
-    }, ADDRESS_SYNC_DELAY_MS);
-    return () => clearTimeout(timer);
-  }, [address, province]);
+    },
+    [lookAt],
+  );
+
+  /**
+   * The place field found nothing for what was typed (or could not ask): look for the written address the slow way,
+   * dropping its narrowest parts until the map knows it (see findAddressLoosely), and fly there.
+   */
+  const chaseAddress = async (text: string) => {
+    if (text.trim().length < 3) return;
+    syncAbort.current?.abort();
+    const abort = new AbortController();
+    syncAbort.current = abort;
+    setMapSync('finding');
+    const result = await findOnMap(
+      text,
+      typed.current.province?.name.prs,
+      abort.signal,
+    );
+    if (abort.signal.aborted || !mounted.current) return;
+    if (result.status === 'found') {
+      steered.current = true;
+      lookAt(result.coordinate, result.zoom);
+      // No province yet: the nearest capital to where the address is, said to be a guess.
+      if (typed.current.province === null || provinceIsAuto.current) {
+        provinceIsAuto.current = true;
+        setProvince(nearestProvince(result.coordinate));
+        setProvinceGuessed(true);
+        clearError('province');
+      }
+      setMapSync('found');
+    } else if (result.status === 'none') {
+      // The map does not know this address: show the province it is in, the nearest thing it does know (unless a pin
+      // is already placed, which is where the person wants the map to look).
+      const known = typed.current.province;
+      if (known && !pinRef.current) {
+        steered.current = true;
+        syncNonce.current += 1;
+        moveCamera({ ...provinceCamera(known), nonce: syncNonce.current });
+        setMapSync('province');
+      } else {
+        setMapSync('none');
+      }
+    } else {
+      setMapSync('idle');
+    }
+  };
+
+  /** A row of the place field was chosen and found: fly there and take its province, unless one was chosen by hand. */
+  const placeChosen = (place: ResolvedPlace) => {
+    syncAbort.current?.abort();
+    setMapSync('idle');
+    steered.current = true;
+    lookAt(place.coordinate, place.zoom);
+    if (typed.current.province === null || provinceIsAuto.current) {
+      provinceIsAuto.current = true;
+      setProvince(place.province);
+      setProvinceGuessed(place.provinceApproximate);
+      clearError('province');
+    }
+    // The structured parts belong to the pin when there is one; without one the chosen place supplies them.
+    if (!pinRef.current) {
+      if (place.district) setDistrict(place.district);
+      if (place.neighborhood) setNeighborhood(place.neighborhood);
+    }
+    clearError('address');
+    setPlaceNote({ kind: 'chosen', name: place.title });
+  };
 
   // What to do once the sheet has slid away: go to another screen. Nothing means the person closed the sheet, so
   // this route is left too.
@@ -265,6 +383,37 @@ export default function AddPropertyScreen({ navigation, route }: Props) {
     () => navigation.addListener('focus', () => setOpen(true)),
     [navigation],
   );
+
+  // A new listing: find the phone as the form opens, so the map starts on the street the person is standing in.
+  // (An edit starts on the listing's own pin; the button still finds the phone there.)
+  const signedIn = status === 'signedIn';
+  useEffect(() => {
+    if (signedIn && !editing) locateMe(true);
+  }, [signedIn, editing, locateMe]);
+
+  // Back from the phone's settings after allowing location: try again.
+  const awaitingSettings = useRef(false);
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', state => {
+      if (state === 'active' && awaitingSettings.current) {
+        awaitingSettings.current = false;
+        locateMe(false);
+      }
+    });
+    return () => subscription.remove();
+  }, [locateMe]);
+  const openPhoneSettings = () => {
+    awaitingSettings.current = true;
+    const kind = locationProblem;
+    setLocationProblem(null);
+    if (kind === 'unavailable' && Platform.OS === 'android') {
+      Linking.sendIntent('android.settings.LOCATION_SOURCE_SETTINGS').catch(
+        () => Linking.openSettings(),
+      );
+    } else {
+      Linking.openSettings();
+    }
+  };
   const scroller = useRef<React.ComponentRef<typeof ScrollView>>(null);
   // Where each field sits, so the form can scroll to the first one that needs fixing.
   const anchors = useRef<Partial<Record<FormField, ViewNode | null>>>({});
@@ -303,7 +452,6 @@ export default function AddPropertyScreen({ navigation, route }: Props) {
     setDurationUnit(length.unit);
     setPriceTerms(property.price_terms ?? null);
     setAreaText(String(property.area_sqm));
-    setAreaUnit('sqm');
     setBedrooms(property.bedrooms);
     setBathrooms(property.bathrooms);
     const known = findProvince(property.province) ?? null;
@@ -311,15 +459,15 @@ export default function AddPropertyScreen({ navigation, route }: Props) {
     setDistrict(property.district);
     setNeighborhood(property.neighborhood ?? '');
     setAddress(property.address);
-    // The address a listing already has is not a request to move the map: its own pin (or province) decides.
-    ignoredAddress.current = property.address;
+    // The listing's own pin (or province) decides where the map looks; the phone's position does not move it.
+    steered.current = true;
     const pin =
       property.lat !== null && property.lng !== null
         ? { latitude: property.lat, longitude: property.lng }
         : null;
     setCoordinate(pin);
-    if (pin) setCamera(cameraAt(pin));
-    else if (known) setCamera(provinceCamera(known));
+    if (pin) moveCamera(cameraAt(pin));
+    else if (known) moveCamera(provinceCamera(known));
     setImageLinks(property.images.length ? [...property.images] : ['']);
   }
 
@@ -332,8 +480,6 @@ export default function AddPropertyScreen({ navigation, route }: Props) {
     fillFrom(original);
   }, [original]);
 
-  /** A new account's gift listing is still unspent: the first listing posted uses it. */
-  const hasGift = (user?.welcome_listing_credits ?? 0) > 0;
   // Featured-frame credits (bought in a bundle, or the first-subscription gift), and what one frame costs and lasts.
   const frameCredits = user?.featured_credits ?? 0;
   // The price is only asked for once the frame is switched on: a form that is only filled in makes no payment call.
@@ -447,7 +593,6 @@ export default function AddPropertyScreen({ navigation, route }: Props) {
     );
   }
 
-  const pinned = coordinate !== null;
   const hasRooms = hasRoomsFor(type);
   const hasUnit = hasUnitFor(type);
 
@@ -457,7 +602,7 @@ export default function AddPropertyScreen({ navigation, route }: Props) {
   const areaHelper =
     typedArea === null
       ? undefined
-      : `${formatNumber(typedArea)} ${t(`unit.${areaUnit}`)}`;
+      : `${formatNumber(typedArea)} ${t('unit.sqm')}`;
   // The price typed so far, written back with its currency, like the area above: "۲۵,۰۰۰ افغانی" or "۲۵,۰۰۰ دالر".
   const typedPrice = parseNumberInput(priceText);
   const priceHelper =
@@ -471,19 +616,6 @@ export default function AddPropertyScreen({ navigation, route }: Props) {
     mortgage && durationUnit === 'year' && typeof typedMonths === 'number'
       ? t('mortgage.equals', { months: formatNumber(typedMonths, 0) })
       : undefined;
-  /** The ℹ beside the "مساحت" label: what a jerib is, and what the typed area comes to in jerib. */
-  const areaInfo = (
-    <JeribInfoButton
-      areaSqm={
-        typedArea === null
-          ? undefined
-          : areaUnit === 'jerib'
-          ? jeribToSqm(typedArea)
-          : typedArea
-      }
-    />
-  );
-
   // What turning the frame on does, so nobody is surprised by a payment page: it costs a credit, or money.
   const featuredUntil =
     editing && original?.is_featured ? original.featured_until : null;
@@ -501,18 +633,13 @@ export default function AddPropertyScreen({ navigation, route }: Props) {
   /** "۲,۵۰۰,۰۰۰": a sample figure for an empty box (the lighter placeholder colour is what says it is only a hint). */
   const example = (amount: number) => formatNumber(amount);
 
-  const clearError = (field: string) =>
-    setErrors(current =>
-      current[field] ? { ...current, [field]: undefined } : current,
-    );
-
   /** Asks what is at the pin and fills in what the person has not written themselves. */
   const findAddress = async (point: Coordinate) => {
     lookupAbort.current?.abort();
     const abort = new AbortController();
     lookupAbort.current = abort;
     setLookup('finding');
-    const place = await lookUpPlace(point, abort.signal);
+    const place = await describeSpot(point, { language, signal: abort.signal });
     if (abort.signal.aborted) return;
     // The service could not describe the spot: say so, so the person knows to write the address themselves.
     if (!place.answered) {
@@ -533,15 +660,24 @@ export default function AddPropertyScreen({ navigation, route }: Props) {
     // The structured parts are the pin's own (the district filter reads them): they always follow it.
     if (place.district) setDistrict(place.district);
     if (place.neighborhood) setNeighborhood(place.neighborhood);
-    // The written address follows the pin only while it is empty or still what the last pin put there.
-    const found = addressFrom(place);
+    // The written address follows the pin only while it is empty or still what the last pin put there. It is the whole
+    // line, province first: the province the form will use (the one chosen by hand, else the one the pin found).
+    const provinceHere =
+      now.province === null || provinceIsAuto.current
+        ? place.province
+        : now.province;
+    const found = addressFrom({
+      province: provinceHere ? provinceHere.name[language] : '',
+      district: place.district,
+      neighborhood: place.neighborhood,
+      street: place.street,
+    });
     if (
       found &&
       (now.address === '' || now.address === filledWith.current.address)
     ) {
       setAddress(found);
       filledWith.current.address = found;
-      ignoredAddress.current = found;
       clearError('address');
     }
     if (place.province && (now.province === null || provinceIsAuto.current)) {
@@ -553,8 +689,12 @@ export default function AddPropertyScreen({ navigation, route }: Props) {
     setLookup('filled');
   };
 
+  describePlace.current = findAddress;
+
   const placePin = (point: Coordinate) => {
     setCoordinate(point);
+    pinRef.current = point;
+    setOutside(false);
     clearError('location');
     if (lookupTimer.current) clearTimeout(lookupTimer.current);
     lookupTimer.current = setTimeout(() => {
@@ -562,10 +702,33 @@ export default function AddPropertyScreen({ navigation, route }: Props) {
     }, LOOKUP_DELAY_MS);
   };
 
+  const openFullscreen = () => {
+    setFullscreen(true);
+    const pin = pinRef.current;
+    if (!pin) {
+      // The map picker opens on the phone's position when there is no pin to show yet.
+      if (me && !steered.current) lookAt(me, MY_POSITION_ZOOM);
+      else if (!me) locateMe(steered.current);
+    } else {
+      lookAt(pin, Math.max(view.current?.zoom ?? 0, 16));
+    }
+  };
+
+  /**
+   * Back from the big map. It keeps everything (pin, address). The form's map opens exactly where the big one was
+   * looking, not where it was last sent: the pin just set is in view.
+   */
+  const closeFullscreen = () => {
+    if (view.current) {
+      syncNonce.current += 1;
+      setCamera({ ...view.current, nonce: syncNonce.current });
+    }
+    setFullscreen(false);
+  };
+
   const submit = () => {
     const area = parseNumberInput(areaText);
     const price = parseNumberInput(priceText);
-
     const raw = {
       title,
       description,
@@ -582,21 +745,23 @@ export default function AddPropertyScreen({ navigation, route }: Props) {
       price: price === null ? undefined : roundTo2(price),
       currency,
       area_sqm:
-        area === null
-          ? undefined
-          : roundTo2(areaUnit === 'jerib' ? jeribToSqm(area) : area),
+        area === null ? undefined : roundTo2(area),
       bedrooms: hasRooms ? bedrooms ?? undefined : undefined,
       bathrooms: hasRooms ? bathrooms ?? undefined : undefined,
       province: province ? provinceValue(province) : '',
       district,
       neighborhood,
       address,
+      // The pin is the property's place. (An outline an older version of the form saved is left as it is: it is not
+      // sent, so the server keeps it.)
       lat: coordinate?.latitude,
       lng: coordinate?.longitude,
       images: imageLinks.map(link => link.trim()).filter(Boolean),
     };
 
     const next: FieldErrors = {};
+    // The address is always needed (a pin does not stand in for it); the schema alone lets a pin do that.
+    if (!address.trim()) next.address = t('add.addressMissing');
     // The schema lets a count be left out; this form does not (a listing without them is not comparable).
     if (hasRooms && bedrooms === null) next.bedrooms = t('add.required');
     if (hasRooms && bathrooms === null) next.bathrooms = t('add.required');
@@ -642,10 +807,100 @@ export default function AddPropertyScreen({ navigation, route }: Props) {
       links.map((link, i) => (i === index ? value : link)),
     );
 
-  /** The address: required until the map says where it is, optional after. */
-  const addressLabel = pinned
-    ? `${t('add.address')} (${t('common.optional')})`
-    : t('add.address');
+  /** The place field: the address, always required. */
+  const placeLabel = t('add.place');
+
+  /** The place field, the same in the form and at the top of the fullscreen map. */
+  const placeField = (testID: string, compact = false) => (
+    <PlaceSearchField
+      testID={testID}
+      label={compact ? '' : placeLabel}
+      value={address}
+      onChangeText={v => {
+        setAddress(v);
+        setPlaceNote(null);
+        clearError('address');
+      }}
+      onPlace={placeChosen}
+      onPlaceFailed={() => setPlaceNote({ kind: 'notResolved' })}
+      onNoMatch={chaseAddress}
+      near={coordinate ?? me ?? null}
+      language={language}
+      placeholder={t('add.placePlaceholder')}
+      error={compact ? undefined : errors.address}
+    />
+  );
+
+  /** What the place field just did, or what the map made of a written address. */
+  const placeStatus =
+    placeNote?.kind === 'chosen' ? (
+      <AppText
+        variant="caption"
+        color={colors.primaryDark}
+        style={styles.status}
+        testID="place-chosen"
+      >
+        {t('add.placeChosen', { name: placeNote.name })}
+      </AppText>
+    ) : placeNote?.kind === 'notResolved' ? (
+      <AppText variant="caption" color={colors.textMuted} style={styles.status}>
+        {t('add.placeNotResolved')}
+      </AppText>
+    ) : mapSync === 'finding' ? (
+      <View style={[styles.finding, styles.status]}>
+        <ActivityIndicator size="small" color={colors.primary} />
+        <AppText variant="caption" color={colors.textMuted}>
+          {t('add.mapFinding')}
+        </AppText>
+      </View>
+    ) : mapSync === 'found' ? (
+      <AppText variant="caption" color={colors.primaryDark} style={styles.status}>
+        {t('add.mapFound')}
+      </AppText>
+    ) : mapSync === 'province' && province ? (
+      <AppText variant="caption" color={colors.textMuted} style={styles.status}>
+        {t('add.mapNotFoundProvince', { province: province.name[language] })}
+      </AppText>
+    ) : mapSync === 'none' ? (
+      <AppText variant="caption" color={colors.textMuted} style={styles.status}>
+        {t('add.mapNotFound')}
+      </AppText>
+    ) : null;
+
+  /** What the pin's address lookup did. */
+  const pinStatus =
+    lookup === 'finding' ? (
+      <View style={styles.finding}>
+        <ActivityIndicator size="small" color={colors.primary} />
+        <AppText variant="caption" color={colors.textMuted}>
+          {t('add.finding')}
+        </AppText>
+      </View>
+    ) : lookup === 'failed' ? (
+      <AppText variant="caption" color={colors.textMuted}>
+        {t('add.lookupFailed')}
+      </AppText>
+    ) : null;
+
+  /** The map, in the form or fullscreen: one component and one state, so both show the same pin. */
+  const editor = (big: boolean) => (
+    <LocationEditor
+      testID={big ? 'location-editor-full' : 'location-editor'}
+      mapTestID={big ? 'location-picker-map-full' : 'location-picker-map'}
+      pin={coordinate}
+      onPin={placePin}
+      deal={deal}
+      type={type}
+      camera={camera}
+      me={me}
+      onLocate={() => locateMe(false)}
+      locating={locating}
+      fullscreen={big}
+      onToggleFullscreen={() => (big ? closeFullscreen() : openFullscreen())}
+      onView={keepView}
+      onOutside={() => setOutside(true)}
+    />
+  );
 
   return sheet(
     <KeyboardAwareScrollView
@@ -663,10 +918,6 @@ export default function AddPropertyScreen({ navigation, route }: Props) {
             onPress={() => stepAside(() => navigation.navigate('Upgrade'))}
           />
         </Banner>
-      ) : null}
-      {/* The welcome gift pays for this listing: say so before it is spent, not after. */}
-      {!editing && hasGift ? (
-        <Banner kind="promo" message={t('add.welcomeCreditPrompt')} />
       ) : null}
       {/* This month's free listing is used up: not a fault but an invitation, with the way to the plans. */}
       {isListingLimitReached(mutation.error) ? (
@@ -686,6 +937,68 @@ export default function AddPropertyScreen({ navigation, route }: Props) {
         />
       ) : null}
 
+      <Card title={t('add.sectionPlace')} flush>
+        {/* One field for the address or the name of a nearby place; picking a suggestion flies the map there. */}
+        <View ref={anchor('address')} collapsable={false}>
+          {placeField('place-search')}
+          {placeStatus}
+        </View>
+        {/* The province is still its own value (filters, the database) and is written at the head of the address
+            line. Its row, with the button to change it, is only there while it is unknown or only a guess (or
+            refused): once it is certain there is nothing to say about it. */}
+        <View ref={anchor('province')} collapsable={false}>
+          {!province || provinceGuessed || errors.province ? (
+            <View style={styles.provinceRow}>
+              <AppText
+                variant="bodySm"
+                color={province ? colors.textSecondary : colors.textMuted}
+                style={styles.provinceText}
+              >
+                {province
+                  ? t('add.provinceLine', { name: province.name[language] })
+                  : t('add.provinceUnknown')}
+              </AppText>
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => setPickerOpen(true)}
+                hitSlop={8}
+                testID="province-change"
+              >
+                <AppText variant="label" color={colors.primary}>
+                  {province ? t('add.provinceChange') : t('home.selectProvince')}
+                </AppText>
+              </Pressable>
+            </View>
+          ) : null}
+          {errors.province ? (
+            <AppText
+              variant="caption"
+              color={colors.danger}
+              style={styles.fieldError}
+            >
+              {errors.province}
+            </AppText>
+          ) : provinceGuessed ? (
+            <AppText
+              variant="caption"
+              color={colors.accentText}
+              style={styles.fieldError}
+            >
+              {t('add.provinceGuessed')}
+            </AppText>
+          ) : null}
+        </View>
+        <View ref={anchor('location')} collapsable={false}>
+          <PinSection
+            outside={outside}
+            error={errors.location}
+            map={fullscreen ? null : editor(false)}
+          >
+            {pinStatus}
+          </PinSection>
+        </View>
+      </Card>
+
       <Card title={t('add.sectionBasics')} flush>
         <View ref={anchor('title')} collapsable={false}>
           <TextField
@@ -701,30 +1014,23 @@ export default function AddPropertyScreen({ navigation, route }: Props) {
           />
         </View>
         <View ref={anchor('type')} collapsable={false}>
-          <AppText variant="label" color={colors.textSecondary}>
-            {t('add.type')}
-          </AppText>
-          <View style={styles.wrap}>
-            {PROPERTY_TYPES.map(p => (
-              <Chip
-                compact
-                key={p}
-                label={propertyTypeLabel(p, t)}
-                selected={type === p}
-                onPress={() => setType(p)}
-              />
-            ))}
-          </View>
-
-          {errors.type ? (
-            <AppText
-              variant="caption"
-              color={colors.danger}
-              style={styles.chipError}
-            >
-              {errors.type}
-            </AppText>
-          ) : null}
+          <SelectField
+            testID="type-select"
+            label={t('add.type')}
+            title={t('add.type')}
+            searchPlaceholder={t('add.typeSearch')}
+            value={type}
+            onChange={v => {
+              setType(v);
+              clearError('type');
+            }}
+            options={PROPERTY_TYPES.map(p => ({
+              value: p,
+              label: propertyTypeLabel(p, t),
+              icon: propertyLineIcon(p),
+            }))}
+            error={errors.type}
+          />
         </View>
         {hasUnit ? (
           <View ref={anchor('unit')} collapsable={false}>
@@ -784,15 +1090,19 @@ export default function AddPropertyScreen({ navigation, route }: Props) {
             helper={priceHelper}
             error={errors.price}
           />
-          <View style={styles.toggle}>
-            <SegmentedControl
-              value={currency}
-              onChange={setCurrency}
-              options={CURRENCIES.map(c => ({
-                value: c,
-                label: t(`currency.${c}`),
-              }))}
-            />
+          <View style={styles.wrap}>
+            {CURRENCIES.map(c => (
+              <Chip
+                compact
+                key={c}
+                label={t(`currency.${c}`)}
+                selected={currency === c}
+                onPress={() => {
+                  setCurrency(c);
+                  clearError('currency');
+                }}
+              />
+            ))}
           </View>
           {errors.currency ? (
             <AppText
@@ -862,27 +1172,16 @@ export default function AddPropertyScreen({ navigation, route }: Props) {
         <View ref={anchor('area_sqm')} collapsable={false}>
           <TextField
             label={t('add.area')}
-            labelAccessory={areaInfo}
             value={areaText}
             onChangeText={v => {
               setAreaText(v);
               clearError('area_sqm');
             }}
             keyboardType="decimal-pad"
-            placeholder={`${example(areaUnit === 'jerib' ? 2 : 200)}`}
+            placeholder={example(200)}
             helper={areaHelper}
             error={errors.area_sqm}
           />
-          <View style={styles.toggle}>
-            <SegmentedControl
-              value={areaUnit}
-              onChange={setAreaUnit}
-              options={(['sqm', 'jerib'] as const).map(measure => ({
-                value: measure,
-                label: t(`unit.${measure}`),
-              }))}
-            />
-          </View>
         </View>
         <View ref={anchor('bedrooms')} collapsable={false}>
           {hasRooms ? (
@@ -909,99 +1208,6 @@ export default function AddPropertyScreen({ navigation, route }: Props) {
               />
             </View>
           ) : null}
-        </View>
-      </Card>
-
-      <Card title={t('add.sectionPlace')} flush>
-        <View ref={anchor('location')} collapsable={false}>
-          <PinSection
-            value={coordinate}
-            camera={camera}
-            onChange={placePin}
-            error={errors.location}
-          >
-            {lookup === 'finding' ? (
-              <View style={styles.finding}>
-                <ActivityIndicator size="small" color={colors.primary} />
-                <AppText variant="caption" color={colors.textMuted}>
-                  {t('add.finding')}
-                </AppText>
-              </View>
-            ) : lookup === 'filled' ? (
-              <AppText variant="caption" color={colors.primaryDark}>
-                {t('add.filled')}
-              </AppText>
-            ) : lookup === 'failed' ? (
-              <AppText variant="caption" color={colors.textMuted}>
-                {t('add.lookupFailed')}
-              </AppText>
-            ) : null}
-            {mapSync === 'finding' ? (
-              <View style={styles.finding}>
-                <ActivityIndicator size="small" color={colors.primary} />
-                <AppText variant="caption" color={colors.textMuted}>
-                  {t('add.mapFinding')}
-                </AppText>
-              </View>
-            ) : mapSync === 'found' ? (
-              <AppText variant="caption" color={colors.primaryDark}>
-                {t('add.mapFound')}
-              </AppText>
-            ) : mapSync === 'none' ? (
-              <AppText variant="caption" color={colors.textMuted}>
-                {t('add.mapNotFound')}
-              </AppText>
-            ) : null}
-          </PinSection>
-        </View>
-        <View ref={anchor('province')} collapsable={false}>
-          <AppText variant="label" color={colors.textSecondary}>
-            {t('add.province')}
-          </AppText>
-          <Pressable
-            accessibilityRole="button"
-            onPress={() => setPickerOpen(true)}
-            style={[styles.select, errors.province ? styles.selectError : null]}
-          >
-            <AppText color={province ? colors.text : colors.placeholder}>
-              {province ? province.name[language] : t('home.selectProvince')}
-            </AppText>
-          </Pressable>
-          {errors.province ? (
-            <AppText
-              variant="caption"
-              color={colors.danger}
-              style={styles.fieldError}
-            >
-              {errors.province}
-            </AppText>
-          ) : provinceGuessed ? (
-            <AppText
-              variant="caption"
-              color={colors.accentText}
-              style={styles.fieldError}
-            >
-              {t('add.provinceGuessed')}
-            </AppText>
-          ) : null}
-        </View>
-        <View ref={anchor('address')} collapsable={false}>
-          <TextField
-            label={addressLabel}
-            value={address}
-            onChangeText={v => {
-              setAddress(v);
-              clearError('address');
-            }}
-            placeholder={t('add.addressPlaceholder')}
-            helper={
-              pinned ? t('add.addressOptional') : t('add.addressRequired')
-            }
-            multiline
-            maxLength={300}
-            error={errors.address}
-            style={styles.addressInput}
-          />
         </View>
       </Card>
 
@@ -1083,12 +1289,71 @@ export default function AddPropertyScreen({ navigation, route }: Props) {
           if (!p) return;
           // Chosen by hand: from now on a pin does not change it.
           provinceIsAuto.current = false;
+          steered.current = true;
           setProvinceGuessed(false);
+          // An address the pin wrote still starts with the old province: it follows the new one.
+          if (province && address && address === filledWith.current.address) {
+            const swapped = swapProvince(
+              address,
+              province.name[language],
+              p.name[language],
+            );
+            setAddress(swapped);
+            filledWith.current.address = swapped;
+          }
           setProvince(p);
-          setCamera(provinceCamera(p));
+          moveCamera(provinceCamera(p));
           clearError('province');
           setPickerOpen(false);
         }}
+      />
+
+      {/* The same map, fullscreen: for an exact pin. Closing it keeps everything. */}
+      <Modal
+        visible={fullscreen}
+        animationType="slide"
+        presentationStyle="fullScreen"
+        statusBarTranslucent
+        onRequestClose={() => closeFullscreen()}
+      >
+        <SafeAreaProvider>
+          <SafeAreaView style={styles.full} edges={['top', 'bottom']}>
+            <View style={styles.fullHeader}>
+              {placeField('place-search-full', true)}
+              {placeStatus}
+            </View>
+            <View style={styles.fullMap}>{fullscreen ? editor(true) : null}</View>
+            <View style={styles.fullFooter}>
+              <View style={styles.fullSummary}>
+                {/* Only what needs attention: the first hint, a lookup in progress or failed, a tap outside the
+                    country. What the map already shows (the area, "placed", "address filled") is not repeated. */}
+                {!coordinate ? (
+                  <AppText variant="caption" color={colors.textMuted}>
+                    {t('map.tapToPlace')}
+                  </AppText>
+                ) : null}
+                {pinStatus}
+                {outside ? (
+                  <AppText variant="caption" color={colors.danger}>
+                    {t('map.outside')}
+                  </AppText>
+                ) : null}
+              </View>
+              <Button
+                testID="map-done"
+                icon="check"
+                title={t('map.done')}
+                onPress={closeFullscreen}
+              />
+            </View>
+          </SafeAreaView>
+        </SafeAreaProvider>
+      </Modal>
+
+      <LocationPermissionModal
+        problem={locationProblem}
+        onOpenSettings={openPhoneSettings}
+        onClose={() => setLocationProblem(null)}
       />
     </KeyboardAwareScrollView>,
     <Button
@@ -1129,7 +1394,32 @@ const styles = StyleSheet.create({
   fieldError: { marginTop: -spacing.sm, marginBottom: spacing.md },
   // Under a row of chips: the error sits between the chips and the next field.
   chipError: { marginTop: -spacing.sm, marginBottom: spacing.md },
-  addressInput: { minHeight: 88 },
+  status: { marginTop: -spacing.sm, marginBottom: spacing.md },
+  provinceRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    marginBottom: spacing.lg,
+  },
+  provinceText: { flex: 1 },
+  full: { flex: 1, backgroundColor: colors.surface },
+  fullHeader: {
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.sm,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.border,
+  },
+  fullMap: { flex: 1 },
+  fullFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.border,
+  },
+  fullSummary: { flex: 1, gap: spacing.xs },
   help: { marginBottom: spacing.sm },
   descriptionInput: { marginTop: 0 },
   frameRow: { marginTop: spacing.sm },

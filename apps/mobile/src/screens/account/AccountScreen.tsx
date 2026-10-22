@@ -25,6 +25,7 @@ import Icon, { type IconName } from '../../components/Icon';
 import { ScrollScreen } from '../../components/Screen';
 import { APP_VERSION } from '../../appInfo';
 import { MAP_ATTRIBUTION, MAP_ATTRIBUTION_URL } from '../../config';
+import { SATELLITE_ATTRIBUTION } from '../../map/style';
 import { LANGUAGE_META, changeLanguage } from '../../i18n';
 import { formatPhone, toPersianDigits } from '../../i18n/format';
 import { useFormat } from '../../i18n/useFormat';
@@ -384,7 +385,7 @@ export default function AccountScreen({ navigation }: Props) {
         style={styles.credit}
       >
         <AppText variant="caption" color={colors.textMuted} latinDigits>
-          {t('home.mapCredits')}: {MAP_ATTRIBUTION}
+          {t('home.mapCredits')}: {MAP_ATTRIBUTION} · {SATELLITE_ATTRIBUTION}
         </AppText>
       </Pressable>
       <AppText

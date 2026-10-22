@@ -11,7 +11,7 @@ import AppText from './AppText';
 import Badge, { badgeTones, DealBadge } from './Badge';
 import CircleIconButton from './CircleIconButton';
 import Icon, { type IconName } from './Icon';
-import Price from './Price';
+import PriceLine from './PriceLine';
 import PropertyFacts, { propertyPlace } from './PropertyFacts';
 
 /**
@@ -126,12 +126,7 @@ export default function ListingCard({
             <AppText variant="label" numberOfLines={2}>
               {property.title}
             </AppText>
-            <Price
-              amount={property.price}
-              currency={property.currency}
-              variant="title"
-              color={colors.primary}
-            />
+            <PriceLine property={property} />
             {place ? (
               <View style={styles.place}>
                 <Icon
@@ -198,7 +193,8 @@ export default function ListingCard({
         <AppText
           variant="bodySm"
           color={colors.textSecondary}
-          numberOfLines={3}
+          numberOfLines={2}
+          ellipsizeMode="tail"
           testID="card-description"
         >
           {description}

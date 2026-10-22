@@ -26,6 +26,18 @@ export interface MapCamera {
   nonce?: number;
 }
 
+/** Distance between two points in metres (haversine; plenty for a drive across the city). */
+export function metresBetween(a: LngLat, b: LngLat): number {
+  const R = 6_371_008.8;
+  const rad = Math.PI / 180;
+  const dLat = (b[1] - a[1]) * rad;
+  const dLng = (b[0] - a[0]) * rad;
+  const h =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(a[1] * rad) * Math.cos(b[1] * rad) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.min(1, Math.sqrt(h)));
+}
+
 export const toLngLat = (c: Coordinate): LngLat => [c.longitude, c.latitude];
 export const fromLngLat = ([longitude, latitude]: LngLat): Coordinate => ({
   latitude,
@@ -36,12 +48,6 @@ export const fromLngLat = ([longitude, latitude]: LngLat): Coordinate => ({
 export const AFGHANISTAN_CAMERA: MapCamera = {
   center: [67.7, 33.9],
   zoom: 4.8,
-};
-
-/** Where Home opens: Kabul, the capital and the biggest market. [lng, lat] */
-export const KABUL_CAMERA: MapCamera = {
-  center: [69.1721, 34.5553],
-  zoom: 11,
 };
 
 /** A city-sized view around a province's centre. */
@@ -59,6 +65,40 @@ export const cameraAt = (
   center: toLngLat(c),
   zoom,
 });
+
+/**
+ * A camera that has all of `points` in view inside a box of `width` x `height` points, with `margin` points to spare at
+ * every edge (Web Mercator, like the map's own tiles). One point is looked at from `maxZoom`.
+ */
+export function cameraFitting(
+  points: readonly Coordinate[],
+  width: number,
+  height: number,
+  { margin = 36, maxZoom = 17, minZoom = 3 } = {},
+): MapCamera {
+  if (points.length === 0) return AFGHANISTAN_CAMERA;
+  const mercatorY = (latitude: number) => {
+    const sin = Math.sin((latitude * Math.PI) / 180);
+    return 0.5 - Math.log((1 + sin) / (1 - sin)) / (4 * Math.PI);
+  };
+  const xs = points.map(p => (p.longitude + 180) / 360);
+  const ys = points.map(p => mercatorY(p.latitude));
+  const minX = Math.min(...xs);
+  const maxX = Math.max(...xs);
+  const minY = Math.min(...ys);
+  const maxY = Math.max(...ys);
+  const spanX = Math.max(maxX - minX, 1e-9);
+  const spanY = Math.max(maxY - minY, 1e-9);
+  // At zoom z the world is 512 * 2^z points wide (the map's tiles are 512 points).
+  const fitX = Math.log2(Math.max(width - 2 * margin, 1) / (512 * spanX));
+  const fitY = Math.log2(Math.max(height - 2 * margin, 1) / (512 * spanY));
+  const zoom = Math.max(minZoom, Math.min(maxZoom, fitX, fitY));
+  const centreX = (minX + maxX) / 2;
+  const centreY = (minY + maxY) / 2;
+  const latitude =
+    (Math.atan(Math.sinh(Math.PI * (1 - 2 * centreY))) * 180) / Math.PI;
+  return { center: [centreX * 360 - 180, latitude], zoom };
+}
 
 /**
  * Whether a tapped point is somewhere a listing can be. Mirrors the API's check (a bounding box

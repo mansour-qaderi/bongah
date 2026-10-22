@@ -49,7 +49,8 @@ describe('translations', () => {
 
   it('is written in Arabic script (no stray Latin sentences)', () => {
     // An example the form shows in an empty box may name a place the way its sign does ("شفاخانه ABC").
-    const examples = new Set(['add.addressPlaceholder']);
+    // The speed on the navigation screen is written with the unit symbol every dashboard in Afghanistan shows ("۴۵ km/h").
+    const examples = new Set(['add.addressPlaceholder', 'route.kmh']);
     for (const [key, value] of Object.entries({ ...dari })) {
       if (examples.has(key)) continue;
       // URLs/https hints are the only Latin allowed.

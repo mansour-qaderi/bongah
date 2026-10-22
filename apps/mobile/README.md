@@ -128,7 +128,7 @@ __tests__/                   unit + render tests      test-utils/  helpers, Mock
   phone (`favorites/store.ts`). With none, it shows an illustration and "هیچ آگهی نشان نشده است". A saved
   listing that has since been sold carries the "معامله شد" badge.
 - **My listings** (`screens/my`): a summary on top (live and closed deals: how many, and what their
-  *sale* listings add up to, per currency; rents and pledges are not added and AFN and USD are never
+  _sale_ listings add up to, per currency; rents and pledges are not added and AFN and USD are never
   mixed), the status chips, and per listing: live → promote, **معامله شد** (traded), **غیرفعال کردن**
   (off), edit, delete; traded or off → **فعال کردن** (on), edit, delete. Status changes are
   `PATCH /properties/:id {status}` (SOLD / ARCHIVED / ACTIVE); each asks first except switching on.
@@ -174,19 +174,44 @@ __tests__/                   unit + render tests      test-utils/  helpers, Mock
   `cd ios && pod install`, and rebuild the app. Android may need the photo permission prompt
   handled per OS version; not tried on a device.
 
-## Map pins and who pays for them
+## Location: pin, plot, place search and directions
 
-Every listing has province, district and neighborhood **text**. The exact map pin (`lat`/`lng`) is
-a paid extra:
+The pin (`lat`/`lng`) is free for everyone (round 4). On the listing form (`AddPropertyScreen`):
 
-- **Agencies with a running subscription** (and admins) pin any number of listings for free.
-- **Everyone else** buys a "map location" add-on through HesabPay (`Checkout`, tab _map_), which
-  gives one prepaid pin. The first pin on a listing spends it; moving that pin later is free.
-- The app asks the API (`GET /map-location/status`) and shows the map picker only to people who
-  may use it; otherwise it shows the price and a buy button. The API enforces the same rule, so a
-  stale screen gets `MAP_LOCATION_REQUIRED` and is sent to the purchase.
-- Referrals pay in free ladders (and contact credits, when the server turns them on), not in map
-  pins. The API has a token source for pins, ready if that is ever wanted.
+- **The map opens on the phone.** A new listing asks for location once as the form opens and flies to the phone's
+  position (blue dot). It never places the pin: that is the person's tap. Refused or no GPS: the form works as before;
+  the map's "my location" button explains and links to the settings.
+- **Fullscreen** (`LocationEditor`, the button at the map's corner): the same map and state in a full-screen modal,
+  for an exact pin and for drawing.
+- **Plot outline** (mode «علامت گزاری مرز زمین»): tap the corners, drag a corner to move it, undo, close on the first corner. The
+  area (m² and jerib) is live, from `ringAreaSqm` in `@bongah/validation`, the same function the server checks with.
+  Crossing edges and specks are refused. A closed plot puts the pin on itself (kept if already inside, otherwise the
+  middle) and is saved as `boundary` (GeoJSON Polygon). «همین را مساحت بگذار» copies its area into the area box.
+- **One place field** «آدرس یا اسم مکان» replaces the province box and the address box. Typing suggests places
+  (`PlaceSearchField`, 350 ms after the last key, older requests cancelled). Picking one flies the map there and sets
+  the province. The province is still stored on its own: it follows the pin or the chosen place, and «تغییر» corrects it.
+- **Address from the pin or plot** fills the field while the person has not written their own (as before).
+
+Where answers come from (`src/map/GeocodingService.ts`, `src/map/routing.ts`):
+
+| What                             | First                                                           | Fallback (asked by the phone)                                          |
+| -------------------------------- | --------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| Suggestions while typing         | API `GET /geo/autocomplete` (Google Places / Mapbox Search Box) | Photon (OSM, built for search-as-you-type)                             |
+| Chosen suggestion                | API `GET /geo/places/:provider/:id`                             | Photon rows carry their coordinate                                     |
+| "What is here"                   | API `GET /geo/reverse`                                          | Nominatim reverse                                                      |
+| Written address nobody suggested |                                                                 | Nominatim search, after typing stops (its policy forbids autocomplete) |
+| Driving route                    | API `GET /geo/route` (Google Routes / Mapbox Directions)        | OSRM demo server, then a dashed straight line                          |
+
+The API holds the keys (`GOOGLE_MAPS_API_KEY`, `MAPBOX_ACCESS_TOKEN`, see `apps/api/.env.example`). The app has no
+key and no Google SDK (`__tests__/noGoogleMaps.test.ts` still holds). `/geo/*` is for signed-in people only and
+throttled; guests use the OpenStreetMap services. Photon, Nominatim and OSRM are shared fair-use servers: host your
+own or pay for one before a public launch (`PHOTON_URL`, `GEOCODER_*`, `OSRM_ROUTE_URL` in `src/config.ts`).
+
+**Directions** (`PropertyDetailsScreen`, «مسیریابی به ملک», listings with an exact pin only): `NavigationModal` follows
+the phone (`useLiveLocation`, MapLibre's location module), draws the route and shows a HUD with the distance left
+(«۴٫۲ کیلومتر»), arrival time («۸ دقیقه») and live speed («۴۵ km/h», the GPS's own speed, or distance over time).
+Leaving the route by more than the GPS error asks for a new one, at most every 20 s. Within 30 m it says «به ملک
+رسیدید». Location is only read while it is open. The screen may dim during a long drive (no keep-awake module).
 
 ## How right-to-left works
 

@@ -49,7 +49,7 @@ export default function LocationPermissionModal({
         >
           <View style={styles.halo}>
             <View style={styles.disc}>
-              <Icon name="locate" size={34} color={colors.primary} />
+              <Icon name="pin" size={34} color={colors.primary} />
             </View>
           </View>
           <AppText variant="heading" style={styles.centred}>

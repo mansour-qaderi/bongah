@@ -1,6 +1,6 @@
 import React from 'react';
 import ReactTestRenderer from 'react-test-renderer';
-import { Share, TextInput } from 'react-native';
+import { BackHandler, Share, TextInput } from 'react-native';
 import Clipboard from '@react-native-clipboard/clipboard';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { initI18n } from '../src/i18n';
@@ -659,6 +659,59 @@ describe('ProfileSetupScreen', () => {
   it('shows nothing about invites otherwise', async () => {
     const tree = await render(screenElement(ProfileSetupScreen));
     expect(allText(tree.root)).not.toContain(prs.auth.referralAppliedLadder);
+  });
+
+  it('asks for the name as a required field and offers no way to skip it', async () => {
+    const tree = await render(screenElement(ProfileSetupScreen));
+    const label = tree.root.findAll(
+      n => typeof n.type === 'string' && allText(n).includes(prs.auth.fullName),
+    );
+    expect(label.length).toBeGreaterThan(0);
+    expect(allText(tree.root)).toContain('*');
+    expect(
+      tree.root.findAll(
+        n =>
+          typeof n.props.onPress === 'function' &&
+          /(later|skip|بعداً|بعدا|رد کردن|ردکردن)/.test(allText(n)),
+      ),
+    ).toHaveLength(0);
+    expect((prs.auth as Record<string, string>).skip).toBeUndefined();
+  });
+
+  it('does not save an empty name, and says why', async () => {
+    mockApi(fetchMock, { 'POST /users/register': { body: user } });
+    const tree = await render(screenElement(ProfileSetupScreen));
+    await press(tree.root, prs.common.save);
+    await settle();
+    expect(posts('/users/register')).toHaveLength(0);
+    expect(toasts.messages).toContain(prs.auth.invalidName);
+    await type(tree.root, prs.auth.fullName, '   ');
+    await press(tree.root, prs.common.save);
+    await settle();
+    expect(posts('/users/register')).toHaveLength(0);
+  });
+
+  it('saves the name that was typed', async () => {
+    mockApi(fetchMock, { 'POST /users/register': { body: user } });
+    const tree = await render(screenElement(ProfileSetupScreen));
+    await type(tree.root, prs.auth.fullName, 'احمد ظاهر');
+    await press(tree.root, prs.common.save);
+    await settle();
+    expect(posts('/users/register')[0].body).toEqual({ full_name: 'احمد ظاهر' });
+  });
+
+  it('swallows the phone\'s back button, so no one is left signed in without a name', async () => {
+    let handler: (() => boolean) | undefined;
+    const add = jest
+      .spyOn(BackHandler, 'addEventListener')
+      .mockImplementation(((_event: string, listener: () => boolean) => {
+        handler = listener;
+        return { remove: jest.fn() };
+      }) as never);
+    await render(screenElement(ProfileSetupScreen));
+    expect(handler).toBeDefined();
+    expect(handler!()).toBe(true); // true = handled here, the app does not go back
+    add.mockRestore();
   });
 });
 

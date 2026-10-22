@@ -201,7 +201,7 @@ async function fill(
   await type(root, prs.add.area, '120');
   await plus(root, prs.add.bedrooms);
   await plus(root, prs.add.bathrooms);
-  await type(root, prs.add.address, 'کابل، ناحیه ۵، پهلوی شفاخانه ABC');
+  await type(root, prs.add.place, 'کابل، ناحیه ۵، پهلوی شفاخانه ABC');
   await press(root, prs.home.selectProvince);
   await press(root, 'کابل');
 }

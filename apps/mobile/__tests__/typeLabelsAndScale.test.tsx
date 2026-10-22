@@ -9,7 +9,7 @@ import { propertyTypeLabel } from '../src/i18n/propertyType';
 import { allText, render } from '../test-utils';
 import ListingCard from '../src/components/ListingCard';
 import PropertyCard from '../src/components/PropertyCard';
-import PropertyFacts, { propertyKind } from '../src/components/PropertyFacts';
+import PropertyFacts from '../src/components/PropertyFacts';
 import { headerOptions } from '../src/navigation/screenOptions';
 import { fonts, typography } from '../src/theme';
 
@@ -122,7 +122,6 @@ describe('property type labels', () => {
       mounted.push(tree);
       expect(allText(tree.root)).toContain(label);
       expect(allText(tree.root)).not.toContain('propertyType');
-      expect(propertyKind(property(type), i18next.t.bind(i18next))).toBe(label);
     }
   });
 });

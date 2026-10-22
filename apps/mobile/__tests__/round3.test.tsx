@@ -249,7 +249,8 @@ describe('PropertyCard hierarchy', () => {
       n => n.props.testID === 'card-description',
     )[0];
     expect(desc.props.children).toBe(text);
-    expect(desc.props.numberOfLines).toBe(3);
+    expect(desc.props.numberOfLines).toBe(2);
+      expect(desc.props.ellipsizeMode).toBe("tail");
     // After the facts, in reading order.
     const all = allText(tree.root);
     expect(all.indexOf(text)).toBeGreaterThan(all.indexOf('۲۵۳ متر مربع'));

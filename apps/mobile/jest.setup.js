@@ -58,6 +58,8 @@ jest.mock('@maplibre/maplibre-react-native', () => {
     requests: 0,
     fixes: 0,
   };
+  // Live updates (navigation): a test reads `listeners` and calls `__emitLocation(position)` to move the phone.
+  const listeners = new Set();
   const LocationManager = {
     requestPermissions: async () => {
       location.requests += 1;
@@ -67,6 +69,9 @@ jest.mock('@maplibre/maplibre-react-native', () => {
       location.fixes += 1;
       return location.position;
     },
+    addListener: listener => listeners.add(listener),
+    removeListener: listener => listeners.delete(listener),
+    setMinDisplacement: () => undefined,
   };
   return {
     Map: passthrough('Map'),
@@ -78,6 +83,8 @@ jest.mock('@maplibre/maplibre-react-native', () => {
     LocationManager,
     __flyTo: mockFlyTo,
     __location: location,
+    __locationListeners: listeners,
+    __emitLocation: position => listeners.forEach(listener => listener(position)),
   };
 });
 

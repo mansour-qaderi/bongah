@@ -453,6 +453,9 @@ model Property {
   /// district / neighbourhood / address instead). Both set or both null.
   lat           Float?
   lng           Float?
+  /// The plot's outline the owner drew: a GeoJSON Polygon ([lng, lat], one closed ring), checked by
+  /// plotBoundarySchema (@bongah/validation). Only set together with a pin. Null when none was drawn.
+  boundary      Json?
   images        String[]       @default([])
   status        PropertyStatus @default(ACTIVE)
   isFeatured    Boolean        @default(false) @map("is_featured")

@@ -30,7 +30,7 @@ import {
 import { APP_VERSION } from '../src/appInfo';
 import FeedbackSheet from '../src/components/FeedbackSheet';
 import ListingCard from '../src/components/ListingCard';
-import { propertyKind } from '../src/components/PropertyFacts';
+import PropertyFacts from '../src/components/PropertyFacts';
 import PropertyCard from '../src/components/PropertyCard';
 import Price, { SIGN_SCALE } from '../src/components/Price';
 import TextField from '../src/components/TextField';
@@ -38,7 +38,6 @@ import { resetSavedForTests, toggleSaved } from '../src/favorites/store';
 import { KV_KEYS, kv } from '../src/storage/kv';
 import { PROPERTY_LINE_ICONS } from '../src/map/markers';
 import { colors, spacing } from '../src/theme';
-import i18next from 'i18next';
 
 declare const __dirname: string;
 
@@ -280,17 +279,25 @@ describe('the unit: the shared validation', () => {
 });
 
 describe('the kind of a property, as a card says it', () => {
-  const t = i18next.t.bind(i18next);
-  it('says the type, then the unit when there is one', () => {
-    expect(propertyKind(property(), t)).toBe(
-      `${prs.propertyType.HOUSE_HAWILI}، واحد ۳`,
+  it('says the type and nothing else on a card, and the unit as its own fact on the details page', async () => {
+    const card = await show(<PropertyFacts property={property()} withType />);
+    expect(allText(card.root)).toContain(prs.propertyType.HOUSE_HAWILI);
+    // What an owner typed in the unit box is never glued to the kind ("خانه، <the listing's title>").
+    expect(allText(card.root)).not.toContain('واحد ۳');
+    expect(allText(card.root)).not.toContain(`${prs.propertyType.HOUSE_HAWILI}،`);
+
+    const details = await show(
+      <PropertyFacts property={property()} withType withUnit />,
     );
-    expect(propertyKind(property({ unit: null }), t)).toBe(
-      prs.propertyType.HOUSE_HAWILI,
-    );
-    expect(propertyKind(property({ unit: undefined }), t)).toBe(
-      prs.propertyType.HOUSE_HAWILI,
-    );
+    expect(allText(details.root)).toContain(prs.propertyType.HOUSE_HAWILI);
+    expect(allText(details.root)).toContain('واحد ۳');
+
+    for (const unit of [null, undefined]) {
+      const bare = await show(
+        <PropertyFacts property={property({ unit })} withType withUnit />,
+      );
+      expect(allText(bare.root)).not.toContain('واحد');
+    }
   });
 });
 
@@ -300,9 +307,11 @@ describe('property specs: the list card, My Listings and the details page agree'
   const id = '11111111-1111-4111-8111-111111111111';
   const p = property({ id, province: 'کابل' });
 
-  const expectSpecs = (text: string) => {
+  const expectSpecs = (text: string, { unit = false } = {}) => {
     expect(text).toContain(prs.propertyType.HOUSE_HAWILI);
-    expect(text).toContain('واحد ۳');
+    // The unit is a detail of the details page; the cards say the kind only.
+    if (unit) expect(text).toContain('واحد ۳');
+    else expect(text).not.toContain('واحد ۳');
     expect(text).toContain(toPersianDigits(253));
     expect(text).toContain(prs.unit.sqm);
     expect(text).toContain(toPersianDigits(3));
@@ -329,7 +338,7 @@ describe('property specs: the list card, My Listings and the details page agree'
       screenElement(PropertyDetailsScreen, navigation(), { params: { id } }),
     );
     await settle();
-    expectSpecs(allText(tree.root));
+    expectSpecs(allText(tree.root), { unit: true });
   });
 
   it('draws the same four icon chips (type, area, bedrooms, bathrooms) in all three views', async () => {
@@ -361,7 +370,14 @@ describe('property specs: the list card, My Listings and the details page agree'
     ];
     expect(chipIcons(home.root)).toEqual(expected);
     expect(chipIcons(mine.root)).toEqual(expected);
-    expect(chipIcons(details.root)).toEqual(expected);
+    // The details page adds the unit after the kind.
+    expect(chipIcons(details.root)).toEqual([
+      PROPERTY_LINE_ICONS.HOUSE_HAWILI,
+      'apartment',
+      'area',
+      'bed',
+      'shower',
+    ]);
   });
 
   it('draws the currency sign at four fifths of the figure, not a speck', async () => {
@@ -806,8 +822,9 @@ describe('SavedListingsScreen', () => {
     expect(text).toContain(
       prs.saved.count.replace('{{count}}', toPersianDigits(2)),
     );
-    // The same card as the Home list: the specs are on it too.
-    expect(text).toContain('واحد ۳');
+    // The same card as the Home list: the specs are on it too (the owner's unit text is on the details page only).
+    expect(text).toContain('۳ اتاق خواب');
+    expect(text).not.toContain('واحد ۳');
 
     await press(tree.root, 'آگهی اول');
     expect(nav.navigate).toHaveBeenCalledWith('PropertyDetails', { id: idA });

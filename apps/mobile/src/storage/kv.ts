@@ -38,6 +38,8 @@ export const KV_KEYS = {
   language: 'language',
   /** The ids of the listings this person has bookmarked, as a JSON array (see favorites/store.ts). */
   favorites: 'favorites',
+  /** Which base map the person looks at, 'street' or 'satellite' (see map/mapStyleStore.ts). */
+  mapStyle: 'map_style',
   /** The ids of the listings this person deleted from My Listings, as a JSON array (see listings/deleted.ts). */
   deletedListings: 'deleted_listings',
   /**

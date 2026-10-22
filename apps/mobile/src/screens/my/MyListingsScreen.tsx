@@ -278,6 +278,7 @@ export default function MyListingsScreen({ navigation }: Props) {
                 }
                 count={counts[value]}
                 selected={filter === value}
+                animated
                 onPress={() => setFilter(value)}
               />
             ))}

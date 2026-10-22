@@ -2,6 +2,7 @@ import React from 'react';
 import { StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
+import type { TFunction } from 'i18next';
 import type { ContactQuota } from '@bongah/shared-types';
 import { errorMessage } from '../api/errors';
 import type { useContactActions } from '../contact/useContactActions';
@@ -13,13 +14,15 @@ import { useErrorToast } from './useErrorToast';
 
 type Actions = ReturnType<typeof useContactActions>;
 
-/** One line about today's allowance, or null while it is not known. */
+/**
+ * One line about today's allowance, or null while it is not known. Someone with no limit has nothing to be told (a
+ * line saying "unlimited" is only noise), so only a metered allowance is written.
+ */
 function allowanceText(
   quota: ContactQuota | null,
-  t: ReturnType<typeof useTranslation>['t'],
+  t: TFunction,
 ): string | null {
-  if (!quota) return null;
-  if (quota.unlimited) return t('property.unlimitedReveals');
+  if (!quota || quota.unlimited) return null;
   return quota.free_remaining > 0
     ? t('property.freeRevealsLeft', {
         count: formatNumber(quota.free_remaining, 0),
@@ -28,8 +31,8 @@ function allowanceText(
 }
 
 /**
- * The strip pinned to the bottom of a listing: Call, WhatsApp and Chat in App. Call and WhatsApp
- * reveal the owner's number (metered, see useContactActions); Chat never does.
+ * The strip pinned to the bottom of a listing: Call and Chat in App. Call reveals the owner's number (metered, see
+ * useContactActions); Chat never does. (WhatsApp is on the cards and the map sheet, not here.)
  */
 export default function ContactActionBar({
   actions,
@@ -65,14 +68,6 @@ export default function ContactActionBar({
           title={t('property.callAction')}
           loading={actions.revealing}
           onPress={actions.call}
-          style={styles.button}
-        />
-        <Button
-          icon="chat"
-          title={t('property.whatsappAction')}
-          variant="outline"
-          disabled={actions.revealing}
-          onPress={actions.whatsapp}
           style={styles.button}
         />
         <Button

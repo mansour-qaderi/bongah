@@ -22,6 +22,7 @@ interface Props {
   /** A glyph before the label, in the label's colour (send, check, refresh...). Hidden while the button is loading. */
   icon?: ActionIconName;
   style?: StyleProp<ViewStyle>;
+  testID?: string;
 }
 
 const palette: Record<Variant, { bg: string; fg: string; border: string }> = {
@@ -48,11 +49,13 @@ export default function Button({
   disabled = false,
   icon,
   style,
+  testID,
 }: Props) {
   const inactive = disabled || loading;
   const { bg, fg, border } = palette[variant];
   return (
     <Pressable
+      testID={testID}
       accessibilityRole="button"
       accessibilityState={{ disabled: inactive, busy: loading }}
       disabled={inactive}
