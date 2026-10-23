@@ -498,6 +498,30 @@ describe('navigation to the property', () => {
   const pinned = listing({ lat: 30.97, lng: 61.87, boundary: { type: 'Polygon', coordinates: [[...corners(40), corners(40)[0]]] } });
   const route = { params: { id: ID } };
 
+  it('stands the details skeleton in the page while the listing loads (no spinner), and replaces it with the page', async () => {
+    fetchMock.mockImplementation(() => new Promise(() => undefined));
+    const loading = await render(screen(PropertyDetailsScreen, route));
+    await settle();
+    const skeleton = (root: ReactTestRenderer.ReactTestInstance) =>
+      root.findAll(n => n.props.testID === 'details-skeleton');
+    expect(skeleton(loading.root).length).toBeGreaterThan(0);
+    expect(allText(loading.root)).toBe('');
+    await act(async () => loading.unmount());
+
+    answer({
+      [`GET /properties/${ID}`]: () => ({ body: listing() }),
+      [`POST /properties/${ID}/view`]: () => ({ status: 204 }),
+    });
+    const tree = await render(screen(PropertyDetailsScreen, route));
+    await settle();
+    // The page is there at once and the skeleton fades out over it, then goes.
+    expect(allText(tree.root)).toContain('زمین در زرنج');
+    await act(async () => {
+      await new Promise<void>(resolve => setTimeout(() => resolve(), 450));
+    });
+    expect(skeleton(tree.root)).toHaveLength(0);
+  });
+
   it('has no separate "مسیریابی به ملک" button in the page: directions live on the location map, and an old outline is still shown read-only', async () => {
     answer({ [`GET /properties/${ID}`]: () => ({ body: pinned }), [`POST /properties/${ID}/view`]: () => ({ status: 204 }) });
     const tree = await render(screen(PropertyDetailsScreen, route));

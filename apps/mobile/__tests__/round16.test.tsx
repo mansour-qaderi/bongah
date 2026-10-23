@@ -282,6 +282,10 @@ describe('Round 17: the balance screen', () => {
 
   it('shows the ladders as a bare count: no progress bar, no "x of 7" line', async () => {
     const tree = await open(4);
+    // Let the loader finish fading out of the way (it is a progress bar too).
+    await ReactTestRenderer.act(async () => {
+      await new Promise<void>(resolve => setTimeout(() => resolve(), 450));
+    });
     expect(
       tree.root.findAll(
         n =>

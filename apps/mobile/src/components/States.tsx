@@ -1,14 +1,20 @@
 import React from 'react';
-import { ActivityIndicator, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { colors, spacing } from '../theme';
+import AppLoader from './AppLoader';
 import AppText from './AppText';
 import Button from './Button';
 
-export function LoadingView() {
+/**
+ * What a page, a sheet or a section shows while the data it is made of is on its way: the branded logo loader, with its
+ * soft pulse, in the middle of the space. (Lists show skeletons instead; see SkeletonLoader.)
+ */
+export function LoadingView({ size = 96 }: { size?: number }) {
+  const { t } = useTranslation();
   return (
-    <View style={styles.center}>
-      <ActivityIndicator size="large" color={colors.primary} />
+    <View style={styles.center} testID="loading-view">
+      <AppLoader size={size} label={t('common.loading')} />
     </View>
   );
 }

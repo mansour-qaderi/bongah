@@ -1,6 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
-  ActivityIndicator,
   FlatList,
   Image,
   ScrollView,
@@ -31,7 +30,11 @@ import Price from '../../components/Price';
 import PropertyFacts, { propertyPlace } from '../../components/PropertyFacts';
 import PropertyLocationMap from '../../components/PropertyLocationMap';
 import { Screen } from '../../components/Screen';
-import { ErrorView, LoadingView } from '../../components/States';
+import MapLoader from '../../components/MapLoader';
+import { Reveal, useReveal } from '../../components/Reveal';
+import { DETAILS_GALLERY_HEIGHT } from '../../components/layoutSizes';
+import { PropertyDetailsSkeleton } from '../../components/SkeletonLoader';
+import { ErrorView } from '../../components/States';
 import { formatPhone } from '../../i18n/format';
 import { useFormat } from '../../i18n/useFormat';
 import { useSellerLabel } from '../../map/markers';
@@ -64,7 +67,15 @@ export default function PropertyDetailsScreen({ route, navigation }: Props) {
     if (user?.id !== ownerId) recordPropertyView(id).catch(() => undefined);
   }, [id, ownerId, status, user?.id]);
 
-  if (query.isPending) return <LoadingView />;
+  const reveal = useReveal(query.isPending);
+
+  if (query.isPending) {
+    return (
+      <Screen edges={['left', 'right']}>
+        <PropertyDetailsSkeleton />
+      </Screen>
+    );
+  }
   if (query.isError) {
     const missing =
       query.error instanceof ApiError && query.error.status === 404;
@@ -77,7 +88,11 @@ export default function PropertyDetailsScreen({ route, navigation }: Props) {
       />
     );
   }
-  return <PropertyBody property={query.data} navigation={navigation} />;
+  return (
+    <Reveal {...reveal} loader={<PropertyDetailsSkeleton />}>
+      <PropertyBody property={query.data} navigation={navigation} />
+    </Reveal>
+  );
 }
 
 /** The loaded listing, its contact details and the Call / WhatsApp / Chat bar pinned below. */
@@ -323,7 +338,9 @@ function PropertyBody({
             </>
           ) : where.status === 'finding' ? (
             <View style={styles.finding}>
-              <ActivityIndicator size="small" color={colors.primary} />
+              <View style={styles.finderSlot}>
+                <MapLoader size={28} />
+              </View>
               <AppText variant="caption" color={colors.textMuted}>
                 {t('property.finding')}
               </AppText>
@@ -418,7 +435,7 @@ function PropertyBody({
 const styles = StyleSheet.create({
   content: { padding: 0, paddingBottom: spacing.xxl },
   gallery: { backgroundColor: colors.neutralSoft },
-  galleryImage: { height: 260 },
+  galleryImage: { height: DETAILS_GALLERY_HEIGHT },
   section: {
     paddingHorizontal: spacing.lg,
     paddingTop: spacing.xl,
@@ -455,6 +472,13 @@ const styles = StyleSheet.create({
     rowGap: spacing.xs,
   },
   finding: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  // The map loader's pin hops above its box: the slot keeps the line as tall as the words.
+  finderSlot: {
+    width: 28,
+    height: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   actionsBlock: { gap: spacing.md },
   card: {
     ...surfaces.card,

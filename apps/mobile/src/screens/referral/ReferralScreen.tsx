@@ -15,6 +15,7 @@ import Banner from '../../components/Banner';
 import { useErrorToast } from '../../components/useErrorToast';
 import Button from '../../components/Button';
 import { Screen } from '../../components/Screen';
+import { Reveal, useReveal } from '../../components/Reveal';
 import { EmptyView, ErrorView, LoadingView } from '../../components/States';
 import { formatDate, formatNumber } from '../../i18n/format';
 import type { RootStackParamList } from '../../navigation/types';
@@ -38,6 +39,7 @@ export default function ReferralScreen({ navigation }: Props) {
   const { t } = useTranslation();
   const { status } = useAuth();
   const query = useReferralSummary(status === 'signedIn');
+  const reveal = useReveal(query.isPending);
 
   if (status !== 'signedIn') {
     return (
@@ -65,7 +67,7 @@ export default function ReferralScreen({ navigation }: Props) {
   const rewards = data.rewards.filter(reward =>
     LISTED_REWARDS.includes(reward.type),
   );
-  return (
+  const page = (
     <Screen edges={['left', 'right']}>
       <ScrollView
         contentContainerStyle={styles.content}
@@ -123,6 +125,11 @@ export default function ReferralScreen({ navigation }: Props) {
         )}
       </ScrollView>
     </Screen>
+  );
+  return (
+    <Reveal {...reveal} loader={<LoadingView />}>
+      {page}
+    </Reveal>
   );
 }
 

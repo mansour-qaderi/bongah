@@ -27,6 +27,8 @@ export const LOGO_GEOMETRY = {
   pinLeft:
     'M50 16.8L23.4 37.3C23.4 52 36 72 50 86.7L50 51.8A12.3 12.3 0 0 1 50 27.2Z',
   ring: { cx: 50, cy: 87, rx: 26, ry: 8, strokeWidth: 2.6 },
+  /** The pin's lowest point (where the animated loaders grow it from, and where the map loader's rings start). */
+  tip: { x: 50, y: 86.7 },
 } as const;
 
 interface Props {

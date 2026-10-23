@@ -59,7 +59,7 @@ export default function ProfileSetupScreen({ navigation, route }: Props) {
   };
 
   return (
-    <ScrollScreen style={styles.content}>
+    <ScrollScreen style={styles.content} busy={loading}>
       <AppText color={colors.textMuted} style={styles.hint}>
         {t('auth.profileHint')}
       </AppText>

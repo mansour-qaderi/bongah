@@ -325,6 +325,7 @@ describe('launcher icon assets', () => {
   const files = [
     'logo.svg',
     'app-icon.svg',
+    'app-icon-round.svg',
     'app-icon-android-foreground.svg',
     'app-icon-android-monochrome.svg',
   ];
@@ -353,21 +354,40 @@ describe('launcher icon assets', () => {
     },
   );
 
-  it('keeps the ground ring on the full logo only, and the monochrome layer to one colour', () => {
-    expect(svg('logo.svg')).toContain('<ellipse');
+  it.each(files)(
+    '%s keeps the ground ring under the pin tip, on the same centre and radii as the Logo component',
+    name => {
+      const source = svg(name);
+      expect(source).toContain(
+        `<ellipse cx="${ring.cx}" cy="${ring.cy}" rx="${ring.rx}" ry="${ring.ry}" fill="none"`,
+      );
+      // The ring is drawn first, so the pin and the roof sit on top of it.
+      expect(source.indexOf('<ellipse')).toBeLessThan(
+        source.indexOf(`d="${pin}"`),
+      );
+    },
+  );
+
+  it('draws the ring light grey on the colour icons and at a faint 30% of the one colour on the themed layer', () => {
     for (const name of [
       'app-icon.svg',
+      'app-icon-round.svg',
       'app-icon-android-foreground.svg',
-      'app-icon-android-monochrome.svg',
     ]) {
-      expect(svg(name)).not.toContain('<ellipse');
+      expect(svg(name)).toMatch(/<ellipse [^>]*stroke="#D1D5DB"/);
     }
+    expect(svg('app-icon-android-monochrome.svg')).toMatch(
+      /<ellipse [^>]*stroke="#000000"[^>]*stroke-opacity="0\.3"/,
+    );
+  });
+
+  it('keeps the monochrome layer to one colour', () => {
     const mono = svg('app-icon-android-monochrome.svg').toUpperCase();
     expect(mono).not.toContain(colors.primary);
     expect(mono).not.toContain(colors.primaryDark);
   });
 
-  it('has an opaque white 1024 square for iOS, with the mark well inside it', () => {
+  it('has an opaque white 1024 square for iOS, with the mark and its ring well inside it', () => {
     const source = svg('app-icon.svg');
     expect(source).toContain('width="1024" height="1024"');
     expect(source).toContain(
@@ -396,7 +416,8 @@ describe('launcher icon assets', () => {
       const source = svg(name);
       expect(source).toContain('width="108" height="108"');
       const { scale, dx, dy } = transformOf(source);
-      // The mark's far points: the roof's apex and eaves, the chimney's top corners and the pin's tip.
+      // The mark's far points: the roof's apex and eaves, the chimney's top corners, the pin's tip and the
+      // whole outer edge of the ground ring (the ring is part of the mark).
       const points: [number, number][] = [
         [50, 4.6],
         [9.5, 36.6],
@@ -404,6 +425,7 @@ describe('launcher icon assets', () => {
         [chimney.x, chimney.y],
         [chimney.x + chimney.width, chimney.y],
         [50, 86.7],
+        ...ringEdge(),
       ];
       for (const [x, y] of points) {
         expect(
@@ -417,6 +439,7 @@ describe('launcher icon assets', () => {
     const source = svg('app-icon-android-background.svg');
     expect(source).toContain('fill="#FFFFFF"');
     expect(source).not.toContain('<path');
+    expect(source).not.toContain('<ellipse');
   });
 
   it('is documented, for Android and iOS', () => {
@@ -441,14 +464,25 @@ function transformOf(source: string) {
   return { dx: Number(m[1]), dy: Number(m[2]), scale: Number(m[3]) };
 }
 
-/** Where the mark's bounding box (x 9.5..90.5, y 4.6..86.7 on the 100 grid, no ring) lands on the canvas. */
+/** The ring's outer edge: its stroke is 3.2 wide in the icons, so the outer ellipse is 1.6 bigger each way. */
+const ICON_RING_STROKE = 3.2;
+function ringEdge(): [number, number][] {
+  const rx = ring.rx + ICON_RING_STROKE / 2;
+  const ry = ring.ry + ICON_RING_STROKE / 2;
+  return Array.from({ length: 72 }, (_, i) => {
+    const a = (i / 72) * 2 * Math.PI;
+    return [ring.cx + rx * Math.cos(a), ring.cy + ry * Math.sin(a)];
+  });
+}
+
+/** Where the mark's bounding box (roof x 9.5..90.5, apex y 4.6, down to the ring's outer edge) lands on the canvas. */
 function markBox(source: string) {
   const { dx, dy, scale } = transformOf(source);
   return {
     left: dx + 9.5 * scale,
     right: dx + 90.5 * scale,
     top: dy + 4.6 * scale,
-    bottom: dy + 86.7 * scale,
+    bottom: dy + (ring.cy + ring.ry + ICON_RING_STROKE / 2) * scale,
   };
 }
 

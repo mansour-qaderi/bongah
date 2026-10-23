@@ -1,6 +1,5 @@
 import React from 'react';
 import {
-  ActivityIndicator,
   Modal,
   Pressable,
   ScrollView,
@@ -25,7 +24,8 @@ import Banner from './Banner';
 import Button from './Button';
 import PaymentProgress from './PaymentProgress';
 import { ToastHost } from './Toast';
-import { useErrorToast } from './useErrorToast';
+import { useErrorToast } from './useErrorToast';import { LoadingView } from './States';
+
 
 interface Props {
   /** The listing whose number was asked for. */
@@ -162,7 +162,7 @@ function SheetBody({
                 {t('contact.buyTitle')}
               </AppText>
               {pricing.isPending ? (
-                <ActivityIndicator color={colors.primary} />
+                <LoadingView size={72} />
               ) : !prices ? (
                 <Banner kind="error" message={t('checkout.pricesFailed')}>
                   <Button

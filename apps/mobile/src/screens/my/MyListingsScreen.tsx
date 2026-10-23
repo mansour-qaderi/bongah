@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import {
-  ActivityIndicator,
   Alert,
   FlatList,
   StyleSheet,
@@ -30,7 +29,12 @@ import Fab from '../../components/Fab';
 import ListingCard, { type ListingAction } from '../../components/ListingCard';
 import { Screen } from '../../components/Screen';
 import EmptyState from '../../components/EmptyState';
-import { EmptyView, ErrorView, LoadingView } from '../../components/States';
+import {
+  ListingCardSkeleton,
+  ListingListSkeleton,
+} from '../../components/SkeletonLoader';
+import { Reveal, useReveal } from '../../components/Reveal';
+import { EmptyView, ErrorView } from '../../components/States';
 import { formatNumber } from '../../i18n/format';
 import { markDeleted, useDeletedListings } from '../../listings/deleted';
 import { useShareListing } from '../../share/listingShare';
@@ -73,6 +77,7 @@ export default function MyListingsScreen({ navigation }: Props) {
   const { t } = useTranslation();
   const { status } = useAuth();
   const query = useMyProperties(status === 'signedIn');
+  const reveal = useReveal(query.isPending);
   const deleted = useDeletedListings();
   const properties = flattenPages(query.data).filter(
     property => !deleted.includes(property.id),
@@ -237,7 +242,7 @@ export default function MyListingsScreen({ navigation }: Props) {
     filter === 'ALL' ? properties : properties.filter(p => p.status === filter);
 
   let body: React.ReactNode;
-  if (query.isPending) body = <LoadingView />;
+  if (query.isPending) body = <ListingListSkeleton />;
   else if (query.isError)
     body = (
       <ErrorView
@@ -322,7 +327,7 @@ export default function MyListingsScreen({ navigation }: Props) {
             onRefresh={() => query.refetch()}
             ListFooterComponent={
               query.isFetchingNextPage ? (
-                <ActivityIndicator color={colors.primary} />
+                <ListingCardSkeleton standalone />
               ) : undefined
             }
           />
@@ -332,7 +337,9 @@ export default function MyListingsScreen({ navigation }: Props) {
 
   return (
     <Screen edges={['left', 'right']}>
-      {body}
+      <Reveal {...reveal} loader={<ListingListSkeleton />}>
+        {body}
+      </Reveal>
       {properties.length > 0 ? (
         <Fab
           label={t('my.newListing')}

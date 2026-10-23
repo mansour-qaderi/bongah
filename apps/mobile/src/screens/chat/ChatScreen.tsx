@@ -6,7 +6,6 @@ import React, {
   useState,
 } from 'react';
 import {
-  ActivityIndicator,
   FlatList,
   Image,
   Modal,
@@ -67,7 +66,10 @@ import { Chip, ChipRow } from '../../components/Chip';
 import LocationPicker from '../../components/LocationPicker';
 import MessageBubble from '../../components/MessageBubble';
 import { Screen } from '../../components/Screen';
-import { ErrorView, LoadingView } from '../../components/States';
+import InlineLoader from '../../components/InlineLoader';
+import { Reveal, useReveal } from '../../components/Reveal';
+import { ChatThreadSkeleton } from '../../components/SkeletonLoader';
+import { ErrorView } from '../../components/States';
 import { TYPING_IDLE_MS } from '../../config';
 import { AFGHANISTAN_CAMERA, type Coordinate } from '../../map/geo';
 import { useFormat } from '../../i18n/useFormat';
@@ -313,8 +315,10 @@ export default function ChatScreen({ navigation, route }: Props) {
   useErrorToast(noticeText, notice);
   useErrorToast(pinOutside ? t('chat.locationOutside') : null, pinOutside);
 
+  const reveal = useReveal(history.isPending);
+
   // ── drawing ──────────────────────────────────────────────────────────────
-  if (history.isPending) return <LoadingView />;
+  if (history.isPending) return <ChatThreadSkeleton />;
   if (history.isError)
     return (
       <ErrorView
@@ -327,7 +331,7 @@ export default function ChatScreen({ navigation, route }: Props) {
   const closed = property.status !== 'ACTIVE';
   const someoneTyping = typing[conversationId] === true;
 
-  return (
+  const page = (
     <Screen edges={['left', 'right']}>
       <Pressable
         accessibilityRole="button"
@@ -382,7 +386,7 @@ export default function ChatScreen({ navigation, route }: Props) {
           onEndReachedThreshold={0.4}
           ListFooterComponent={
             history.isFetchingNextPage ? (
-              <ActivityIndicator color={colors.primary} />
+              <InlineLoader />
             ) : undefined
           }
         />
@@ -538,6 +542,11 @@ export default function ChatScreen({ navigation, route }: Props) {
         <ToastHost />
       </Modal>
     </Screen>
+  );
+  return (
+    <Reveal {...reveal} loader={<ChatThreadSkeleton />}>
+      {page}
+    </Reveal>
   );
 }
 

@@ -6,7 +6,6 @@ import React, {
   useState,
 } from 'react';
 import {
-  ActivityIndicator,
   Linking,
   Modal,
   Platform,
@@ -41,6 +40,7 @@ import { colors, radius, spacing } from '../theme';
 import AppText from './AppText';
 import Button from './Button';
 import CircleIconButton from './CircleIconButton';
+import MapLoader from './MapLoader';
 
 /** How close the map follows the driver: a few blocks ahead are visible. */
 const FOLLOW_ZOOM = 16;
@@ -475,7 +475,11 @@ function Note({
       ]}
       testID="navigation-note"
     >
-      {busy ? <ActivityIndicator size="small" color={colors.primary} /> : null}
+      {busy ? (
+        <View style={styles.noteLoader}>
+          <MapLoader size={28} />
+        </View>
+      ) : null}
       <AppText
         variant="bodySm"
         color={
@@ -531,6 +535,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 2,
     paddingHorizontal: spacing.xs,
+  },
+  // The loader's pin hops above its box: the slot keeps the note as tall as its words.
+  noteLoader: {
+    width: 28,
+    height: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   notes: {
     position: 'absolute',

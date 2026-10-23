@@ -17,6 +17,7 @@ import Button from '../../components/Button';
 import OptionCard from '../../components/OptionCard';
 import PaymentProgress from '../../components/PaymentProgress';
 import { ScrollScreen } from '../../components/Screen';
+import { Reveal, useReveal } from '../../components/Reveal';
 import { EmptyView, ErrorView, LoadingView } from '../../components/States';
 import { useErrorToast } from '../../components/useErrorToast';
 import { formatNumber } from '../../i18n/format';
@@ -45,6 +46,8 @@ export default function CheckoutScreen({ navigation }: Props) {
   );
 
   const pricing = usePricing();
+
+  const reveal = useReveal(pricing.isPending);
 
   if (status !== 'signedIn') {
     return (
@@ -93,7 +96,7 @@ export default function CheckoutScreen({ navigation }: Props) {
   }
 
   // ───── Choosing what to buy ─────
-  return (
+  const page = (
     <ScrollScreen>
       <View style={styles.section}>
         {/* The featured frame is the premium offer: a gold frame and its badge around the packs, the only thing here. */}
@@ -143,6 +146,11 @@ export default function CheckoutScreen({ navigation }: Props) {
         />
       </View>
     </ScrollScreen>
+  );
+  return (
+    <Reveal {...reveal} loader={<LoadingView />}>
+      {page}
+    </Reveal>
   );
 }
 

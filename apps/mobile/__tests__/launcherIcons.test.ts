@@ -76,7 +76,7 @@ describe('Android launcher icons', () => {
     },
   );
 
-  it('wires the adaptive icon to a transparent background (no plate behind the mark), the foreground and the themed-icon layer', () => {
+  it('wires the adaptive icon to a plain white background (the ring needs one to show on), the foreground and the themed-icon layer', () => {
     for (const name of ['ic_launcher', 'ic_launcher_round']) {
       const xml = fs.readFileSync(
         path.join(res, 'mipmap-anydpi-v26', `${name}.xml`),
@@ -92,7 +92,7 @@ describe('Android launcher icons', () => {
       'utf8',
     );
     expect(colors).toMatch(
-      /<color name="ic_launcher_background">#00000000<\/color>/,
+      /<color name="ic_launcher_background">#FFFFFF<\/color>/,
     );
   });
 
