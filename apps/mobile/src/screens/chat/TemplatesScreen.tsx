@@ -17,7 +17,9 @@ import Banner from '../../components/Banner';
 import { useErrorToast } from '../../components/useErrorToast';
 import Button from '../../components/Button';
 import { ScrollScreen } from '../../components/Screen';
-import { EmptyView, ErrorView, LoadingView } from '../../components/States';
+import { Reveal, useReveal } from '../../components/Reveal';
+import { TemplatesSkeleton } from '../../components/SkeletonLoader';
+import { EmptyView, ErrorView } from '../../components/States';
 import TextField from '../../components/TextField';
 import { formatNumber } from '../../i18n/format';
 import type { RootStackParamList } from '../../navigation/types';
@@ -37,8 +39,13 @@ export default function TemplatesScreen({ navigation }: Props) {
   const capabilities = useChatCapabilities(signedIn);
   const advanced = capabilities.data?.advanced === true;
   const templates = useTemplates(advanced);
+  // The page is waiting for the account, then the account's perks, then the templates themselves.
+  const reveal = useReveal(
+    status === 'loading' ||
+      (signedIn && (capabilities.isPending || (advanced && templates.isPending))),
+  );
 
-  if (status === 'loading') return <LoadingView />;
+  if (status === 'loading') return <TemplatesSkeleton />;
   if (!signedIn) {
     return (
       <EmptyView message={t('templates.signInHint')}>
@@ -50,7 +57,7 @@ export default function TemplatesScreen({ navigation }: Props) {
       </EmptyView>
     );
   }
-  if (capabilities.isPending) return <LoadingView />;
+  if (capabilities.isPending) return <TemplatesSkeleton />;
   if (capabilities.isError)
     return (
       <ErrorView
@@ -70,7 +77,7 @@ export default function TemplatesScreen({ navigation }: Props) {
       </EmptyView>
     );
   }
-  if (templates.isPending) return <LoadingView />;
+  if (templates.isPending) return <TemplatesSkeleton />;
   if (templates.isError)
     return (
       <ErrorView
@@ -79,12 +86,17 @@ export default function TemplatesScreen({ navigation }: Props) {
       />
     );
 
-  return (
+  const page = (
     <Manager
       templates={templates.data}
       max={capabilities.data.limits.templates_max}
       maxLength={capabilities.data.limits.template_max_length}
     />
+  );
+  return (
+    <Reveal {...reveal} loader={<TemplatesSkeleton />}>
+      {page}
+    </Reveal>
   );
 }
 

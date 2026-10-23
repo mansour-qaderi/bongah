@@ -1,6 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
-  ActivityIndicator,
   Keyboard,
   Pressable,
   StyleSheet,
@@ -20,6 +19,7 @@ import {
 import { colors, radius, spacing } from '../theme';
 import AppText from './AppText';
 import Icon, { type IconName } from './Icon';
+import MapLoader from './MapLoader';
 import TextField from './TextField';
 
 /** Wait this long after the last key before asking: one question per pause in the typing, not per letter. */
@@ -199,7 +199,9 @@ export default function PlaceSearchField({
       {note ? (
         <View style={styles.note}>
           {status === 'searching' ? (
-            <ActivityIndicator size="small" color={colors.primary} />
+            <View style={styles.loaderSlot}>
+              <MapLoader size={26} />
+            </View>
           ) : null}
           <AppText variant="caption" color={colors.textMuted}>
             {note}
@@ -208,7 +210,9 @@ export default function PlaceSearchField({
       ) : null}
       {resolving ? (
         <View style={styles.note}>
-          <ActivityIndicator size="small" color={colors.primary} />
+          <View style={styles.loaderSlot}>
+            <MapLoader size={26} />
+          </View>
           <AppText variant="caption" color={colors.textMuted}>
             {t('add.mapFinding')}
           </AppText>
@@ -263,6 +267,13 @@ export default function PlaceSearchField({
 
 const styles = StyleSheet.create({
   input: { minHeight: 64 },
+  // The map loader's pin hops above its box: the slot keeps the line as tall as the words.
+  loaderSlot: {
+    width: 26,
+    height: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   note: {
     flexDirection: 'row',
     alignItems: 'center',

@@ -15,6 +15,7 @@ import Banner from '../../components/Banner';
 import Button from '../../components/Button';
 import Icon, { type IconName } from '../../components/Icon';
 import { Screen } from '../../components/Screen';
+import { Reveal, useReveal } from '../../components/Reveal';
 import { EmptyView, ErrorView, LoadingView } from '../../components/States';
 import { useErrorToast } from '../../components/useErrorToast';
 import { showToast } from '../../components/Toast';
@@ -47,6 +48,8 @@ export default function BalanceScreen({ navigation }: Props) {
   const pricing = usePricing(status === 'signedIn');
   const spend = useLadderSpend();
   useErrorToast(spend.error ? errorMessage(spend.error, t) : null, spend.error);
+
+  const reveal = useReveal(wallet.isPending);
 
   if (status !== 'signedIn') {
     return (
@@ -86,7 +89,7 @@ export default function BalanceScreen({ navigation }: Props) {
     );
   };
 
-  return (
+  const page = (
     <Screen edges={['left', 'right', 'bottom']}>
       <ScrollView
         contentContainerStyle={styles.content}
@@ -222,6 +225,11 @@ export default function BalanceScreen({ navigation }: Props) {
         </View>
       </ScrollView>
     </Screen>
+  );
+  return (
+    <Reveal {...reveal} loader={<LoadingView />}>
+      {page}
+    </Reveal>
   );
 }
 

@@ -11,6 +11,7 @@ import Button from '../../components/Button';
 import { Chip } from '../../components/Chip';
 import PromotionSheet from '../../components/PromotionSheet';
 import { Screen } from '../../components/Screen';
+import { Reveal, useReveal } from '../../components/Reveal';
 import { EmptyView, ErrorView, LoadingView } from '../../components/States';
 import { formatDate, formatNumber } from '../../i18n/format';
 import { useFormat } from '../../i18n/useFormat';
@@ -30,6 +31,7 @@ export default function AgencyDashboardScreen({ navigation }: Props) {
   const isAgency = user?.role === 'AGENCY';
   const query = useAgencyDashboard(status === 'signedIn' && isAgency);
   const [promoting, setPromoting] = useState<DashboardListing | null>(null);
+  const reveal = useReveal(query.isPending);
 
   if (status !== 'signedIn') {
     return (
@@ -58,7 +60,7 @@ export default function AgencyDashboardScreen({ navigation }: Props) {
   const data = query.data;
   const subscribe = () => navigation.navigate('Upgrade');
 
-  return (
+  const page = (
     <Screen edges={['left', 'right']}>
       <ScrollView
         contentContainerStyle={styles.content}
@@ -119,6 +121,11 @@ export default function AgencyDashboardScreen({ navigation }: Props) {
 
       <PromotionSheet property={promoting} onClose={() => setPromoting(null)} />
     </Screen>
+  );
+  return (
+    <Reveal {...reveal} loader={<LoadingView />}>
+      {page}
+    </Reveal>
   );
 }
 

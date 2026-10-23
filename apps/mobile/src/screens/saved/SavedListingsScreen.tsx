@@ -11,7 +11,8 @@ import { queryKeys } from '../../api/hooks';
 import AppText from '../../components/AppText';
 import EmptyState from '../../components/EmptyState';
 import PropertyCard from '../../components/PropertyCard';
-import { Screen } from '../../components/Screen';
+import { Screen } from '../../components/Screen';import { PropertyCardSkeleton } from '../../components/SkeletonLoader';
+
 import { formatNumber } from '../../i18n/format';
 import { useSaved } from '../../favorites/store';
 import type { RootStackParamList } from '../../navigation/types';
@@ -110,10 +111,7 @@ export default function SavedListingsScreen({ navigation }: Props) {
           }
           if (item.kind === 'loading') {
             return (
-              <View
-                style={styles.placeholder}
-                testID={`saved-loading-${item.id}`}
-              />
+              <PropertyCardSkeleton testID={`saved-loading-${item.id}`} />
             );
           }
           return (
@@ -154,13 +152,6 @@ const styles = StyleSheet.create({
   list: { paddingTop: spacing.md, paddingBottom: spacing.xxl },
   count: { paddingHorizontal: spacing.lg, paddingBottom: spacing.sm },
   // A card-sized grey block while a saved listing is on its way, so the list does not jump when it arrives.
-  placeholder: {
-    ...surfaces.card,
-    height: 180,
-    marginHorizontal: spacing.lg,
-    marginBottom: spacing.md,
-    backgroundColor: colors.neutralSoft,
-  },
   note: {
     ...surfaces.card,
     marginHorizontal: spacing.lg,

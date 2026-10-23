@@ -20,10 +20,11 @@ import type { Route } from '../map/routing';
 import { colors, radius, spacing, surfaces } from '../theme';
 import AppText from './AppText';
 import CircleIconButton from './CircleIconButton';
+import { LOCATION_MAP_HEIGHT } from './layoutSizes';
 
 /** What the box measures before it has been laid out. */
 const FALLBACK_WIDTH = 320;
-const BOX_HEIGHT = 180;
+const BOX_HEIGHT = LOCATION_MAP_HEIGHT;
 
 /**
  * A picture of where a listing is (details screen): its pin, in the colour of what it is offered for. A listing posted

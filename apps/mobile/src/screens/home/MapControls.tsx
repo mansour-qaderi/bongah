@@ -1,6 +1,5 @@
 import React from 'react';
 import {
-  ActivityIndicator,
   Animated,
   Pressable,
   StyleSheet,
@@ -10,6 +9,7 @@ import { useTranslation } from 'react-i18next';
 import { DEAL_TYPES, type DealType } from '@bongah/shared-types';
 import AppText from '../../components/AppText';
 import Icon, { type IconName } from '../../components/Icon';
+import MapLoader from '../../components/MapLoader';
 import {
   inkBetween,
   SelectionFill,
@@ -79,7 +79,9 @@ export function RoundButton({
       ]}
     >
       {busy ? (
-        <ActivityIndicator size="small" color={ink} />
+        <View style={styles.roundLoader}>
+          <MapLoader size={26} onBrand={filled} />
+        </View>
       ) : (
         <Icon
           name={icon}
@@ -176,12 +178,11 @@ export function StatusPill({
   return (
     <View style={styles.status} testID="map-status">
       {busy ? (
-        <ActivityIndicator
-          size="small"
-          color={colors.primary}
-          accessibilityRole="progressbar"
-          accessibilityLabel={t('common.loading')}
-        />
+        // The map's own busy sign (a pin that hops, with radar rings). Its slot is as tall as the words, so the chip does
+        // not grow while it is busy and shrink when it is done.
+        <View style={styles.statusLoader}>
+          <MapLoader size={24} label={t('common.loading')} />
+        </View>
       ) : null}
       <AppText variant="caption" color={colors.textMuted}>
         {words}
@@ -324,6 +325,14 @@ const styles = StyleSheet.create({
   },
   swatch: { width: 8, height: 8, borderRadius: 4 },
   segmentText: { flexShrink: 1, fontWeight: '600' },
+  // The pin stands on the middle of its box and hops above it: moved down a little, the pin and its rings look centred.
+  roundLoader: { marginTop: 4 },
+  statusLoader: {
+    width: 24,
+    height: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   status: {
     alignSelf: 'center',
     flexDirection: 'row',

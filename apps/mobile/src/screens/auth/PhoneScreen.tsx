@@ -72,7 +72,7 @@ export default function PhoneScreen({ navigation }: Props) {
   };
 
   return (
-    <ScrollScreen style={styles.content}>
+    <ScrollScreen style={styles.content} busy={loading}>
       <AppText variant="title">{t('app.name')}</AppText>
       <AppText color={colors.textMuted} style={styles.hint}>
         {t('auth.phoneHintWhatsapp')}

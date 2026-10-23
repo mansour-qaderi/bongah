@@ -1,6 +1,5 @@
 import React from 'react';
 import {
-  ActivityIndicator,
   Pressable,
   StyleSheet,
   View,
@@ -9,7 +8,8 @@ import {
 } from 'react-native';
 import { colors, radius, spacing } from '../theme';
 import ActionIcon, { type ActionIconName } from './ActionIcon';
-import AppText from './AppText';
+import AppText from './AppText';import InlineLoader from './InlineLoader';
+
 
 type Variant = 'primary' | 'secondary' | 'outline' | 'danger';
 
@@ -71,7 +71,7 @@ export default function Button({
       ]}
     >
       {loading ? (
-        <ActivityIndicator color={fg} />
+        <InlineLoader color={fg} />
       ) : (
         <View style={styles.content}>
           {icon ? <ActionIcon name={icon} color={fg} /> : null}

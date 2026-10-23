@@ -12,7 +12,9 @@ import AppText from '../../components/AppText';
 import Button from '../../components/Button';
 import Avatar from '../../components/Avatar';
 import { Screen } from '../../components/Screen';
-import { EmptyView, ErrorView, LoadingView } from '../../components/States';
+import { Reveal, useReveal } from '../../components/Reveal';
+import { ConversationListSkeleton } from '../../components/SkeletonLoader';
+import { EmptyView, ErrorView } from '../../components/States';
 import { messagePreview } from '../../chat/preview';
 import { chatStamp, formatNumber } from '../../i18n/format';
 import type { RootStackParamList, TabParamList } from '../../navigation/types';
@@ -28,6 +30,8 @@ export default function ChatListScreen({ navigation }: Props) {
   const { status, user } = useAuth();
   const query = useConversations(status === 'signedIn');
 
+  const reveal = useReveal(query.isPending);
+
   if (status !== 'signedIn') {
     return (
       <EmptyView message={t('chat.signInHint')}>
@@ -39,7 +43,7 @@ export default function ChatListScreen({ navigation }: Props) {
       </EmptyView>
     );
   }
-  if (query.isPending) return <LoadingView />;
+  if (query.isPending) return <ConversationListSkeleton />;
   if (query.isError)
     return (
       <ErrorView
@@ -51,7 +55,7 @@ export default function ChatListScreen({ navigation }: Props) {
   const open = (conversation: ChatConversation) =>
     navigation.navigate('Chat', { conversation });
 
-  return (
+  const page = (
     <Screen edges={['left', 'right']}>
       <FlatList
         data={query.data}
@@ -69,6 +73,11 @@ export default function ChatListScreen({ navigation }: Props) {
         )}
       />
     </Screen>
+  );
+  return (
+    <Reveal {...reveal} loader={<ConversationListSkeleton />}>
+      {page}
+    </Reveal>
   );
 }
 

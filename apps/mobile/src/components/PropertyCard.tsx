@@ -12,14 +12,13 @@ import BookmarkButton from './BookmarkButton';
 import CircleIconButton from './CircleIconButton';
 import Icon from './Icon';
 import Price from './Price';
+import { CARD_MEDIA_HEIGHT } from './layoutSizes';
 import PropertyFacts, { propertyPlace } from './PropertyFacts';
 
 interface Props {
   property: Property;
   onPress: () => void;
 }
-
-const MEDIA_HEIGHT = 188;
 
 /**
  * A listing in the Home list: flat white card with a 1 px border and no shadow.
@@ -157,7 +156,7 @@ const styles = StyleSheet.create({
   },
   featured: { borderColor: colors.accentBright },
   pressed: { opacity: 0.85 },
-  media: { height: MEDIA_HEIGHT, backgroundColor: colors.neutralSoft },
+  media: { height: CARD_MEDIA_HEIGHT, backgroundColor: colors.neutralSoft },
   image: { width: '100%', height: '100%' },
   placeholder: {
     flex: 1,

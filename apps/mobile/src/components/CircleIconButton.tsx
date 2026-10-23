@@ -1,6 +1,5 @@
 import React from 'react';
 import {
-  ActivityIndicator,
   Pressable,
   StyleSheet,
   type StyleProp,
@@ -8,6 +7,8 @@ import {
 } from 'react-native';
 import { colors } from '../theme';
 import Icon, { type IconName } from './Icon';
+import { ROUND_BUTTON } from './layoutSizes';import InlineLoader from './InlineLoader';
+
 
 export type CircleIconTone = 'neutral' | 'brand' | 'danger';
 
@@ -45,7 +46,7 @@ export default function CircleIconButton({
   loading = false,
   disabled = false,
   selected,
-  size = 40,
+  size = ROUND_BUTTON,
   testID,
   style,
 }: Props) {
@@ -69,7 +70,7 @@ export default function CircleIconButton({
       ]}
     >
       {loading ? (
-        <ActivityIndicator size="small" color={ink} />
+        <InlineLoader size={18} color={ink} />
       ) : (
         <Icon name={icon} size={size * 0.55} color={ink} weight={1.9} />
       )}

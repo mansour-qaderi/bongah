@@ -1,6 +1,5 @@
 import React from 'react';
 import {
-  ActivityIndicator,
   Image,
   Pressable,
   StyleSheet,
@@ -19,7 +18,8 @@ import ContactActionBar from './ContactActionBar';
 import ContactLockSheet from './ContactLockSheet';
 import Icon from './Icon';
 import Price from './Price';
-import PropertyFacts, { propertyPlace } from './PropertyFacts';
+import PropertyFacts, { propertyPlace } from './PropertyFacts';import MapLoader from './MapLoader';
+
 
 interface Props {
   property: Property;
@@ -152,7 +152,9 @@ export default function PropertyPreviewCard({
                 ]}
               >
                 {navigating ? (
-                  <ActivityIndicator size="small" color={colors.primary} />
+                  <View style={styles.navigateLoader}>
+                    <MapLoader size={22} />
+                  </View>
                 ) : (
                   <Icon
                     name="navigate"
@@ -244,6 +246,13 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.primary,
     backgroundColor: colors.surface,
+  },
+  // The loader's pin hops above its box: the slot is as wide and tall as the arrow icon it stands in for.
+  navigateLoader: {
+    width: 22,
+    height: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   navigatePressed: { opacity: 0.8 },
   // On the picture's corner, so the far end (top-left) is the deal's tag and nothing sits on it.

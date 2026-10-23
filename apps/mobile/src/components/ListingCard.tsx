@@ -11,6 +11,7 @@ import AppText from './AppText';
 import Badge, { badgeTones, DealBadge } from './Badge';
 import CircleIconButton from './CircleIconButton';
 import Icon, { type IconName } from './Icon';
+import { LISTING_THUMB } from './layoutSizes';
 import Price from './Price';
 import PropertyFacts, { propertyPlace } from './PropertyFacts';
 
@@ -45,8 +46,6 @@ interface Props {
   /** The rest, behind a "more" button that opens a menu sheet, so the card stays quiet. */
   menu?: ListingAction[];
 }
-
-const THUMB = 104;
 
 /**
  * One of the person's own listings, as a flat card (white, 1 px border, no shadow). The top is three parts side by
@@ -274,8 +273,12 @@ const styles = StyleSheet.create({
   // The picture is a compact square of its own, whatever the column beside it holds: it never stretches.
   top: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.md },
   pressed: { opacity: 0.85 },
-  media: { width: THUMB, height: THUMB },
-  thumb: { width: THUMB, height: THUMB, borderRadius: radius.md },
+  media: { width: LISTING_THUMB, height: LISTING_THUMB },
+  thumb: {
+    width: LISTING_THUMB,
+    height: LISTING_THUMB,
+    borderRadius: radius.md,
+  },
   text: { gap: spacing.xs },
   // The status pill, in the picture's own top corner (`end`, because the app reads right to left).
   status: { position: 'absolute', top: spacing.xs, end: spacing.xs },

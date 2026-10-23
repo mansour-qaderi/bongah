@@ -12,6 +12,7 @@ import Banner from './Banner';
 import Button from './Button';
 import LadderFrameOption from './LadderFrameOption';
 import PaymentProgress from './PaymentProgress';
+import { Reveal, useReveal } from './Reveal';
 import { ErrorView, LoadingView } from './States';
 import { useErrorToast } from './useErrorToast';
 
@@ -37,6 +38,7 @@ export default function FramePayStep({
     flow.startError,
   );
   const prices = pricing.data;
+  const reveal = useReveal(pricing.isPending);
 
   if (flow.payment) return <PaymentProgress flow={flow} onDone={onDone} />;
   if (pricing.isPending) return <LoadingView />;
@@ -58,7 +60,7 @@ export default function FramePayStep({
     );
   }
   return (
-    <>
+    <Reveal fill={false} {...reveal} loader={<LoadingView />}>
       <Banner kind="success" message={t('frame.payTitle')} />
       <AppText variant="caption" color={colors.textMuted}>
         {t('frame.payHelp', { days: formatNumber(prices.featured_ad_days, 0) })}
@@ -83,7 +85,7 @@ export default function FramePayStep({
         onPress={onDone}
         style={styles.gap}
       />
-    </>
+    </Reveal>
   );
 }
 

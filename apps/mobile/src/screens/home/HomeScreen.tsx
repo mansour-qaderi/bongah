@@ -6,7 +6,6 @@ import React, {
   useState,
 } from 'react';
 import {
-  ActivityIndicator,
   AppState,
   FlatList,
   Linking,
@@ -41,7 +40,13 @@ import PropertyCard from '../../components/PropertyCard';
 import PropertyMap from '../../components/PropertyMap';
 import PropertyBottomSheet from '../../components/PropertyBottomSheet';
 import EmptyState from '../../components/EmptyState';
-import { ErrorView, LoadingView } from '../../components/States';
+import MapLoader from '../../components/MapLoader';
+import { Reveal, useReveal } from '../../components/Reveal';
+import {
+  PropertyCardSkeleton,
+  PropertyListSkeleton,
+} from '../../components/SkeletonLoader';
+import { ErrorView } from '../../components/States';
 import { findProvince } from '../../constants/provinces';
 import { MAP_TILE_MAX_ZOOM } from '../../config';
 import type { MapViewChange } from '../../map/BaseMap';
@@ -221,6 +226,7 @@ export default function HomeScreen({ navigation }: Props) {
     [filters, listArea],
   );
   const listQuery = usePropertyList(listFilters, mode === 'list');
+  const listReveal = useReveal(listQuery.isPending);
   const query = mode === 'map' ? mapQuery : listQuery;
   const properties = useMemo(() => flattenPages(query.data), [query.data]);
   const total = listQuery.data?.pages[0]?.meta.total ?? 0;
@@ -529,7 +535,7 @@ export default function HomeScreen({ navigation }: Props) {
   if (mode === 'list') {
     let list: React.ReactNode;
     if (listQuery.isPending) {
-      list = <LoadingView />;
+      list = <PropertyListSkeleton />;
     } else if (listQuery.isError) {
       list = (
         <ErrorView
@@ -579,7 +585,7 @@ export default function HomeScreen({ navigation }: Props) {
             listQuery.hasNextPage ? (
               <View style={styles.footer}>
                 {listQuery.isFetchingNextPage ? (
-                  <ActivityIndicator color={colors.primary} />
+                  <PropertyCardSkeleton standalone />
                 ) : (
                   <Button
                     icon="down"
@@ -611,7 +617,11 @@ export default function HomeScreen({ navigation }: Props) {
             </AppText>
           ) : null}
         </View>
-        <View style={styles.listBody}>{list}</View>
+        <View style={styles.listBody}>
+          <Reveal {...listReveal} loader={<PropertyListSkeleton />}>
+            {list}
+          </Reveal>
+        </View>
       </View>
     );
   } else {
@@ -670,7 +680,7 @@ export default function HomeScreen({ navigation }: Props) {
           // The map is not drawn until the phone has said where it is, so it opens on the phone: drawing the country
           // first and then flying across it to the person's street is what this replaces.
           <View style={styles.waiting} testID="map-waiting">
-            <ActivityIndicator size="large" color={colors.primary} />
+            <MapLoader size={88} />
             <AppText variant="bodySm" color={colors.textSecondary}>
               {t('home.locating')}
             </AppText>

@@ -15,6 +15,7 @@ import AppText from './AppText';
 import Button from './Button';
 import PaymentProgress from './PaymentProgress';
 import LadderFrameOption from './LadderFrameOption';
+import { Reveal, useReveal } from './Reveal';
 import { ErrorView, LoadingView } from './States';
 import { showToast, ToastHost } from './Toast';
 import { useErrorToast } from './useErrorToast';
@@ -72,6 +73,7 @@ function SheetBody({
   );
   useErrorToast(spend.error ? errorMessage(spend.error, t) : null, spend.error);
 
+  const reveal = useReveal(pricing.isPending);
   const prices = pricing.data;
   const featuredHelp =
     property.is_featured && property.featured_until && prices
@@ -114,6 +116,7 @@ function SheetBody({
           contentContainerStyle={styles.content}
           keyboardShouldPersistTaps="handled"
         >
+          <Reveal fill={false} {...reveal} loader={<LoadingView />}>
           {flow.payment ? (
             <PaymentProgress flow={flow} onDone={onClose} />
           ) : pricing.isPending ? (
@@ -183,6 +186,7 @@ function SheetBody({
               />
             </>
           )}
+          </Reveal>
         </ScrollView>
       </SafeAreaView>
       {/* The sheet is a modal: a toast has to be drawn inside it to be seen over it. */}

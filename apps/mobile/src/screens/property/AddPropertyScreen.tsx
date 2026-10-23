@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  ActivityIndicator,
   AppState,
   Linking,
   Modal,
@@ -53,6 +52,8 @@ import FramePayStep from '../../components/FramePayStep';
 import LadderUnlockBanner from '../../components/LadderUnlockBanner';
 import { KeyboardAwareScrollView } from '../../components/KeyboardAware';
 import LocationEditor from '../../components/LocationEditor';
+import MapLoader from '../../components/MapLoader';
+import { Reveal, useReveal } from '../../components/Reveal';
 import LocationPermissionModal, {
   type LocationProblem,
 } from '../../components/LocationPermissionModal';
@@ -545,6 +546,8 @@ export default function AddPropertyScreen({ navigation, route }: Props) {
         : navigation.replace('PropertyDetails', { id }),
     );
 
+  // Editing: the form fades in over the loader once the listing has arrived.
+  const reveal = useReveal(editing && existing.isPending);
   const sheetTitle = editing ? t('add.editTitle') : t('nav.addProperty');
   /** The sheet around whatever the screen has to show right now. */
   const sheet = (content: React.ReactNode, footer?: React.ReactNode) => (
@@ -556,7 +559,9 @@ export default function AddPropertyScreen({ navigation, route }: Props) {
       heightRatio={0.92}
       footer={footer}
     >
-      {content}
+      <Reveal {...reveal} loader={<LoadingView />}>
+        {content}
+      </Reveal>
     </BottomSheet>
   );
 
@@ -848,7 +853,9 @@ export default function AddPropertyScreen({ navigation, route }: Props) {
       </AppText>
     ) : mapSync === 'finding' ? (
       <View style={[styles.finding, styles.status]}>
-        <ActivityIndicator size="small" color={colors.primary} />
+        <View style={styles.finderSlot}>
+          <MapLoader size={26} />
+        </View>
         <AppText variant="caption" color={colors.textMuted}>
           {t('add.mapFinding')}
         </AppText>
@@ -871,7 +878,9 @@ export default function AddPropertyScreen({ navigation, route }: Props) {
   const pinStatus =
     lookup === 'finding' ? (
       <View style={styles.finding}>
-        <ActivityIndicator size="small" color={colors.primary} />
+        <View style={styles.finderSlot}>
+          <MapLoader size={26} />
+        </View>
         <AppText variant="caption" color={colors.textMuted}>
           {t('add.finding')}
         </AppText>
@@ -1379,6 +1388,13 @@ const styles = StyleSheet.create({
   toggle: { marginTop: spacing.xs, marginBottom: spacing.lg },
   counts: { flexDirection: 'row', gap: spacing.md },
   finding: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  // The map loader's pin hops above its box: the slot keeps the line as tall as the words.
+  finderSlot: {
+    width: 26,
+    height: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   select: {
     minHeight: 48,
     justifyContent: 'center',

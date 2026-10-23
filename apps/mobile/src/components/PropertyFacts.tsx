@@ -11,6 +11,7 @@ import { startsWithProvince } from '../utils/addressLine';
 import { colors, radius, spacing } from '../theme';
 import AppText from './AppText';
 import Icon, { type IconName } from './Icon';
+import { FACT_TILE } from './layoutSizes';
 
 /**
  * Where a listing is, in one line: the province, then the most specific place it has. Older listings carry a
@@ -216,8 +217,8 @@ const styles = StyleSheet.create({
   },
   cellText: { flexShrink: 1 },
   tile: {
-    width: 30,
-    height: 30,
+    width: FACT_TILE,
+    height: FACT_TILE,
     borderRadius: radius.sm,
     alignItems: 'center',
     justifyContent: 'center',

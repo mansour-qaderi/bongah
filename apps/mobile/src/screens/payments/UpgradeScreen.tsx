@@ -12,6 +12,7 @@ import Button from '../../components/Button';
 import Icon from '../../components/Icon';
 import PaymentProgress from '../../components/PaymentProgress';
 import { ScrollScreen } from '../../components/Screen';
+import { Reveal, useReveal } from '../../components/Reveal';
 import { EmptyView, ErrorView, LoadingView } from '../../components/States';
 import { showToast } from '../../components/Toast';
 import { useErrorToast } from '../../components/useErrorToast';
@@ -40,6 +41,8 @@ export default function UpgradeScreen({ navigation }: Props) {
     flow.startError ? errorMessage(flow.startError, t) : null,
     flow.startError,
   );
+
+  const reveal = useReveal(pricing.isPending);
 
   if (status !== 'signedIn') {
     return (
@@ -93,7 +96,7 @@ export default function UpgradeScreen({ navigation }: Props) {
     flow.begin({ purpose: 'SUBSCRIPTION', package_type: chosen.pkg });
   };
 
-  return (
+  const page = (
     <ScrollScreen>
       {giftsOpen ? (
         <View testID="launch-gifts-banner" style={styles.launch}>
@@ -164,6 +167,11 @@ export default function UpgradeScreen({ navigation }: Props) {
         </Pressable>
       </View>
     </ScrollScreen>
+  );
+  return (
+    <Reveal {...reveal} loader={<LoadingView />}>
+      {page}
+    </Reveal>
   );
 }
 

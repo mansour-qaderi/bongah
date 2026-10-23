@@ -1366,6 +1366,34 @@ describe('Home map: moving around', () => {
     expect(allText(empty.root)).not.toContain(countOf('۰'));
   });
 
+  it('stands skeleton cards where the first page will be while it loads, and takes them away when it arrives', async () => {
+    // The server does not answer: the list stays "loading".
+    fetchMock.mockImplementation(() => new Promise(() => undefined));
+    const tree = await render(home());
+    await settle();
+    await press(tree.root, prs.home.list);
+    await settle();
+    expect(byTestId(tree.root, 'property-list-skeleton').length).toBeGreaterThan(0);
+    expect(byTestId(tree.root, 'property-card-skeleton-2').length).toBeGreaterThan(0);
+    expect(
+      tree.root.findAll(n => n.props.testID === 'property-card'),
+    ).toHaveLength(0);
+    await act(async () => tree.unmount());
+
+    serve([listing()]);
+    const loaded = await render(home());
+    await settle();
+    await press(loaded.root, prs.home.list);
+    await settle();
+    // The cards are there at once and the skeleton fades out over them, then goes.
+    expect(allText(loaded.root)).toContain('آپارتمان سه‌خوابه');
+    await act(async () => {
+      await new Promise<void>(resolve => setTimeout(() => resolve(), 450));
+    });
+    expect(byTestId(loaded.root, 'property-list-skeleton')).toHaveLength(0);
+    expect(byTestId(loaded.root, 'reveal-loader')).toHaveLength(0);
+  });
+
   describe('the empty list', () => {
     const emptyAction = (root: ReactTestRenderer.ReactTestInstance) =>
       root.findAll(
@@ -1427,6 +1455,11 @@ let springs = 0;
 const holdSlides = () => {
   slides = [];
   springs = 0;
+  // The map's own busy sign (a hopping pin) is also an Animated.timing: with "reduce motion" on it stays still, so only
+  // the sheet's slides are counted here.
+  jest
+    .spyOn(AccessibilityInfo, 'isReduceMotionEnabled')
+    .mockResolvedValue(true);
   jest.spyOn(Animated, 'timing').mockImplementation(((
     _value: unknown,
     config: { toValue: number; duration: number },
@@ -1992,7 +2025,7 @@ describe('Home map: overlay controls', () => {
     expect(progress(chip(tree.root))).toHaveLength(0);
   });
 
-  it('has no spinner anywhere on the map outside the status chip, and the locate button never turns into one', async () => {
+  it('has no busy sign on the map outside the status chip and the waiting card, and the locate button never turns into one', async () => {
     // The phone never answers: the position search is still "running".
     jest
       .spyOn(LocationManager, 'getCurrentPosition')
@@ -2000,9 +2033,14 @@ describe('Home map: overlay controls', () => {
     serve([listing()]);
     const tree = await render(home());
     await settle();
+    // While the position is being looked for, the map's busy sign (the hopping pin with radar rings) is in the chip, and
+    // in the card that stands where the map will be: nowhere else.
     const all = progress(tree.root);
     const inChip = progress(chip(tree.root));
-    expect(all.length).toBe(inChip.length);
+    const inCard = progress(byTestId(tree.root, 'map-waiting')[0]);
+    expect(inChip.length).toBeGreaterThan(0);
+    expect(inCard.length).toBeGreaterThan(0);
+    expect(all.length).toBe(inChip.length + inCard.length);
     const locate = tree.root.find(
       n => n.props.testID === 'locate' && typeof n.type !== 'string',
     );

@@ -109,7 +109,7 @@ export default function OtpScreen({ navigation, route }: Props) {
   };
 
   return (
-    <ScrollScreen style={styles.content}>
+    <ScrollScreen style={styles.content} busy={verifying}>
       <AppText color={colors.textMuted} style={styles.hint}>
         {t('auth.otpHint', {
           length: toPersianDigits(OTP_LENGTH),

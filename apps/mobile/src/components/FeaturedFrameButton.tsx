@@ -1,5 +1,5 @@
 import React from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import type { Property } from '@bongah/shared-types';
 import { errorMessage } from '../api/errors';
@@ -16,7 +16,8 @@ import LadderFrameOption from './LadderFrameOption';
 import PaymentProgress from './PaymentProgress';
 import { rowStyles } from './SwitchRow';
 import { showToast } from './Toast';
-import { useErrorToast } from './useErrorToast';
+import { useErrorToast } from './useErrorToast';import InlineLoader from './InlineLoader';
+
 
 type Promotable = Pick<
   Property,
@@ -122,7 +123,7 @@ export default function FeaturedFrameButton({
             </View>
             <View style={styles.go}>
               {busy ? (
-                <ActivityIndicator size="small" color={colors.textOnPrimary} />
+                <InlineLoader size={18} color={colors.textOnPrimary} />
               ) : (
                 <Icon
                   name="arrowUp"
