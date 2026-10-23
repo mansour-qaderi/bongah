@@ -22,9 +22,9 @@ import { unlockContactSchema, type ContactAccessDto, type UnlockContactDto } fro
 import { createPropertySchema, type CreatePropertyDto } from './dto/create-property.dto.js';
 import {
   listPropertiesQuerySchema,
-  paginationQuerySchema,
+  myListingsQuerySchema,
   type ListPropertiesDto,
-  type PaginationDto,
+  type MyListingsDto,
 } from './dto/list-properties.dto.js';
 import type {
   PropertyDto,
@@ -53,7 +53,7 @@ export class PropertyController {
   @UseGuards(JwtAuthGuard)
   mine(
     @CurrentUser() user: AuthenticatedUser,
-    @Query(new ZodValidationPipe(paginationQuerySchema)) query: PaginationDto,
+    @Query(new ZodValidationPipe(myListingsQuerySchema)) query: MyListingsDto,
   ): Promise<PropertyPageDto> {
     return this.properties.listMine(user.id, query);
   }

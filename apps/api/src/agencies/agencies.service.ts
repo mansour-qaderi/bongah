@@ -5,7 +5,7 @@ import {
   NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
-import type { Agency, AgencyDashboard, AgencyMapPin } from '@bongah/shared-types';
+import type { Agency, AgencyDashboard, AgencyListingPin, AgencyMapListings, AgencyMapPin } from '@bongah/shared-types';
 import {
   Prisma,
   AgencyVerificationStatus,
@@ -23,6 +23,9 @@ const DASHBOARD_TOP_LISTINGS = 5;
 
 /** The most offices one map answer carries. Oldest first, so the answer is stable while the cap is not reached. */
 export const AGENCY_MAP_LIMIT = 500;
+
+/** The most listings the office's own map answer carries (newest first). One office rarely has more than a few hundred. */
+export const OFFICE_MAP_LISTINGS_LIMIT = 2000;
 
 @Injectable()
 export class AgenciesService {
@@ -165,6 +168,57 @@ export class AgenciesService {
    * under its agency profile (properties.agency_id); anything the owner posted as a regular user
    * before registering the agency stays out of these figures.
    */
+  /**
+   * Every listing the agency still has (active and sold; archived ones are left out), small enough to draw on the office
+   * map, pinned or not: one without a pin is how the web panel shows "place me". Newest first; when there are more
+   * than OFFICE_MAP_LISTINGS_LIMIT the oldest are left out and `truncated` says so.
+   */
+  async listMapListings(userId: string): Promise<AgencyMapListings> {
+    const now = new Date();
+    const agency = await this.prisma.agency.findUnique({ where: { userId }, select: { id: true } });
+    if (!agency) {
+      throw new NotFoundException({ message: 'Register your agency first.', code: 'AGENCY_PROFILE_REQUIRED' });
+    }
+    const rows = await this.prisma.property.findMany({
+      where: { agencyId: agency.id, status: { not: PropertyStatus.ARCHIVED } },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      take: OFFICE_MAP_LISTINGS_LIMIT + 1,
+      select: {
+        id: true,
+        title: true,
+        type: true,
+        dealType: true,
+        status: true,
+        price: true,
+        currency: true,
+        province: true,
+        district: true,
+        address: true,
+        lat: true,
+        lng: true,
+        isFeatured: true,
+        featuredUntil: true,
+      },
+    });
+    const truncated = rows.length > OFFICE_MAP_LISTINGS_LIMIT;
+    const data: AgencyListingPin[] = rows.slice(0, OFFICE_MAP_LISTINGS_LIMIT).map((row) => ({
+      id: row.id,
+      title: row.title,
+      type: row.type,
+      deal_type: row.dealType,
+      status: row.status,
+      price: row.price.toNumber(),
+      currency: row.currency,
+      province: row.province,
+      district: row.district,
+      address: row.address,
+      lat: row.lat,
+      lng: row.lng,
+      is_featured: isFeaturedAt(row, now),
+    }));
+    return { data, truncated, limit: OFFICE_MAP_LISTINGS_LIMIT };
+  }
+
   async getDashboard(userId: string): Promise<AgencyDashboard> {
     const now = new Date();
     const agency = await this.prisma.agency.findUnique({

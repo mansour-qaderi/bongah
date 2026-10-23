@@ -36,3 +36,6 @@ apps/api/src/generated/
 
 # local chat picture store (see apps/api/src/chat/images)
 uploads/
+
+# web
+apps/web/.next/

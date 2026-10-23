@@ -1,0 +1,457 @@
+'use client';
+
+import Link from 'next/link';
+import { useRouter } from 'next/navigation';
+import { useCallback, useMemo, useState } from 'react';
+import useSWR from 'swr';
+import { flexRender, getCoreRowModel, useReactTable, type ColumnDef } from '@tanstack/react-table';
+import { toast } from 'sonner';
+import { ArrowDown, ArrowUp, Eye, FilePlus2, Frame, MapPin, MoreHorizontal, SearchX, Star } from 'lucide-react';
+import { moneyAmount } from '@bongah/validation';
+import type { Paginated, Property, PropertyStatus } from '@bongah/shared-types';
+import { errorMessage, fetcher } from '@/lib/api';
+import { formatMoney, formatNumber, formatShortDate, parseLooseNumber } from '@/lib/format';
+import { DEAL_LABEL, TYPE_LABEL } from '@/lib/labels';
+import {
+  applyFeatured,
+  archiveMany,
+  fetchAllListings,
+  patchCachedListings,
+  refreshListingData,
+  updateListing,
+  updateMany,
+  type BulkOutcome,
+  type FeaturedSource,
+} from '@/lib/listing-actions';
+import { PAGE_SIZE, useListingQuery, type StatusTab } from '@/hooks/use-listing-query';
+import { SYNC_INTERVAL_MS } from '@/hooks/use-api';
+import { cn } from '@/lib/cn';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
+import { ConfirmDialog } from '@/components/ui/dialog';
+import { DropdownContent, DropdownItem, DropdownRoot, DropdownSeparator, DropdownTrigger } from '@/components/ui/dropdown';
+import { EmptyState, ErrorState } from '@/components/ui/empty-state';
+import { Checkbox } from '@/components/ui/field';
+import { TableRowsSkeleton } from '@/components/ui/skeleton';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { BulkBar } from './bulk-bar';
+import { FeaturedDialog } from './featured-dialog';
+import { ListingFilters } from './filters';
+import { InlineEdit } from './inline-edit';
+import { ProgressDialog, type RunState } from './progress-dialog';
+import { StatusActions, StatusBadge, useStatusChange } from './status-toggle';
+
+const TAB_LABEL: Record<StatusTab, string> = { ACTIVE: 'فعال', SOLD: 'معامله‌شده', ARCHIVED: 'غیرفعال', ALL: 'همه' };
+
+function DealBadge({ deal }: { deal: Property['deal_type'] }) {
+  return <Badge tone={deal === 'SALE' ? 'primary' : deal === 'RENT' ? 'info' : 'gold'}>{DEAL_LABEL[deal]}</Badge>;
+}
+
+export function ListingsView() {
+  const { query, update, reset, apiQuery, activeFilters } = useListingQuery();
+  const swrKey = useMemo(() => {
+    const p = new URLSearchParams();
+    Object.entries({ ...apiQuery, page: query.page, limit: PAGE_SIZE }).forEach(([k, v]) => v !== undefined && p.set(k, String(v)));
+    return `properties/mine?${p.toString()}`;
+  }, [apiQuery, query.page]);
+
+  const { data, error, isValidating, mutate } = useSWR<Paginated<Property>>(swrKey, fetcher, {
+    refreshInterval: SYNC_INTERVAL_MS,
+    keepPreviousData: true,
+    revalidateOnFocus: true,
+  });
+  const { change, isPending } = useStatusChange();
+  const router = useRouter();
+
+  // Selection survives page changes and filters: the whole listing is kept, so bulk actions know each one's state.
+  const [selected, setSelected] = useState<ReadonlyMap<string, Property>>(new Map());
+  const [loadingAll, setLoadingAll] = useState(false);
+  const [featuredOpen, setFeaturedOpen] = useState(false);
+  const [confirm, setConfirm] = useState<null | 'archive'>(null);
+  const [run, setRun] = useState<RunState | null>(null);
+  const [rowFeatured, setRowFeatured] = useState<Property | null>(null);
+
+  const rows = data?.data ?? [];
+  const total = data?.meta.total ?? 0;
+  const pageAllSelected = rows.length > 0 && rows.every((r) => selected.has(r.id));
+  const pageSomeSelected = rows.some((r) => selected.has(r.id));
+
+  const toggleOne = useCallback((p: Property, on: boolean) => {
+    setSelected((prev) => {
+      const next = new Map(prev);
+      if (on) next.set(p.id, p);
+      else next.delete(p.id);
+      return next;
+    });
+  }, []);
+
+  function togglePage(on: boolean) {
+    setSelected((prev) => {
+      const next = new Map(prev);
+      rows.forEach((r) => (on ? next.set(r.id, r) : next.delete(r.id)));
+      return next;
+    });
+  }
+
+  async function selectEverything() {
+    setLoadingAll(true);
+    try {
+      const all = await fetchAllListings(apiQuery);
+      setSelected(new Map(all.map((p) => [p.id, p])));
+      if (all.length < total) toast.info(`برای امنیت، فقط ${formatNumber(all.length)} آگهی اول انتخاب شد.`);
+    } catch (e) {
+      toast.error(errorMessage(e));
+    } finally {
+      setLoadingAll(false);
+    }
+  }
+
+  // ── Inline edits ──
+  const saveField = useCallback(async (p: Property, patch: { title?: string; price?: number }) => {
+    await patchCachedListings(new Set([p.id]), patch);
+    try {
+      await updateListing(p.id, patch);
+      toast.success('ذخیره شد.');
+    } catch (e) {
+      toast.error(errorMessage(e));
+      throw e;
+    } finally {
+      await refreshListingData();
+    }
+  }, []);
+
+  // ── Bulk actions ──
+  async function execute(
+    title: string,
+    items: Property[],
+    job: (ids: string[], onProgress: (done: number, total: number) => void) => Promise<BulkOutcome>,
+    optimistic?: Partial<Property>,
+  ) {
+    const titles = new Map(items.map((p) => [p.id, p.title]));
+    const ids = items.map((p) => p.id);
+    setRun({ title, done: 0, total: ids.length, titles });
+    if (optimistic) await patchCachedListings(new Set(ids), optimistic);
+    let outcome: BulkOutcome;
+    try {
+      outcome = await job(ids, (done, totalCount) => setRun((r) => (r ? { ...r, done, total: totalCount } : r)));
+    } catch (e) {
+      outcome = { succeeded: [], failed: ids.map((id) => ({ id, message: errorMessage(e) })) };
+    }
+    setRun((r) => (r ? { ...r, done: r.total, outcome } : r));
+    setSelected((prev) => {
+      const next = new Map(prev);
+      outcome.succeeded.forEach((id) => next.delete(id));
+      return next;
+    });
+    await refreshListingData();
+  }
+
+  const selectedList = [...selected.values()];
+  const featuredEligible = selectedList.filter((p) => p.status === 'ACTIVE' && !p.is_featured);
+
+  function bulkStatus(status: PropertyStatus, label: string, skipIf: PropertyStatus) {
+    const items = selectedList.filter((p) => p.status !== skipIf);
+    if (items.length === 0) {
+      toast.info('همه آگهی‌های انتخاب‌شده همین حالا در این وضعیت‌اند.');
+      return;
+    }
+    void execute(label, items, (ids, progress) => updateMany(ids, { status }, progress), { status });
+  }
+
+  const columns = useMemo<ColumnDef<Property>[]>(
+    () => [
+      {
+        id: 'select',
+        header: () => <Checkbox label="انتخاب همه این صفحه" checked={pageAllSelected} indeterminate={pageSomeSelected} onChange={togglePage} />,
+        cell: ({ row }) => (
+          <Checkbox label={`انتخاب ${row.original.title}`} checked={selected.has(row.original.id)} onChange={(on) => toggleOne(row.original, on)} />
+        ),
+        size: 44,
+      },
+      {
+        id: 'listing',
+        header: 'آگهی',
+        cell: ({ row }) => {
+          const p = row.original;
+          return (
+            <div className="min-w-0 max-w-[26rem]">
+              <InlineEdit
+                label="عنوان"
+                value={p.title}
+                display={<span className="block truncate text-sm font-semibold text-ink">{p.title}</span>}
+                validate={(d) => (d.trim().length < 3 ? 'عنوان دست‌کم ۳ حرف باشد.' : d.trim().length > 150 ? 'عنوان بیش از ۱۵۰ حرف نباشد.' : null)}
+                onSave={(d) => saveField(p, { title: d.replace(/\s+/g, ' ').trim() })}
+              />
+              <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted">
+                <DealBadge deal={p.deal_type} />
+                <span>{TYPE_LABEL[p.type]}</span>
+                <span aria-hidden>·</span>
+                <span className="truncate">{[p.district, p.province].filter(Boolean).join('، ')}</span>
+                {p.is_featured ? (
+                  <Badge tone="gold" className="gap-1">
+                    <Star aria-hidden className="h-3 w-3" fill="currentColor" />
+                    ویژه
+                  </Badge>
+                ) : null}
+              </div>
+            </div>
+          );
+        },
+      },
+      {
+        id: 'price',
+        header: 'قیمت',
+        cell: ({ row }) => {
+          const p = row.original;
+          return (
+            <InlineEdit
+              label="قیمت"
+              value={String(p.price)}
+              inputMode="decimal"
+              ltr
+              inputClassName="w-36"
+              display={<span className="tabular whitespace-nowrap text-sm font-semibold text-ink-2">{formatMoney(p.price, p.currency)}</span>}
+              validate={(d) => {
+                const n = parseLooseNumber(d);
+                if (n === null || n <= 0) return 'قیمت را به عدد بنویسید.';
+                return moneyAmount.safeParse(n).success ? null : 'قیمت معتبر نیست (حداکثر دو رقم اعشار).';
+              }}
+              onSave={(d) => saveField(p, { price: parseLooseNumber(d)! })}
+            />
+          );
+        },
+      },
+      {
+        id: 'views',
+        header: 'بازدید',
+        cell: ({ row }) => (
+          <span className="tabular flex items-center gap-1 text-[13px] text-ink-2">
+            <Eye aria-hidden className="h-3.5 w-3.5 text-muted" />
+            {formatNumber(row.original.view_count ?? 0)}
+          </span>
+        ),
+      },
+      {
+        id: 'status',
+        header: 'وضعیت',
+        cell: ({ row }) => (
+          <div className="flex flex-nowrap items-center gap-2 whitespace-nowrap">
+            <StatusBadge status={row.original.status} />
+            <StatusActions listing={row.original} change={change} busy={isPending(row.original.id)} />
+          </div>
+        ),
+      },
+      {
+        id: 'date',
+        header: 'ثبت',
+        cell: ({ row }) => <span className="whitespace-nowrap text-xs text-muted">{formatShortDate(row.original.created_at)}</span>,
+      },
+      {
+        id: 'menu',
+        header: () => <span className="sr-only">بیشتر</span>,
+        cell: ({ row }) => {
+          const p = row.original;
+          return (
+            <DropdownRoot>
+              <DropdownTrigger asChild>
+                <Button variant="ghost" size="icon" aria-label={`گزینه‌های ${p.title}`}>
+                  <MoreHorizontal className="h-4 w-4" />
+                </Button>
+              </DropdownTrigger>
+              <DropdownContent align="start">
+                <DropdownItem icon={<MapPin className="h-4 w-4" />} onSelect={() => router.push(`/dashboard/map?focus=${p.id}`)}>
+                  دیدن روی نقشه
+                </DropdownItem>
+                <DropdownItem
+                  icon={<Frame className="h-4 w-4" />}
+                  disabled={p.status !== 'ACTIVE' || p.is_featured}
+                  onSelect={() => setRowFeatured(p)}
+                >
+                  کادر ویژه
+                </DropdownItem>
+                <DropdownSeparator />
+                <DropdownItem danger disabled={p.status === 'ARCHIVED'} onSelect={() => void change(p, 'ARCHIVED')}>
+                  غیرفعال کردن
+                </DropdownItem>
+              </DropdownContent>
+            </DropdownRoot>
+          );
+        },
+      },
+    ],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [selected, pageAllSelected, pageSomeSelected, rows, change, isPending, saveField, toggleOne, router],
+  );
+
+  const table = useReactTable({ data: rows, columns, getCoreRowModel: getCoreRowModel(), getRowId: (r) => r.id, manualPagination: true });
+
+  const sortIcon = (asc: 'price_asc' | 'oldest', desc: 'price_desc' | 'newest') =>
+    query.sort === asc ? <ArrowUp className="h-3 w-3" /> : query.sort === desc ? <ArrowDown className="h-3 w-3" /> : null;
+
+  const pages = data?.meta.total_pages ?? 1;
+  const firstLoad = !data && !error;
+  const noResults = !firstLoad && !error && rows.length === 0;
+
+  return (
+    <div className="mx-auto max-w-7xl space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h2 className="text-lg font-extrabold text-ink">مدیریت آگهی‌ها</h2>
+          <p className="text-[13px] text-muted">جستجو، فیلتر، ویرایش سریع و کارهای گروهی روی آگهی‌های دفتر.</p>
+        </div>
+        <Link href="/dashboard/listings/quick-add">
+          <Button variant="secondary" className="gap-2">
+            <FilePlus2 aria-hidden className="h-4 w-4" />
+            ثبت سریع و گروهی
+          </Button>
+        </Link>
+      </div>
+
+      <Card className="overflow-hidden">
+        <div className="border-b border-line px-4 pt-4 sm:px-5">
+          <Tabs value={query.tab} onValueChange={(v) => update({ tab: v as StatusTab })}>
+            <TabsList className="max-w-full overflow-x-auto">
+              {(Object.keys(TAB_LABEL) as StatusTab[]).map((t) => (
+                <TabsTrigger key={t} value={t} count={t === query.tab && data ? formatNumber(total) : undefined}>
+                  {TAB_LABEL[t]}
+                </TabsTrigger>
+              ))}
+            </TabsList>
+          </Tabs>
+        </div>
+        <ListingFilters query={query} update={update} reset={reset} activeFilters={activeFilters} />
+
+        {firstLoad ? (
+          <TableRowsSkeleton rows={8} cols={6} />
+        ) : error && !data ? (
+          <ErrorState message={errorMessage(error)} onRetry={() => void mutate()} />
+        ) : noResults ? (
+          activeFilters > 0 || query.tab !== 'ACTIVE' ? (
+            <EmptyState
+              icon={SearchX}
+              title="آگهی‌ای پیدا نشد"
+              description="با این فیلترها آگهی‌ای نیست. فیلترها را کم کنید یا وضعیت دیگری را ببینید."
+              action={<Button variant="secondary" onClick={reset}>پاک کردن فیلترها</Button>}
+            />
+          ) : (
+            <EmptyState
+              icon={FilePlus2}
+              title="هنوز آگهی ثبت نکرده‌اید"
+              description="آگهی‌ها را یکی‌یکی، از متن پیام‌های تلگرام یا واتساپ، یا با فایل اکسل ثبت کنید."
+              action={
+                <Link href="/dashboard/listings/quick-add">
+                  <Button>ثبت اولین آگهی</Button>
+                </Link>
+              }
+            />
+          )
+        ) : (
+          <div className={cn('overflow-x-auto transition-opacity', isValidating && 'opacity-80')}>
+            <table className="w-full min-w-[56rem] text-start text-sm">
+              <thead className="border-b border-line bg-soft/60 text-xs text-muted">
+                {table.getHeaderGroups().map((hg) => (
+                  <tr key={hg.id}>
+                    {hg.headers.map((h) => {
+                      const sortable = h.id === 'price' || h.id === 'views' || h.id === 'date';
+                      const toggle = () => {
+                        if (h.id === 'price') update({ sort: query.sort === 'price_asc' ? 'price_desc' : 'price_asc' });
+                        else if (h.id === 'views') update({ sort: 'views' });
+                        else update({ sort: query.sort === 'newest' ? 'oldest' : 'newest' });
+                      };
+                      return (
+                        <th key={h.id} scope="col" className="px-4 py-2.5 text-start font-semibold first:ps-5 last:pe-5" style={{ width: h.id === 'select' ? 44 : undefined }}>
+                          {sortable ? (
+                            <button onClick={toggle} className="flex items-center gap-1 hover:text-primary">
+                              {flexRender(h.column.columnDef.header, h.getContext())}
+                              {h.id === 'price' ? sortIcon('price_asc', 'price_desc') : h.id === 'views' ? (query.sort === 'views' ? <ArrowDown className="h-3 w-3" /> : null) : sortIcon('oldest', 'newest')}
+                            </button>
+                          ) : (
+                            flexRender(h.column.columnDef.header, h.getContext())
+                          )}
+                        </th>
+                      );
+                    })}
+                  </tr>
+                ))}
+              </thead>
+              <tbody className="divide-y divide-line">
+                {table.getRowModel().rows.map((row) => (
+                  <tr key={row.id} className={cn('reveal align-top transition-colors hover:bg-soft/50', selected.has(row.id) && 'bg-primary-tint/50')}>
+                    {row.getVisibleCells().map((cell) => (
+                      <td key={cell.id} className="px-4 py-3 first:ps-5 last:pe-5">
+                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        <BulkBar
+          count={selected.size}
+          total={total}
+          allSelected={selected.size >= total && total > 0}
+          loadingAll={loadingAll}
+          onSelectAll={() => void selectEverything()}
+          onClear={() => setSelected(new Map())}
+          onFeatured={() => setFeaturedOpen(true)}
+          onSold={() => bulkStatus('SOLD', 'ثبت «معامله شد»', 'SOLD')}
+          onActivate={() => bulkStatus('ACTIVE', 'فعال‌سازی آگهی‌ها', 'ACTIVE')}
+          onArchive={() => setConfirm('archive')}
+        />
+
+        {pages > 1 ? (
+          <div className="flex items-center justify-between border-t border-line px-5 py-3 text-[13px] text-muted">
+            <span>
+              صفحه {formatNumber(query.page)} از {formatNumber(pages)} · {formatNumber(total)} آگهی
+            </span>
+            <div className="flex gap-2">
+              <Button variant="secondary" size="sm" disabled={query.page <= 1} onClick={() => update({ page: query.page - 1 })}>
+                قبلی
+              </Button>
+              <Button variant="secondary" size="sm" disabled={query.page >= pages} onClick={() => update({ page: query.page + 1 })}>
+                بعدی
+              </Button>
+            </div>
+          </div>
+        ) : null}
+      </Card>
+
+      <FeaturedDialog
+        open={featuredOpen || rowFeatured !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setFeaturedOpen(false);
+            setRowFeatured(null);
+          }
+        }}
+        count={rowFeatured ? 1 : featuredEligible.length}
+        skipped={rowFeatured ? 0 : selectedList.length - featuredEligible.length}
+        onConfirm={(source: FeaturedSource) => {
+          const items = rowFeatured ? [rowFeatured] : featuredEligible;
+          setFeaturedOpen(false);
+          setRowFeatured(null);
+          void execute('پوشش با کادر ویژه', items, (ids, progress) => applyFeatured(ids, source, progress));
+        }}
+      />
+
+      <ConfirmDialog
+        open={confirm === 'archive'}
+        onOpenChange={(open) => !open && setConfirm(null)}
+        title={`حذف ${formatNumber(selected.size)} آگهی؟`}
+        description="آگهی‌ها از فهرست و از اپلیکیشن برداشته می‌شوند (به «غیرفعال» می‌روند) و بازدیدهایشان در آمار می‌ماند. هر زمان می‌توانید دوباره فعالشان کنید."
+        confirmLabel="حذف آگهی‌ها"
+        onConfirm={() => {
+          const items = selectedList.filter((p) => p.status !== 'ARCHIVED');
+          setConfirm(null);
+          if (items.length) void execute('حذف آگهی‌ها', items, (ids, progress) => archiveMany(ids, progress), { status: 'ARCHIVED' });
+          else toast.info('آگهی‌های انتخاب‌شده از قبل غیرفعال‌اند.');
+        }}
+      />
+      <ProgressDialog run={run} onClose={() => setRun(null)} />
+    </div>
+  );
+}

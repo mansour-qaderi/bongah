@@ -104,3 +104,11 @@ export function toPropertyDto(row: PropertyRowWithAgency, now: Date): PropertyDt
     updated_at: row.updatedAt.toISOString(),
   };
 }
+
+/**
+ * A listing as its owner sees it in their own list: the public shape plus how often it was opened. The count is the
+ * owner's business, so it is not part of the public shape.
+ */
+export function toOwnPropertyDto(row: PropertyRowWithAgency, now: Date): PropertyDto {
+  return { ...toPropertyDto(row, now), view_count: row.viewCount };
+}

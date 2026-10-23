@@ -7,16 +7,17 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { SUBSCRIPTION_PLAN_BENEFITS } from '@bongah/shared-types';
+import { normalizePlaceName, type MyListingSort } from '@bongah/validation';
 import { findActiveSubscription } from '../agencies/subscription.js';
 import { DealType, Prisma, PropertyStatus, Role } from '../generated/prisma/client.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import type { CreatePropertyDto } from './dto/create-property.dto.js';
-import type { ListPropertiesDto, PaginationDto } from './dto/list-properties.dto.js';
+import type { ListPropertiesDto, MyListingsDto, PaginationDto } from './dto/list-properties.dto.js';
 import type { PropertyDto, PropertyPageDto } from './dto/property-response.dto.js';
 import type { UpdatePropertyDto } from './dto/update-property.dto.js';
 import { kabulDayKey } from '../contact/contact.time.js';
 import { FREE_LISTINGS_PER_MONTH } from './property.constants.js';
-import { toPropertyDto, WITH_PARTIES } from './property.mapper.js';
+import { toOwnPropertyDto, toPropertyDto, WITH_PARTIES } from './property.mapper.js';
 import { kabulMonthStart, nextKabulMonthStart } from './property.time.js';
 
 /** Newest ladder first. Rows with no ladder time (legacy) sort last, then newest created. */
@@ -25,6 +26,64 @@ const LISTING_ORDER: Prisma.PropertyOrderByWithRelationInput[] = [
   { createdAt: 'desc' },
   { id: 'desc' }, // total order, so pages never repeat or skip rows
 ];
+
+/**
+ * Orders for the owner's list. Listings that tie (the same price, no views yet) come newest first, and every order
+ * ends in `id`, so pages never repeat or skip a row.
+ */
+const MINE_ORDERS: Record<MyListingSort, Prisma.PropertyOrderByWithRelationInput[]> = {
+  newest: [{ createdAt: 'desc' }, { id: 'desc' }],
+  oldest: [{ createdAt: 'asc' }, { id: 'asc' }],
+  price_asc: [{ price: 'asc' }, { createdAt: 'desc' }, { id: 'desc' }],
+  price_desc: [{ price: 'desc' }, { createdAt: 'desc' }, { id: 'desc' }],
+  views: [{ viewCount: 'desc' }, { createdAt: 'desc' }, { id: 'desc' }],
+};
+
+/** Makes text safe inside a LIKE pattern: `%` and `_` are wildcards there, and `\` is the escape character. */
+function likeLiteral(text: string): string {
+  return text.replace(/[\\%_]/g, (character) => `\\${character}`);
+}
+
+function myListingsOrder(sort: MyListingSort | undefined): Prisma.PropertyOrderByWithRelationInput[] {
+  return sort ? MINE_ORDERS[sort] : LISTING_ORDER;
+}
+
+/**
+ * The filters of the owner's list. The search text matches anywhere in the title, the written address, the province,
+ * the district or the neighbourhood, ignoring case. Dari/Pashto keyboards produce Arabic look-alike letters (ي ك), so
+ * the text is also tried in its folded form (the way places are stored); a listing matches either.
+ */
+function myListingsWhere(userId: string, query: MyListingsDto, now: Date): Prisma.PropertyWhereInput {
+  const and: Prisma.PropertyWhereInput[] = [];
+  if (query.q) {
+    const needles = [...new Set([query.q, normalizePlaceName(query.q)])].map(likeLiteral);
+    and.push({
+      OR: needles.flatMap((needle) => [
+        { title: { contains: needle, mode: 'insensitive' as const } },
+        { address: { contains: needle, mode: 'insensitive' as const } },
+        { province: { contains: needle, mode: 'insensitive' as const } },
+        { district: { contains: needle, mode: 'insensitive' as const } },
+        { neighborhood: { contains: needle, mode: 'insensitive' as const } },
+      ]),
+    });
+  }
+  // "Featured" is the rule of isFeaturedAt(): the flag counts only while featured_until is still ahead.
+  if (query.featured === true) and.push({ isFeatured: true, featuredUntil: { gt: now } });
+  if (query.featured === false) {
+    and.push({ OR: [{ isFeatured: false }, { featuredUntil: null }, { featuredUntil: { lte: now } }] });
+  }
+  const hasPriceRange = query.min_price !== undefined || query.max_price !== undefined;
+  return {
+    userId,
+    status: query.status,
+    type: query.type,
+    dealType: query.deal_type,
+    // The schema guarantees a currency whenever a price bound is present.
+    currency: query.currency,
+    ...(hasPriceRange ? { price: { gte: query.min_price, lte: query.max_price } } : {}),
+    ...(and.length > 0 ? { AND: and } : {}),
+  };
+}
 
 @Injectable()
 export class PropertyService {
@@ -61,9 +120,28 @@ export class PropertyService {
     return this.page(where, query, true);
   }
 
-  /** The signed-in user's own listings, in every status. */
-  listMine(userId: string, query: PaginationDto): Promise<PropertyPageDto> {
-    return this.page({ userId }, query);
+  /**
+   * The signed-in user's own listings, in every status. Without filters this is the same list, in the same order, as
+   * it always was; the optional filters (search, status, kind, deal, price range, featured) and sort order are for an
+   * office with many listings. Each row also carries its view count.
+   */
+  async listMine(userId: string, query: MyListingsDto): Promise<PropertyPageDto> {
+    const now = new Date();
+    const where = myListingsWhere(userId, query, now);
+    const [rows, total] = await Promise.all([
+      this.prisma.property.findMany({
+        where,
+        orderBy: myListingsOrder(query.sort),
+        skip: (query.page - 1) * query.limit,
+        take: query.limit,
+        include: WITH_PARTIES,
+      }),
+      this.prisma.property.count({ where }),
+    ]);
+    return {
+      data: rows.map((row) => toOwnPropertyDto(row, now)),
+      meta: { page: query.page, limit: query.limit, total, total_pages: Math.ceil(total / query.limit) },
+    };
   }
 
   /** A single listing. Archived listings (and a banned account's) are gone for everyone (owners see them via /mine). */
