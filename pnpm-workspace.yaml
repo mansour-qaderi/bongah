@@ -4,7 +4,9 @@ packages:
 allowBuilds:
   '@firebase/util': false
   '@prisma/engines': false
+  esbuild: set this to true or false
   prisma: false
   protobufjs: false
+  unrs-resolver: set this to true or false
 minimumReleaseAgeExclude:
   - '@nestjs/jwt@12.0.3'

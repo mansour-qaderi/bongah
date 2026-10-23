@@ -179,6 +179,55 @@ const queryDegrees = (limit: number) =>
     .transform(Number)
     .pipe(z.number().min(-limit).max(limit));
 
+// ───────────────────── My listings (GET /properties/mine) ─────────────────────
+
+/** How an owner's own list can be ordered. Left out: the feed order (newest ladder first), as before. */
+export const MY_LISTING_SORTS = ['newest', 'oldest', 'price_asc', 'price_desc', 'views'] as const;
+export type MyListingSort = (typeof MY_LISTING_SORTS)[number];
+
+/** Longest search text the owner's list accepts. */
+export const MY_LISTING_SEARCH_MAX = 100;
+
+/**
+ * GET /properties/mine. Page and limit as before, plus optional filters for an office with many listings: a search
+ * text (title, address, province, district, neighbourhood), status, kind, deal, a price range (needs a currency: 500
+ * AFGHANI and 500 USD are not comparable), whether a featured promotion is running, and the order. Unknown parameters
+ * are refused, as everywhere else.
+ */
+export const myListingsQuerySchema = z
+  .strictObject({
+    ...paginationShape,
+    q: z
+      .string()
+      .transform((value) => value.replace(/\s+/g, ' ').trim())
+      .pipe(z.string().max(MY_LISTING_SEARCH_MAX, `At most ${MY_LISTING_SEARCH_MAX} characters`))
+      .optional(),
+    status: z.enum(PROPERTY_STATUSES).optional(),
+    type: z.enum(PROPERTY_TYPES).optional(),
+    deal_type: z.enum(DEAL_TYPES).optional(),
+    currency: z.enum(CURRENCIES).optional(),
+    min_price: queryMoney.optional(),
+    max_price: queryMoney.optional(),
+    featured: z
+      .enum(['true', 'false'])
+      .transform((value) => value === 'true')
+      .optional(),
+    sort: z.enum(MY_LISTING_SORTS).optional(),
+  })
+  .refine((q) => (q.min_price === undefined && q.max_price === undefined) || q.currency, {
+    message: 'currency is required when filtering by price',
+    path: ['currency'],
+  })
+  .refine((q) => q.min_price === undefined || q.max_price === undefined || q.min_price <= q.max_price, {
+    message: 'min_price must not be greater than max_price',
+    path: ['min_price'],
+  })
+  .refine((q) => (q.sort !== 'price_asc' && q.sort !== 'price_desc') || q.currency, {
+    message: 'currency is required when sorting by price',
+    path: ['currency'],
+  });
+export type MyListingsQuery = z.output<typeof myListingsQuerySchema>;
+
 const AREA_KEYS = ['min_lat', 'max_lat', 'min_lng', 'max_lng'] as const;
 
 /** GET /properties. Unknown parameters are rejected so a misspelled filter can't silently return everything. */

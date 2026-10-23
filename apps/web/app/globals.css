@@ -1,0 +1,162 @@
+@import 'tailwindcss';
+
+/*
+ * Bongah panel design tokens. They mirror apps/mobile/src/theme: emerald is the brand, gold marks what is paid or
+ * premium, surfaces are flat white with a 1px neutral border (no shadows), and "quiet fill" is neutral grey.
+ */
+@theme {
+  --color-primary: #047857;
+  --color-primary-dark: #065f46;
+  --color-primary-tint: #e6f4ea;
+  --color-accent: #d97706;
+  --color-accent-bright: #f59e0b;
+  --color-accent-text: #b45309;
+  --color-accent-tint: #fef3c7;
+  --color-info: #2563eb;
+  --color-info-tint: #dbeafe;
+  --color-danger: #c0392b;
+  --color-danger-tint: #fdecea;
+  --color-success: #1e8e5a;
+
+  --color-page: #f7f8f7;
+  --color-surface: #ffffff;
+  --color-ink: #111827;
+  --color-ink-2: #374151;
+  --color-muted: #6b7280;
+  --color-placeholder: #8791a1;
+  --color-line: #e5e7eb;
+  --color-line-strong: #d1d5db;
+  --color-soft: #f3f4f6;
+
+  --font-sans: 'Vazirmatn', 'Yekan Bakh', 'YekanBakh', Tahoma, system-ui, sans-serif;
+
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 20px;
+
+  --animate-shimmer: shimmer 1.4s ease-in-out infinite;
+  --animate-reveal: reveal 220ms ease-out both;
+  --animate-pulse-ring: pulse-ring 1.8s ease-out infinite;
+
+  @keyframes shimmer {
+    0% { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+  }
+  @keyframes reveal {
+    from { opacity: 0; transform: translateY(4px); }
+    to { opacity: 1; transform: none; }
+  }
+  @keyframes pulse-ring {
+    0% { transform: scale(0.7); opacity: 0.55; }
+    80%, 100% { transform: scale(1.6); opacity: 0; }
+  }
+}
+
+/* Vazirmatn (SIL Open Font License, see public/fonts/OFL.txt): Dari and Pashto letters included.
+   Yekan Bakh is not bundled (its licence does not allow redistribution here): it is used when installed on the
+   machine, and the page falls back to Vazirmatn otherwise. */
+@font-face {
+  font-family: 'Vazirmatn';
+  src: url('/fonts/Vazirmatn-Regular.woff2') format('woff2');
+  font-weight: 100 500;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Vazirmatn';
+  src: url('/fonts/Vazirmatn-SemiBold.woff2') format('woff2');
+  font-weight: 600;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Vazirmatn';
+  src: url('/fonts/Vazirmatn-Bold.woff2') format('woff2');
+  font-weight: 700 900;
+  font-display: swap;
+}
+
+@layer base {
+  html {
+    background: var(--color-page);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    -webkit-text-size-adjust: 100%;
+    text-rendering: optimizeLegibility;
+  }
+  body {
+    min-height: 100dvh;
+    line-height: 1.75; /* Arabic script needs more line height, dots and marks collide otherwise */
+    font-size: 14px;
+  }
+  button,
+  input,
+  select,
+  textarea {
+    font: inherit;
+    color: inherit;
+  }
+  button:not(:disabled),
+  [role='button']:not([aria-disabled='true']) {
+    cursor: pointer;
+  }
+  :focus-visible {
+    outline: 2px solid var(--color-primary);
+    outline-offset: 2px;
+    border-radius: 6px;
+  }
+  ::selection {
+    background: var(--color-primary-tint);
+  }
+  /* Numbers, phone numbers and codes stay left-to-right inside right-to-left text. */
+  .ltr {
+    direction: ltr;
+    unicode-bidi: isolate;
+  }
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+@layer utilities {
+  .skeleton {
+    background-color: var(--color-soft);
+    background-image: linear-gradient(90deg, transparent 0%, rgba(255, 255, 255, 0.75) 50%, transparent 100%);
+    background-size: 200% 100%;
+    animation: var(--animate-shimmer);
+  }
+  .reveal {
+    animation: var(--animate-reveal);
+  }
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-line-strong) transparent;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton,
+  .reveal {
+    animation: none;
+  }
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* MapLibre: keep its controls out of the way of the RTL layout and match the flat look. */
+.maplibregl-ctrl-group {
+  box-shadow: none !important;
+  border: 1px solid var(--color-line);
+  border-radius: 12px !important;
+  overflow: hidden;
+}
+.maplibregl-ctrl-attrib {
+  font-family: var(--font-sans);
+  direction: ltr;
+}
+
+/* The map's own buttons sit below the "show all" button at the top-left of the map. */
+.maplibregl-ctrl-top-left { margin-top: 3rem; }

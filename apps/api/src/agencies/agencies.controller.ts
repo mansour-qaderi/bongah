@@ -1,6 +1,14 @@
 import { Body, Controller, Get, Header, HttpCode, HttpStatus, Patch, Post, Put, Query, UseGuards } from '@nestjs/common';
 import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
-import type { Agency, AgencyAnalytics, AgencyDashboard, AgencyMapPin, BulkResponse, Property } from '@bongah/shared-types';
+import type {
+  Agency,
+  AgencyAnalytics,
+  AgencyDashboard,
+  AgencyMapListings,
+  AgencyMapPin,
+  BulkResponse,
+  Property,
+} from '@bongah/shared-types';
 import {
   analyticsQuerySchema,
   bulkCreatePropertiesSchema,
@@ -54,6 +62,13 @@ export class AgenciesController {
   @UseGuards(JwtAuthGuard)
   dashboard(@CurrentUser() user: AuthenticatedUser): Promise<AgencyDashboard> {
     return this.agencies.getDashboard(user.id);
+  }
+
+  /** All of the agency's listings with their pins (or none), small, for the office map in the web panel. */
+  @Get('me/properties/map')
+  @UseGuards(JwtAuthGuard)
+  officeMap(@CurrentUser() user: AuthenticatedUser): Promise<AgencyMapListings> {
+    return this.agencies.listMapListings(user.id);
   }
 
   /** The office's exact map pin. Needs an active subscription; no extra fee. */

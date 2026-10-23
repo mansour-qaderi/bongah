@@ -151,6 +151,11 @@ export interface Property {
   is_featured: boolean;
   featured_until: string | null;
   laddered_at: string | null;
+  /**
+   * How many times the listing was opened. Sent only on the owner's own lists (GET /properties/mine) and absent from
+   * public answers.
+   */
+  view_count?: number;
   created_at: string;
   updated_at: string;
 }
@@ -970,4 +975,32 @@ export interface RouteResult {
   duration_s: number;
   /** [longitude, latitude] pairs, start first. */
   coordinates: [number, number][];
+}
+
+// ───────────── Agency panel (web) ─────────────
+
+/** One of the agency's listings as the office map needs it: small, with the pin (null when it has none yet). */
+export interface AgencyListingPin {
+  id: string;
+  title: string;
+  type: PropertyType;
+  deal_type: DealType;
+  status: PropertyStatus;
+  price: number;
+  currency: Currency;
+  province: string;
+  district: string;
+  address: string;
+  lat: number | null;
+  lng: number | null;
+  /** True only while a paid featured promotion is running. */
+  is_featured: boolean;
+}
+
+/** GET /agencies/me/properties/map: every listing the agency still has (archived ones are left out). */
+export interface AgencyMapListings {
+  data: AgencyListingPin[];
+  /** True when the agency has more listings than one answer carries (see `limit`); the newest are sent. */
+  truncated: boolean;
+  limit: number;
 }
