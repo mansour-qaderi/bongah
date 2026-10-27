@@ -3,8 +3,9 @@
 import { useEffect } from 'react';
 import { Lock, MapPinned, Unlock } from 'lucide-react';
 import { CURRENCIES, DEAL_TYPES } from '@bongah/shared-types';
-import { PROVINCES } from '@/lib/provinces';
-import { CURRENCY_NAME, DEAL_LABEL } from '@/lib/labels';
+import { PROVINCES, provinceLabel } from '@/lib/provinces';
+import { useLanguage, useT } from '@/i18n/provider';
+import { useLabels } from '@/i18n/use-labels';
 import { useDashboard, useOfficePin } from '@/hooks/use-api';
 import { usePinned } from '@/hooks/use-pinned';
 import { Card } from '@/components/ui/card';
@@ -12,9 +13,12 @@ import { Field, Input, Select, Switch } from '@/components/ui/field';
 
 /**
  * The values that stay the same from one listing to the next: the office's province and district, the usual deal and
- * currency. They fill the single form and whatever an import could not read, and survive «ذخیره و ثبت بعدی».
+ * currency. They fill the single form and whatever an import could not read, and survive «save and add next».
  */
 export function PinnedPanel() {
+  const t = useT();
+  const { language } = useLanguage();
+  const labels = useLabels();
   const [pinned, setPinned] = usePinned();
   const { data: dashboard } = useDashboard();
   const { data: pins } = useOfficePin(dashboard?.agency.id);
@@ -36,52 +40,52 @@ export function PinnedPanel() {
             {pinned.locked ? <Lock aria-hidden className="h-4 w-4" /> : <Unlock aria-hidden className="h-4 w-4" />}
           </span>
           <div>
-            <h2 className="text-sm font-bold text-ink">مقادیر ثابت دفتر</h2>
+            <h2 className="text-sm font-bold text-ink">{t('pinned.title')}</h2>
             <p className="text-xs text-muted">
-              {pinned.locked ? 'بعد از هر ثبت همین‌ها می‌مانند و فقط بقیهٔ فرم خالی می‌شود.' : 'بعد از هر ثبت، این مقادیر هم خالی می‌شوند.'}
+              {pinned.locked ? t('pinned.locked') : t('pinned.unlocked')}
             </p>
           </div>
         </div>
         <label className="flex items-center gap-2 text-[13px] font-semibold text-ink-2">
-          ثابت بماند
-          <Switch label="ثابت ماندن مقادیر" checked={pinned.locked} onChange={(locked) => setPinned({ locked })} />
+          {t('pinned.keep')}
+          <Switch label={t('pinned.keepAria')} checked={pinned.locked} onChange={(locked) => setPinned({ locked })} />
         </label>
       </div>
       <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <Field label="ولایت">
+        <Field label={t('import.field.province')}>
           {(p) => (
             <Select {...p} value={pinned.province} onChange={(e) => setPinned({ province: e.target.value })}>
-              <option value="">انتخاب کنید</option>
+              <option value="">{t('common.choose')}</option>
               {PROVINCES.map((x) => (
                 <option key={x.id} value={x.name}>
-                  {x.name}
+                  {provinceLabel(x, language)}
                 </option>
               ))}
             </Select>
           )}
         </Field>
-        <Field label="ناحیه / ولسوالی">
-          {(p) => <Input {...p} value={pinned.district} onChange={(e) => setPinned({ district: e.target.value })} placeholder="ناحیه ۴" maxLength={80} />}
+        <Field label={t('import.field.district')}>
+          {(p) => <Input {...p} value={pinned.district} onChange={(e) => setPinned({ district: e.target.value })} placeholder={t('form.districtPlaceholder')} maxLength={80} />}
         </Field>
-        <Field label="معامله‌ٔ معمول">
+        <Field label={t('pinned.usualDeal')}>
           {(p) => (
             <Select {...p} value={pinned.deal_type} onChange={(e) => setPinned({ deal_type: e.target.value as typeof pinned.deal_type })}>
-              <option value="">بدون پیش‌فرض</option>
+              <option value="">{t('pinned.noDefault')}</option>
               {DEAL_TYPES.map((d) => (
                 <option key={d} value={d}>
-                  {DEAL_LABEL[d]}
+                  {labels.deal[d]}
                 </option>
               ))}
             </Select>
           )}
         </Field>
-        <Field label="ارز معمول">
+        <Field label={t('pinned.usualCurrency')}>
           {(p) => (
             <Select {...p} value={pinned.currency} onChange={(e) => setPinned({ currency: e.target.value as typeof pinned.currency })}>
-              <option value="">بدون پیش‌فرض</option>
+              <option value="">{t('pinned.noDefault')}</option>
               {CURRENCIES.map((c) => (
                 <option key={c} value={c}>
-                  {CURRENCY_NAME[c]}
+                  {labels.currency[c]}
                 </option>
               ))}
             </Select>
@@ -91,7 +95,7 @@ export function PinnedPanel() {
       {pinned.office_lat ? (
         <p className="mt-3 flex items-center gap-1.5 text-xs text-muted">
           <MapPinned aria-hidden className="h-3.5 w-3.5 text-primary" />
-          موقعیت دفتر شما روی نقشه ثبت است؛ در فرم می‌توانید آن را برای آگهی بردارید.
+          {t('pinned.officePin')}
         </p>
       ) : null}
     </Card>

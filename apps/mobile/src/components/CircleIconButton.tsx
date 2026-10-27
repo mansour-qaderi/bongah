@@ -7,7 +7,8 @@ import {
 } from 'react-native';
 import { colors } from '../theme';
 import Icon, { type IconName } from './Icon';
-import { ROUND_BUTTON } from './layoutSizes';import InlineLoader from './InlineLoader';
+import { ROUND_BUTTON } from './layoutSizes';
+import InlineLoader from './InlineLoader';
 
 
 export type CircleIconTone = 'neutral' | 'brand' | 'danger';

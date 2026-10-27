@@ -8,7 +8,9 @@ import { MY_LISTING_SORTS, type MyListingSort } from '@bongah/validation';
 import { parseLooseNumber } from '@/lib/format';
 
 export type StatusTab = 'ACTIVE' | 'SOLD' | 'ARCHIVED' | 'ALL';
-const TABS: StatusTab[] = ['ACTIVE', 'SOLD', 'ARCHIVED', 'ALL'];
+/** In the order the tabs are shown: everything first (the default), then by status. */
+export const STATUS_TABS: readonly StatusTab[] = ['ALL', 'ACTIVE', 'SOLD', 'ARCHIVED'];
+export const DEFAULT_TAB: StatusTab = 'ALL';
 export const PAGE_SIZE = 20;
 
 export interface ListingQuery {
@@ -23,7 +25,7 @@ export interface ListingQuery {
   page: number;
 }
 
-const DEFAULTS: ListingQuery = { q: '', tab: 'ACTIVE', type: '', deal: '', currency: '', min: '', max: '', sort: 'newest', page: 1 };
+const DEFAULTS: ListingQuery = { q: '', tab: DEFAULT_TAB, type: '', deal: '', currency: '', min: '', max: '', sort: 'newest', page: 1 };
 
 function oneOf<T extends string>(value: string | null, allowed: readonly T[]): T | null {
   return value && (allowed as readonly string[]).includes(value) ? (value as T) : null;
@@ -40,7 +42,7 @@ export function useListingQuery() {
     const p = new URLSearchParams(search);
     return {
       q: (p.get('q') ?? '').slice(0, 100),
-      tab: oneOf(p.get('tab'), TABS) ?? DEFAULTS.tab,
+      tab: oneOf(p.get('tab'), STATUS_TABS) ?? DEFAULTS.tab,
       type: oneOf(p.get('type'), PROPERTY_TYPES) ?? '',
       deal: oneOf(p.get('deal'), DEAL_TYPES) ?? '',
       currency: oneOf(p.get('currency'), CURRENCIES) ?? '',

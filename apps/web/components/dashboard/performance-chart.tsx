@@ -13,16 +13,19 @@ import {
 import type { AgencyAnalytics } from '@bongah/shared-types';
 import { formatCompact, formatDayKey, formatNumber } from '@/lib/format';
 import { cn } from '@/lib/cn';
+import { useT } from '@/i18n/provider';
+import type { MessageKey } from '@/i18n/translate';
 
 type SeriesKey = 'views' | 'leads' | 'phone_reveals';
 
-const SERIES: { key: SeriesKey; label: string; color: string; dash?: string }[] = [
-  { key: 'views', label: 'بازدید', color: '#047857' },
-  { key: 'leads', label: 'پیام‌ها', color: '#2563EB', dash: '6 4' },
-  { key: 'phone_reveals', label: 'تماس‌ها', color: '#D97706', dash: '2 3' },
+const SERIES: { key: SeriesKey; label: MessageKey; color: string; dash?: string }[] = [
+  { key: 'views', label: 'chart.views', color: '#047857' },
+  { key: 'leads', label: 'chart.leads', color: '#2563EB', dash: '6 4' },
+  { key: 'phone_reveals', label: 'chart.calls', color: '#D97706', dash: '2 3' },
 ];
 
 function ChartTooltip({ active, payload, label }: { active?: boolean; payload?: { dataKey: string; value: number; color: string }[]; label?: string }) {
+  const t = useT();
   if (!active || !payload?.length) return null;
   return (
     <div className="rounded-xl border border-line bg-surface px-3 py-2 text-xs">
@@ -33,7 +36,7 @@ function ChartTooltip({ active, payload, label }: { active?: boolean; payload?: 
           <div key={p.dataKey} className="flex items-center justify-between gap-6 text-ink-2">
             <span className="flex items-center gap-1.5">
               <span className="h-2.5 w-2.5 rounded-full" style={{ background: meta.color }} />
-              {meta.label}
+              {t(meta.label)}
             </span>
             <span className="tabular font-semibold">{formatNumber(p.value)}</span>
           </div>
@@ -48,6 +51,7 @@ function ChartTooltip({ active, payload, label }: { active?: boolean; payload?: 
  * and the time axis is reversed, so the days run right to left like the page. The legend doubles as the on/off switches.
  */
 export function PerformanceChart({ analytics }: { analytics: AgencyAnalytics }) {
+  const t = useT();
   const [hidden, setHidden] = useState<ReadonlySet<SeriesKey>>(new Set());
   const data = useMemo(
     () => analytics.series.map((d) => ({ ...d, label: formatDayKey(d.day) })),
@@ -58,7 +62,7 @@ export function PerformanceChart({ analytics }: { analytics: AgencyAnalytics }) 
 
   return (
     <div>
-      <div className="mb-3 flex flex-wrap items-center gap-2" role="group" aria-label="نمایش سری‌ها">
+      <div className="mb-3 flex flex-wrap items-center gap-2" role="group" aria-label={t('chart.toggle')}>
         {SERIES.map((s) => {
           const off = hidden.has(s.key);
           return (
@@ -82,14 +86,14 @@ export function PerformanceChart({ analytics }: { analytics: AgencyAnalytics }) 
                 className="h-0 w-5 border-t-2"
                 style={{ borderColor: off ? '#D1D5DB' : s.color, borderStyle: s.dash ? 'dashed' : 'solid' }}
               />
-              {s.label}
+              {t(s.label)}
               <span className="tabular text-muted">{formatNumber(analytics.totals[s.key])}</span>
             </button>
           );
         })}
       </div>
 
-      <div dir="ltr" className="relative h-64 w-full" role="img" aria-label="نمودار بازدید، پیام و تماس در روزهای اخیر">
+      <div dir="ltr" className="relative h-64 w-full" role="img" aria-label={t('chart.aria')}>
         <ResponsiveContainer width="100%" height="100%">
           <AreaChart data={data} margin={{ top: 8, right: 4, left: 4, bottom: 0 }}>
             <defs>
@@ -113,7 +117,7 @@ export function PerformanceChart({ analytics }: { analytics: AgencyAnalytics }) 
         </ResponsiveContainer>
         {empty ? (
           <div className="pointer-events-none absolute inset-0 flex items-center justify-center" dir="rtl">
-            <p className="rounded-lg bg-surface/90 px-3 py-1.5 text-[13px] text-muted">در این بازه هنوز بازدیدی ثبت نشده است.</p>
+            <p className="rounded-lg bg-surface/90 px-3 py-1.5 text-[13px] text-muted">{t('chart.empty')}</p>
           </div>
         ) : null}
       </div>

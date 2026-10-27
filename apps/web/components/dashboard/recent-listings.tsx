@@ -6,7 +6,9 @@ import { FilePlus2, Eye } from 'lucide-react';
 import type { Paginated, Property } from '@bongah/shared-types';
 import { fetcher } from '@/lib/api';
 import { formatMoney, formatNumber, formatRelative } from '@/lib/format';
-import { DEAL_LABEL, TYPE_LABEL } from '@/lib/labels';
+import { useLabels } from '@/i18n/use-labels';
+import { useLanguage, useT } from '@/i18n/provider';
+import { provinceNameLabel } from '@/lib/provinces';
 import { SYNC_INTERVAL_MS } from '@/hooks/use-api';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -18,6 +20,9 @@ import { StatusActions, useStatusChange } from '@/components/listings/status-tog
 const KEY = 'properties/mine?status=ACTIVE&sort=newest&limit=8';
 
 export function RecentListings() {
+  const t = useT();
+  const { language } = useLanguage();
+  const labels = useLabels();
   const { data, error, mutate } = useSWR<Paginated<Property>>(KEY, fetcher, {
     refreshInterval: SYNC_INTERVAL_MS,
     keepPreviousData: true,
@@ -27,11 +32,11 @@ export function RecentListings() {
   return (
     <Card>
       <CardHeader
-        title="آخرین آگهی‌های فعال"
-        description="وضعیت را همین‌جا عوض کنید؛ تغییر در اپلیکیشن هم دیده می‌شود."
+        title={t('dash.recent.title')}
+        description={t('dash.recent.desc')}
         action={
           <Link href="/dashboard/listings" className="text-[13px] font-semibold text-primary hover:underline">
-            همه آگهی‌ها
+            {t('dash.recent.all')}
           </Link>
         }
       />
@@ -39,15 +44,15 @@ export function RecentListings() {
         {!data && !error ? (
           <TableRowsSkeleton rows={5} cols={5} />
         ) : error && !data ? (
-          <ErrorState message="فهرست آگهی‌ها بارگذاری نشد." onRetry={() => void mutate()} />
+          <ErrorState message={t('dash.recent.error')} onRetry={() => void mutate()} />
         ) : data && data.data.length === 0 ? (
           <EmptyState
             icon={FilePlus2}
-            title="هنوز آگهی فعالی ندارید"
-            description="اولین آگهی را ثبت کنید، یا چند آگهی را یک‌جا از متن تلگرام یا فایل اکسل وارد کنید."
+            title={t('dash.recent.emptyTitle')}
+            description={t('dash.recent.emptyText')}
             action={
               <Link href="/dashboard/listings/quick-add">
-                <Button>ثبت آگهی جدید</Button>
+                <Button>{t('dash.recent.new')}</Button>
               </Link>
             }
           />
@@ -59,17 +64,17 @@ export function RecentListings() {
                   <div className="truncate text-sm font-semibold text-ink">{p.title}</div>
                   <div className="mt-0.5 flex flex-wrap items-center gap-x-2 text-xs text-muted">
                     <Badge tone={p.deal_type === 'SALE' ? 'primary' : p.deal_type === 'RENT' ? 'info' : 'gold'}>
-                      {DEAL_LABEL[p.deal_type]}
+                      {labels.deal[p.deal_type]}
                     </Badge>
-                    <span>{TYPE_LABEL[p.type]}</span>
+                    <span>{labels.type[p.type]}</span>
                     <span>·</span>
-                    <span>{p.district || p.province}</span>
+                    <span>{p.district || provinceNameLabel(p.province, language)}</span>
                     <span>·</span>
                     <span>{formatRelative(p.created_at)}</span>
                   </div>
                 </div>
                 <div className="tabular w-36 text-sm font-semibold text-ink-2">{formatMoney(p.price, p.currency)}</div>
-                <div className="tabular flex w-14 items-center gap-1 text-xs text-muted" title="بازدید">
+                <div className="tabular flex w-14 items-center gap-1 text-xs text-muted" title={t('dash.recent.views')}>
                   <Eye aria-hidden className="h-3.5 w-3.5" />
                   {formatNumber(p.view_count ?? 0)}
                 </div>

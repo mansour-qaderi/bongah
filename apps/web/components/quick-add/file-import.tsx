@@ -5,9 +5,11 @@ import { toast } from 'sonner';
 import { Download, FileSpreadsheet, UploadCloud } from 'lucide-react';
 import { formatNumber } from '@/lib/format';
 import { MAX_DRAFTS, useDrafts } from '@/lib/import/drafts-store';
-import { guessMapping, IMPORT_FIELDS, MAX_FILE_ROWS, rowsFromTable, templateCsv, type FileTable, type ImportField } from '@/lib/import/parse-file';
+import { guessMapping, importFields, MAX_FILE_ROWS, rowsFromTable, templateCsv, type FileTable, type ImportField } from '@/lib/import/parse-file';
 import { FileImportError, readTableFile } from '@/lib/import/read-file';
 import { usePinned } from '@/hooks/use-pinned';
+import { tNow } from '@/i18n/active';
+import { useLanguage, useT } from '@/i18n/provider';
 import { cn } from '@/lib/cn';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -25,6 +27,8 @@ function downloadTemplate() {
 
 /** Drop a spreadsheet; check which column is which; the rows become drafts. */
 export function FileImport() {
+  const t = useT();
+  const { language } = useLanguage();
   const [pinned] = usePinned();
   const { actions } = useDrafts();
   const [over, setOver] = useState(false);
@@ -44,7 +48,7 @@ export function FileImport() {
       setMapping(guessMapping(table.headers));
     } catch (e) {
       setFile(null);
-      setError(e instanceof FileImportError ? e.message : 'فایل خوانده نشد.');
+      setError(e instanceof FileImportError ? e.message : tNow('file.readFailed'));
     } finally {
       setReading(false);
       if (input.current) input.current.value = '';
@@ -64,8 +68,8 @@ export function FileImport() {
     if (!file) return;
     const { rows, skipped } = rowsFromTable(file.table, mapping, pinned);
     const left = actions.add(rows);
-    toast.success(`${formatNumber(rows.length - left)} پیش‌نویس از فایل ساخته شد${skipped ? ` (${formatNumber(skipped)} ردیف خالی کنار رفت)` : ''}.`);
-    if (left > 0) toast.warning(`فقط ${formatNumber(MAX_DRAFTS)} پیش‌نویس نگه داشته می‌شود؛ ${formatNumber(left)} ردیف اضافه ماند.`);
+    toast.success(`${tNow('file.built', { n: formatNumber(rows.length - left) })}${skipped ? tNow('file.skipped', { n: formatNumber(skipped) }) : ''}.`);
+    if (left > 0) toast.warning(tNow('file.overflow', { max: formatNumber(MAX_DRAFTS), left: formatNumber(left) }));
     setFile(null);
     requestAnimationFrame(() => document.getElementById('drafts')?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
   }
@@ -89,25 +93,25 @@ export function FileImport() {
             {reading ? (
               <div className="flex flex-col items-center gap-3 text-muted">
                 <LoadingDots className="text-primary" />
-                <p className="text-sm">در حال خواندن فایل…</p>
+                <p className="text-sm">{t('file.reading')}</p>
               </div>
             ) : (
               <>
                 <span className="flex h-14 w-14 items-center justify-center rounded-2xl border border-line bg-soft text-primary">
                   <UploadCloud aria-hidden className="h-7 w-7" strokeWidth={1.7} />
                 </span>
-                <p className="mt-4 text-[15px] font-bold text-ink">فایل اکسل یا CSV را اینجا بیندازید</p>
+                <p className="mt-4 text-[15px] font-bold text-ink">{t('file.dropTitle')}</p>
                 <p className="mt-1 text-[13px] text-muted">
-                  xlsx یا csv، تا ۵ مگابایت و {formatNumber(MAX_FILE_ROWS)} ردیف. ردیف اول، عنوان ستون‌هاست.
+                  {t('file.dropHelp', { max: formatNumber(MAX_FILE_ROWS) })}
                 </p>
                 <div className="mt-5 flex flex-wrap justify-center gap-3">
                   <Button onClick={() => input.current?.click()} className="gap-2">
                     <FileSpreadsheet aria-hidden className="h-4 w-4" />
-                    انتخاب فایل
+                    {t('file.choose')}
                   </Button>
                   <Button variant="secondary" onClick={downloadTemplate} className="gap-2">
                     <Download aria-hidden className="h-4 w-4" />
-                    دریافت فایل نمونه
+                    {t('file.template')}
                   </Button>
                 </div>
               </>
@@ -124,13 +128,13 @@ export function FileImport() {
         <div className="space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <h2 className="text-sm font-bold text-ink">ستون‌ها را بررسی کنید</h2>
+              <h2 className="text-sm font-bold text-ink">{t('file.checkColumns')}</h2>
               <p className="mt-0.5 text-[13px] text-muted">
-                «{file.name}» · {formatNumber(file.table.rows.length)} ردیف. هر ستون را به یک فیلد وصل کنید؛ ستونی که لازم نیست «نادیده» بماند.
+                {t('file.checkHelp', { name: file.name, n: formatNumber(file.table.rows.length) })}
               </p>
             </div>
             <Button variant="ghost" size="sm" onClick={() => setFile(null)}>
-              فایل دیگر
+              {t('file.another')}
             </Button>
           </div>
 
@@ -144,7 +148,7 @@ export function FileImport() {
                         {h}
                       </div>
                       <Select
-                        aria-label={`فیلد ستون ${h}`}
+                        aria-label={t('file.columnAria', { name: h })}
                         value={mapping[i] ?? ''}
                         onChange={(e) => {
                           const v = (e.target.value || null) as ImportField | null;
@@ -153,8 +157,8 @@ export function FileImport() {
                         }}
                         className="h-8 text-[13px]"
                       >
-                        <option value="">نادیده</option>
-                        {IMPORT_FIELDS.map(([key, label]) => (
+                        <option value="">{t('file.ignore')}</option>
+                        {importFields(language).map(([key, label]) => (
                           <option key={key} value={key}>
                             {label}
                           </option>
@@ -180,14 +184,14 @@ export function FileImport() {
 
           {!mappedBasics ? (
             <p role="status" className="text-[13px] text-accent-text">
-              ستون «قیمت» و دست‌کم یکی از «نوع ملک» یا «عنوان» را وصل کنید تا پیش‌نویس‌ها کامل‌تر شوند.
+              {t('file.needMapping')}
             </p>
           ) : null}
           <div className="flex items-center gap-3">
             <Button size="lg" onClick={build} disabled={!mapping.some(Boolean)}>
-              ساخت {formatNumber(file.table.rows.length)} پیش‌نویس
+              {t('file.build', { n: formatNumber(file.table.rows.length) })}
             </Button>
-            <span className="text-xs text-muted">چیزی ثبت نمی‌شود؛ ابتدا در پیش‌نویس‌ها بازبینی می‌کنید.</span>
+            <span className="text-xs text-muted">{t('file.nothingSaved')}</span>
           </div>
         </div>
       )}

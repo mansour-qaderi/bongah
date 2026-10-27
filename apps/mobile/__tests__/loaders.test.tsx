@@ -27,10 +27,6 @@ jest.mock('../src/auth/AuthContext', () => ({
 }));
 
 // Imported after the mock so the components pick it up.
-import AppLoader, {
-  APP_LOADER_MS,
-  PIN_SWELL,
-} from '../src/components/AppLoader';
 import ListingCard from '../src/components/ListingCard';
 import {
   CARD_MEDIA_HEIGHT,
@@ -41,9 +37,14 @@ import {
   ROUND_BUTTON,
 } from '../src/components/layoutSizes';
 import { LOGO_GEOMETRY } from '../src/components/Logo';
-import MapLoader, { MAP_LOADER_MS } from '../src/components/MapLoader';
+import MapLoader, {
+  MAP_LOADER_MS,
+  MAP_MARKER_PATH,
+  MAP_PIN_PULSE,
+} from '../src/components/MapLoader';
 import PropertyCard from '../src/components/PropertyCard';
 import { Screen } from '../src/components/Screen';
+import Spinner, { SPINNER_ARC, SPINNER_MS } from '../src/components/Spinner';
 import {
   ListingCardSkeleton,
   ListingListSkeleton,
@@ -446,88 +447,41 @@ describe('the shimmer', () => {
   });
 });
 
-// ─────────────────────────────── AppLoader ───────────────────────────────
+// ─────────────────────────────── Spinner ───────────────────────────────
 
-describe('AppLoader', () => {
-  it('is the logo: the roof and the pin from the logo geometry, standing on its ground ring', async () => {
+describe('Spinner', () => {
+  it('is a grey ring with one short emerald arc on it, round at both ends', async () => {
     reduceMotion(false);
-    const tree = await show(<AppLoader />);
+    const tree = await show(<Spinner size={40} />);
+    const circles = tree.root.findAll(
+      n => typeof n.props.r === 'number' && n.props.fill === 'none',
+    );
+    const track = circles.filter(n => n.props.stroke === colors.border);
+    const arc = circles.filter(n => n.props.stroke === colors.primary);
+    expect(track.length).toBeGreaterThan(0);
+    expect(arc.length).toBeGreaterThan(0);
+    expect(arc[0].props.strokeLinecap).toBe('round');
+    // The arc covers SPINNER_ARC of the ring and starts at the top.
+    const circumference = 2 * Math.PI * (arc[0].props.r as number);
+    const [dash] = String(arc[0].props.strokeDasharray).split(' ');
+    expect(Number(dash) / circumference).toBeCloseTo(SPINNER_ARC, 3);
+    expect(arc[0].props.rotation).toBe(-90);
+    // Emerald is the app's own emerald.
+    expect(colors.primary).toBe('#047857');
+  });
+
+  it('has no logo in it: nothing of the roof, the pin or the ring that the logo is drawn from', async () => {
+    reduceMotion(false);
+    const tree = await show(<Spinner />);
     const { pin, roof, ring } = LOGO_GEOMETRY;
-    for (const d of [pin, roof]) {
-      expect(tree.root.findAll(n => n.props.d === d).length).toBeGreaterThan(0);
-    }
-    // The ring the pin stands on, and (inside each wave) the same ellipse again.
     expect(
-      tree.root.findAll(n => n.props.rx === ring.rx && n.props.ry === ring.ry)
-        .length,
-    ).toBeGreaterThan(0);
+      tree.root.findAll(n => n.props.d === pin || n.props.d === roof),
+    ).toHaveLength(0);
+    expect(tree.root.findAll(n => n.props.rx === ring.rx)).toHaveLength(0);
+    expect(byId(tree.root, 'logo-mark')).toHaveLength(0);
   });
 
-  it('draws the ring under the mark and the mark without a ring of its own, so only the waves move the ring', async () => {
-    reduceMotion(false);
-    const tree = await show(<AppLoader size={100} />);
-    const marks = tree.root.findAll(
-      n => n.props.testID === 'logo-mark' && typeof n.type !== 'string',
-    );
-    expect(marks.length).toBeGreaterThan(0);
-    // The Logo inside is the ring-less one: exactly one ellipse is the static ring (at the logo's own size).
-    const staticRing = tree.root.findAll(
-      n =>
-        n.props.rx === LOGO_GEOMETRY.ring.rx &&
-        n.props.stroke === colors.border,
-    );
-    expect(staticRing.length).toBeGreaterThan(0);
-  });
-
-  it('sends two green waves out of the ring, one half a turn behind the other', async () => {
-    reduceMotion(false);
-    const tree = await show(<AppLoader size={100} />);
-    const waves = [0, 1].map(i => byId(tree.root, `app-loader-wave-${i}`)[0]);
-    expect(waves.every(Boolean)).toBe(true);
-    // Each wave is exactly the ring's box (so it grows from the ring's centre).
-    const { ring } = LOGO_GEOMETRY;
-    for (const wave of waves) {
-      const style = styleOf(wave);
-      expect(style.width).toBeCloseTo(ring.rx * 2 + ring.strokeWidth, 5);
-      expect(style.height).toBeCloseTo(ring.ry * 2 + ring.strokeWidth, 5);
-      expect(style.left).toBeCloseTo(
-        ring.cx - ring.rx - ring.strokeWidth / 2,
-        5,
-      );
-      expect(style.top).toBeCloseTo(
-        ring.cy - ring.ry - ring.strokeWidth / 2,
-        5,
-      );
-    }
-    // At the start the first wave is brand new (most opaque) and the second is half-way out (half as opaque).
-    const opacity = (w: ReactTestInstance) => numeric(styleOf(w).opacity);
-    expect(opacity(waves[0])).toBeCloseTo(0.34, 2);
-    expect(opacity(waves[1])).toBeCloseTo(0.17, 2);
-    const stroke = tree.root.findAll(
-      n =>
-        n.props.stroke === colors.primary &&
-        n.props.rx === LOGO_GEOMETRY.ring.rx,
-    );
-    expect(stroke).toHaveLength(2);
-  });
-
-  it('swells the pin gently from its tip, so it never leaves the ring', async () => {
-    reduceMotion(false);
-    const tree = await show(<AppLoader size={200} />);
-    const pin = byId(tree.root, 'app-loader-pin')[0];
-    const transform = styleOf(pin).transform as Record<string, unknown>[];
-    const tipY = (LOGO_GEOMETRY.tip.y - 50) * 2;
-    expect(transform).toHaveLength(3);
-    expect(transform[0]).toEqual({ translateY: tipY });
-    expect(transform[2]).toEqual({ translateY: -tipY });
-    // At rest the scale is 1 and it only ever grows to PIN_SWELL: a few per cent, not a bounce.
-    expect(numeric(transform[1].scale)).toBe(1);
-    expect(PIN_SWELL).toBeGreaterThan(1);
-    expect(PIN_SWELL).toBeLessThanOrEqual(1.08);
-    expect(APP_LOADER_MS).toBeGreaterThanOrEqual(1200);
-  });
-
-  it('keeps the pin and the waves on one clock: both loops are started together and stopped on unmount', async () => {
+  it('turns once round per SPINNER_MS on the native driver, and stops when it goes away', async () => {
     reduceMotion(false);
     const stops: jest.Mock[] = [];
     const real = Animated.loop;
@@ -535,38 +489,61 @@ describe('AppLoader', () => {
       animation: Animated.CompositeAnimation,
     ) => {
       const made = real(animation);
-      const stop = jest.spyOn(made, 'stop');
-      stops.push(stop as unknown as jest.Mock);
+      stops.push(jest.spyOn(made, 'stop') as unknown as jest.Mock);
       return made;
     }) as typeof Animated.loop);
-    const tree = await show(<AppLoader />);
-    expect(loop).toHaveBeenCalledTimes(2);
+    const timing = jest.spyOn(Animated, 'timing');
+    const tree = await show(<Spinner />);
+    await settle();
+    expect(loop).toHaveBeenCalledTimes(1);
+    const config = timing.mock.calls.find(
+      call => call[1].duration === SPINNER_MS,
+    )?.[1];
+    expect(config?.toValue).toBe(1);
+    expect(config?.useNativeDriver).toBe(true);
+    const arc = byId(tree.root, 'spinner-arc')[0];
+    const [turn] = styleOf(arc).transform as { rotate: unknown }[];
+    expect(turn.rotate).toBeDefined();
+    expect(SPINNER_MS).toBeGreaterThanOrEqual(600);
+    expect(SPINNER_MS).toBeLessThanOrEqual(1400);
     await ReactTestRenderer.act(async () => tree.unmount());
     mounted.splice(0);
     expect(stops.every(stop => stop.mock.calls.length > 0)).toBe(true);
   });
 
-  it('simply stands on its ring, with no waves and no loops, with "reduce motion" on', async () => {
+  it('stands still, with no loop, with "reduce motion" on', async () => {
     reduceMotion(true);
     const loop = jest.spyOn(Animated, 'loop');
-    const tree = await show(<AppLoader />);
+    const tree = await show(<Spinner />);
     await settle();
-    expect(byId(tree.root, 'app-loader-wave-0')).toHaveLength(0);
-    expect(byId(tree.root, 'app-loader-wave-1')).toHaveLength(0);
+    expect(loop).not.toHaveBeenCalled();
+    // The ring and the arc are still drawn.
     expect(
-      tree.root.findAll(n => n.props.d === LOGO_GEOMETRY.pin).length,
+      tree.root.findAll(n => n.props.stroke === colors.primary).length,
     ).toBeGreaterThan(0);
-    expect(loop.mock.calls.length).toBeLessThanOrEqual(2);
+  });
+
+  it('takes any size and colour, and keeps the ring in the box', async () => {
+    reduceMotion(false);
+    const tree = await show(<Spinner size={24} color="#FFFFFF" />);
+    const svg = tree.root.findAll(
+      n => n.props.width === 24 && typeof n.props.viewBox === 'string',
+    );
+    expect(svg.length).toBeGreaterThan(0);
+    const arc = tree.root.findAll(n => n.props.stroke === '#FFFFFF')[0];
+    expect(
+      (arc.props.r as number) + (arc.props.strokeWidth as number) / 2,
+    ).toBeLessThanOrEqual(12);
   });
 
   it('fills the screen, or lies over one, or sits where it is put', async () => {
-    const full = await show(<AppLoader fullscreen />);
-    expect(styleOf(byId(full.root, 'app-loader')[0])).toMatchObject({
+    const full = await show(<Spinner fullscreen />);
+    expect(styleOf(byId(full.root, 'spinner')[0])).toMatchObject({
       flex: 1,
       backgroundColor: colors.background,
     });
-    const over = await show(<AppLoader overlay />);
-    const veil = styleOf(byId(over.root, 'app-loader')[0]);
+    const over = await show(<Spinner overlay />);
+    const veil = styleOf(byId(over.root, 'spinner')[0]);
     expect(veil).toMatchObject({
       position: 'absolute',
       top: 0,
@@ -575,43 +552,37 @@ describe('AppLoader', () => {
       right: 0,
     });
     expect(String(veil.backgroundColor)).toMatch(/^rgba\(255,255,255,/);
-    const inline = styleOf(
-      byId((await show(<AppLoader />)).root, 'app-loader')[0],
-    );
+    const inline = styleOf(byId((await show(<Spinner />)).root, 'spinner')[0]);
     expect(inline.flex).toBeUndefined();
     expect(inline.position).toBeUndefined();
   });
 
-  it('is one progress indicator to a screen reader: named "Bongah" until it is given the words, and may carry a caption', async () => {
-    const bare = await show(<AppLoader />);
-    const node = roles(bare.root, 'progressbar')[0];
-    expect(node.props.accessibilityLabel).toBe('Bongah');
-    expect(node.props.accessibilityState).toEqual({ busy: true });
+  it('is one progress indicator to a screen reader, with the words it is given, and may carry a caption', async () => {
     const named = await show(
-      <AppLoader label={prs.common.loading} caption="کمی صبر کنید" />,
+      <Spinner label={prs.common.loading} caption="کمی صبر کنید" />,
     );
-    expect(roles(named.root, 'progressbar')[0].props.accessibilityLabel).toBe(
-      prs.common.loading,
-    );
+    const node = roles(named.root, 'progressbar')[0];
+    expect(node.props.accessibilityLabel).toBe(prs.common.loading);
+    expect(node.props.accessibilityState).toEqual({ busy: true });
     expect(allText(named.root)).toContain('کمی صبر کنید');
-    expect(allText(bare.root)).toBe('');
+    expect(allText((await show(<Spinner />)).root)).toBe('');
   });
 });
 
 describe('a screen that is busy', () => {
-  it('lies the logo loader over itself with the translated "loading", and not otherwise', async () => {
+  it('lies the spinner over itself with the translated "loading", and not otherwise', async () => {
     const idle = await show(
       <Screen>
         <Text>محتوا</Text>
       </Screen>,
     );
-    expect(byId(idle.root, 'app-loader')).toHaveLength(0);
+    expect(byId(idle.root, 'spinner')).toHaveLength(0);
     const busy = await show(
       <Screen busy>
         <Text>محتوا</Text>
       </Screen>,
     );
-    const veil = byId(busy.root, 'app-loader')[0];
+    const veil = byId(busy.root, 'spinner')[0];
     expect(veil).toBeDefined();
     expect(veil.props.accessibilityLabel).toBe(prs.common.loading);
     expect(styleOf(veil).position).toBe('absolute');
@@ -621,17 +592,18 @@ describe('a screen that is busy', () => {
 });
 
 describe('the app opening', () => {
-  it('shows the logo loader, full screen, until the languages are loaded', () => {
+  it('shows the spinner, full screen, until the languages are loaded', () => {
     // However the line is wrapped.
     const app = source('App.tsx').replace(/\s+/g, ' ');
-    expect(app).toContain('<AppLoader fullscreen />');
+    expect(app).toContain('<Spinner fullscreen />');
     expect(app).toContain(
-      "fallback={ <AppLoader fullscreen label={i18n.t('common.loading')} /> }",
+      "fallback={ <Spinner fullscreen label={i18n.t('common.loading')} /> }",
     );
     expect(app).not.toContain('LoadingView');
+    expect(app).not.toContain('AppLoader');
   });
 
-  it('puts the loader over the sign-in screens while their request is in flight', () => {
+  it('puts the spinner over the sign-in screens while their request is in flight', () => {
     for (const [file, flag] of [
       ['PhoneScreen.tsx', 'busy={loading}'],
       ['OtpScreen.tsx', 'busy={verifying}'],
@@ -647,64 +619,94 @@ describe('the app opening', () => {
 // ─────────────────────────────── MapLoader ───────────────────────────────
 
 describe('MapLoader', () => {
-  it("is the logo's pin (the hole and the two emeralds), without the roof", async () => {
+  it('is a plain emerald map marker with a hole in its head, and nothing of the logo', async () => {
     reduceMotion(false);
     const tree = await show(<MapLoader size={100} />);
+    const marker = tree.root.findAll(n => n.props.d === MAP_MARKER_PATH);
+    expect(marker.length).toBeGreaterThan(0);
+    expect(marker[0].props.fill).toBe(colors.primary);
+    expect(marker[0].props.fillRule).toBe('evenodd');
     const { pin, pinLeft, roof } = LOGO_GEOMETRY;
-    const main = tree.root.findAll(n => n.props.d === pin);
-    expect(main.length).toBeGreaterThan(0);
-    expect(main[0].props.fill).toBe(colors.primary);
-    expect(main[0].props.fillRule).toBe('evenodd');
-    expect(tree.root.findAll(n => n.props.d === pinLeft)[0].props.fill).toBe(
-      colors.primaryDark,
-    );
-    expect(tree.root.findAll(n => n.props.d === roof)).toHaveLength(0);
+    for (const d of [pin, pinLeft, roof]) {
+      expect(tree.root.findAll(n => n.props.d === d)).toHaveLength(0);
+    }
+    // One colour only: the logo's pin has a darker second emerald.
+    expect(
+      tree.root.findAll(n => n.props.fill === colors.primaryDark),
+    ).toHaveLength(0);
   });
 
-  it("puts the pin's tip on the middle of its box, which is where the rings start", async () => {
+  it("rests the marker's tip on the middle of the pulses, which is where they start", async () => {
     reduceMotion(false);
     const size = 100;
     const tree = await show(<MapLoader size={size} />);
     const pin = byId(tree.root, 'map-loader-pin')[0];
-    const svg = tree.root.findAll(
-      n =>
-        typeof n.props.viewBox === 'string' &&
-        n.props.viewBox.startsWith('20 14'),
-    )[0];
-    const pinH = svg.props.height as number;
-    // Crop is y 14..90 on the logo grid; the tip is at LOGO_GEOMETRY.tip.y.
-    const tipFromTop = ((LOGO_GEOMETRY.tip.y - 14) / 76) * pinH;
-    expect((styleOf(pin).top as number) + tipFromTop).toBeCloseTo(size / 2, 5);
-    const rings = [0, 1].map(i => byId(tree.root, `map-loader-ring-${i}`)[0]);
-    for (const ring of rings) {
-      expect(styleOf(ring)).toMatchObject({ width: size, height: size });
-      expect(styleOf(ring).borderRadius).toBe(size / 2);
+    const { top, height } = styleOf(pin) as { top: number; height: number };
+    const tipY = top + height;
+    const pulses = [0, 1].map(i => byId(tree.root, `map-loader-pulse-${i}`)[0]);
+    for (const pulse of pulses) {
+      const style = styleOf(pulse) as {
+        top: number;
+        height: number;
+        width: number;
+      };
+      expect(style.top + style.height / 2).toBeCloseTo(tipY, 5);
+      // A flat ellipse lying on the ground, as wide as the box.
+      expect(style.width).toBe(size);
+      expect(style.height).toBeLessThan(style.width / 2);
     }
+    // The marker is inside the box.
+    expect(top).toBeGreaterThanOrEqual(0);
+    expect(tipY).toBeLessThanOrEqual(size);
   });
 
-  it('hops the pin up and down, and shrinks the little shadow under it while it is up', async () => {
+  it('pulses: grows a little from its tip and settles, never more than MAP_PIN_PULSE', async () => {
     reduceMotion(false);
-    const tree = await show(<MapLoader size={100} />);
+    const size = 100;
+    const tree = await show(<MapLoader size={size} />);
     const pin = byId(tree.root, 'map-loader-pin')[0];
-    const [rise] = styleOf(pin).transform as { translateY: unknown }[];
-    // At rest on the spot: no lift. (The hop's top is 12 % of the box: see HOP.)
-    expect(numeric(rise.translateY)).toBe(0);
+    const transform = styleOf(pin).transform as Record<string, unknown>[];
+    const { height } = styleOf(pin) as { height: number };
+    expect(transform).toHaveLength(3);
+    expect(transform[0]).toEqual({ translateY: height / 2 });
+    expect(transform[2]).toEqual({ translateY: -height / 2 });
+    expect(numeric(transform[1].scale)).toBe(1);
+    expect(MAP_PIN_PULSE).toBeGreaterThan(1.05);
+    expect(MAP_PIN_PULSE).toBeLessThanOrEqual(1.25);
     expect(MAP_LOADER_MS).toBeGreaterThanOrEqual(1000);
   });
 
-  it('widens two radar rings, one half a turn behind the other', async () => {
+  it('spreads two soft rings on the ground, one half a beat behind the other', async () => {
     reduceMotion(false);
     const tree = await show(<MapLoader size={100} />);
-    const rings = [0, 1].map(i => byId(tree.root, `map-loader-ring-${i}`)[0]);
+    const pulses = [0, 1].map(i => byId(tree.root, `map-loader-pulse-${i}`)[0]);
     const opacity = (n: ReactTestInstance) => numeric(styleOf(n).opacity);
     const scale = (n: ReactTestInstance) =>
       numeric((styleOf(n).transform as { scale: unknown }[])[0].scale);
-    // Ring 0 is new (small, most visible); ring 1 is half-way out.
-    expect(scale(rings[0])).toBeCloseTo(0.2, 2);
-    expect(opacity(rings[0])).toBeCloseTo(0.5, 2);
-    expect(scale(rings[1])).toBeCloseTo(0.6, 2);
-    expect(opacity(rings[1])).toBeCloseTo(0.25, 2);
-    expect(styleOf(rings[0]).borderColor).toBe(colors.primary);
+    // Pulse 0 is new (small, most visible); pulse 1 is half-way out.
+    expect(scale(pulses[0])).toBeCloseTo(0.3, 2);
+    expect(opacity(pulses[0])).toBeCloseTo(0.42, 2);
+    expect(scale(pulses[1])).toBeCloseTo(0.65, 2);
+    expect(opacity(pulses[1])).toBeCloseTo(0.21, 2);
+    expect(styleOf(pulses[0]).borderColor).toBe(colors.primary);
+  });
+
+  it('keeps the marker and the pulses on one clock: both loops start together and stop on unmount', async () => {
+    reduceMotion(false);
+    const stops: jest.Mock[] = [];
+    const real = Animated.loop;
+    const loop = jest.spyOn(Animated, 'loop').mockImplementation(((
+      animation: Animated.CompositeAnimation,
+    ) => {
+      const made = real(animation);
+      stops.push(jest.spyOn(made, 'stop') as unknown as jest.Mock);
+      return made;
+    }) as typeof Animated.loop);
+    const tree = await show(<MapLoader />);
+    expect(loop).toHaveBeenCalledTimes(2);
+    await ReactTestRenderer.act(async () => tree.unmount());
+    mounted.splice(0);
+    expect(stops.every(stop => stop.mock.calls.length > 0)).toBe(true);
   });
 
   it('stands still on one faint ring, with no loops, with "reduce motion" on', async () => {
@@ -712,11 +714,11 @@ describe('MapLoader', () => {
     const loop = jest.spyOn(Animated, 'loop');
     const tree = await show(<MapLoader size={60} />);
     await settle();
-    expect(byId(tree.root, 'map-loader-ring-0')).toHaveLength(0);
-    expect(byId(tree.root, 'map-loader-ring-1')).toHaveLength(0);
-    const still = byId(tree.root, 'map-loader-still-ring')[0];
+    expect(byId(tree.root, 'map-loader-pulse-0')).toHaveLength(0);
+    expect(byId(tree.root, 'map-loader-pulse-1')).toHaveLength(0);
+    const still = byId(tree.root, 'map-loader-still-pulse')[0];
     expect(styleOf(still).opacity).toBeLessThan(0.5);
-    expect(loop.mock.calls.length).toBeLessThanOrEqual(2);
+    expect(loop).not.toHaveBeenCalled();
   });
 
   it('is a progress indicator with the translated "loading", or the words it is given', async () => {

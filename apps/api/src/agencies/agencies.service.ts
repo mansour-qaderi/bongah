@@ -92,7 +92,8 @@ export class AgenciesService {
           data: {
             userId,
             agencyName: input.agency_name,
-            licensePhoto: input.license_photo,
+            // The column is NOT NULL; an account that sent no photo stores an empty address.
+            licensePhoto: input.license_photo ?? '',
             address: input.address,
             description: input.description ?? null,
           },
@@ -175,7 +176,7 @@ export class AgenciesService {
    */
   async listMapListings(userId: string): Promise<AgencyMapListings> {
     const now = new Date();
-    const agency = await this.prisma.agency.findUnique({ where: { userId }, select: { id: true } });
+    const agency = await this.prisma.agency.findUnique({ where: { userId }, select: { id: true, lat: true, lng: true } });
     if (!agency) {
       throw new NotFoundException({ message: 'Register your agency first.', code: 'AGENCY_PROFILE_REQUIRED' });
     }
@@ -216,7 +217,8 @@ export class AgenciesService {
       lng: row.lng,
       is_featured: isFeaturedAt(row, now),
     }));
-    return { data, truncated, limit: OFFICE_MAP_LISTINGS_LIMIT };
+    const office = agency.lat !== null && agency.lng !== null ? { lat: agency.lat, lng: agency.lng } : null;
+    return { data, office, truncated, limit: OFFICE_MAP_LISTINGS_LIMIT };
   }
 
   async getDashboard(userId: string): Promise<AgencyDashboard> {

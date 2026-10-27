@@ -1,7 +1,9 @@
 import { createPropertySchema, type CreatePropertyInput } from '@bongah/validation';
 import { AFGHANISTAN_BOUNDS } from '@bongah/shared-types';
-import { hasRoomsFor, DEAL_LABEL, TYPE_LABEL } from '../labels';
+import { hasRoomsFor, labelsNow } from '../labels';
 import { formatMoney, formatNumber, parseLooseNumber, toAsciiDigits } from '../format';
+import { activeLanguage, tNow } from '@/i18n/active';
+import type { Language } from '@/i18n/config';
 import type { DraftRow } from './types';
 
 export type DraftField =
@@ -32,60 +34,66 @@ export interface DraftCheck {
 
 /** When the description is left empty, the facts of the listing, as a sentence. (The API requires a description.) */
 export function autoDescription(row: DraftRow): string {
-  const type = row.type ? TYPE_LABEL[row.type] : 'ملک';
-  const deal = row.deal_type ? DEAL_LABEL[row.deal_type] : '';
+  const labels = labelsNow();
+  const type = row.type ? labels.type[row.type] : tNow('title.property');
+  const deal = row.deal_type ? labels.deal[row.deal_type] : '';
   const parts = [`${type}${deal ? ` ${deal}` : ''}`];
   const area = parseLooseNumber(row.area_sqm);
-  if (area) parts.push(`با مساحت ${formatNumber(area)} متر مربع`);
+  if (area) parts.push(tNow('desc.area', { n: formatNumber(area) }));
   const rooms = parseLooseNumber(row.bedrooms);
-  if (rooms && row.type && hasRoomsFor(row.type)) parts.push(`${formatNumber(rooms)} خوابه`);
+  if (rooms && row.type && hasRoomsFor(row.type)) parts.push(tNow('title.rooms', { n: formatNumber(rooms) }));
   const baths = parseLooseNumber(row.bathrooms);
-  if (baths && row.type && hasRoomsFor(row.type)) parts.push(`${formatNumber(baths)} حمام`);
+  if (baths && row.type && hasRoomsFor(row.type)) parts.push(tNow('desc.baths', { n: formatNumber(baths) }));
   let text = parts.join('، ');
   if (row.address.trim()) text += `، ${row.address.trim()}`;
   const price = parseLooseNumber(row.price);
-  if (price && row.currency) text += `. قیمت: ${formatMoney(price, row.currency)}`;
+  if (price && row.currency) text += `. ${tNow('desc.price', { price: formatMoney(price, row.currency) })}`;
   return `${text}.`;
 }
 
-const cache = new WeakMap<DraftRow, DraftCheck>();
+const cache = new WeakMap<DraftRow, { language: Language; check: DraftCheck }>();
 
-/** Checks a draft the way the API will, in Persian, and builds the request body. Cached per row object. */
+/**
+ * Checks a draft the way the API will, with the messages in the language shown, and builds the request body.
+ * Cached per row object AND language: after the language is switched the same rows are checked again, so their
+ * messages are not left in the old language.
+ */
 export function checkDraft(row: DraftRow): DraftCheck {
+  const language = activeLanguage();
   const hit = cache.get(row);
-  if (hit) return hit;
-  const result = compute(row);
-  cache.set(row, result);
-  return result;
+  if (hit && hit.language === language) return hit.check;
+  const check = compute(row);
+  cache.set(row, { language, check });
+  return check;
 }
 
 function compute(row: DraftRow): DraftCheck {
   const errors: DraftErrors = {};
   const title = row.title.replace(/\s+/g, ' ').trim();
-  if (title.length < 3) errors.title = 'عنوان دست‌کم ۳ حرف باشد.';
-  else if (title.length > 150) errors.title = 'عنوان بیش از ۱۵۰ حرف نباشد.';
+  if (title.length < 3) errors.title = tNow('list.col.titleShort');
+  else if (title.length > 150) errors.title = tNow('list.col.titleLong');
 
   const description = row.description.trim() || autoDescription(row);
-  if (description.length > 5000) errors.description = 'توضیحات بیش از ۵۰۰۰ حرف نباشد.';
+  if (description.length > 5000) errors.description = tNow('v.description.long');
 
-  if (!row.type) errors.type = 'نوع ملک را انتخاب کنید.';
-  if (!row.deal_type) errors.deal_type = 'نوع معامله را انتخاب کنید.';
+  if (!row.type) errors.type = tNow('v.type.required');
+  if (!row.deal_type) errors.deal_type = tNow('v.deal.required');
 
   const price = parseLooseNumber(row.price);
-  if (price === null || price <= 0) errors.price = 'قیمت را به عدد بنویسید.';
-  else if (price > 999_999_999_999.99) errors.price = 'قیمت بیش از حد بزرگ است.';
-  else if (!/^\d+(\.\d{1,2})?$/.test(String(price))) errors.price = 'قیمت حداکثر دو رقم اعشار دارد.';
-  if (!row.currency) errors.currency = 'ارز را انتخاب کنید.';
+  if (price === null || price <= 0) errors.price = tNow('list.col.priceNumber');
+  else if (price > 999_999_999_999.99) errors.price = tNow('v.price.big');
+  else if (!/^\d+(\.\d{1,2})?$/.test(String(price))) errors.price = tNow('v.price.decimals');
+  if (!row.currency) errors.currency = tNow('v.currency.required');
 
   const area = parseLooseNumber(row.area_sqm);
-  if (area === null || area <= 0) errors.area_sqm = 'متراژ را به عدد بنویسید.';
-  else if (area > 100_000_000) errors.area_sqm = 'متراژ بیش از حد بزرگ است.';
+  if (area === null || area <= 0) errors.area_sqm = tNow('v.area.number');
+  else if (area > 100_000_000) errors.area_sqm = tNow('v.area.big');
 
   const count = (value: string, field: 'bedrooms' | 'bathrooms'): number | undefined => {
     if (!value.trim()) return undefined;
     const n = parseLooseNumber(value);
     if (n === null || !Number.isInteger(n) || n < 0 || n > 50) {
-      errors[field] = 'عدد صحیح بین ۰ و ۵۰.';
+      errors[field] = tNow('v.count');
       return undefined;
     }
     return n;
@@ -94,11 +102,11 @@ function compute(row: DraftRow): DraftCheck {
   const baths = row.type && !hasRoomsFor(row.type) ? undefined : count(row.bathrooms, 'bathrooms');
 
   const province = row.province.replace(/\s+/g, ' ').trim();
-  if (province.length < 2) errors.province = 'ولایت لازم است.';
+  if (province.length < 2) errors.province = tNow('v.province.required');
   const place = (v: string, field: 'district' | 'neighborhood') => {
     const t = v.replace(/\s+/g, ' ').trim();
-    if (t && t.length < 2) errors[field] = 'دست‌کم ۲ حرف.';
-    else if (t.length > 80) errors[field] = 'بیش از ۸۰ حرف نباشد.';
+    if (t && t.length < 2) errors[field] = tNow('v.place.short');
+    else if (t.length > 80) errors[field] = tNow('v.place.long');
     return t;
   };
   const district = place(row.district, 'district');
@@ -111,9 +119,9 @@ function compute(row: DraftRow): DraftCheck {
   if (latText || lngText) {
     const la = parseLatLng(latText);
     const ln = parseLatLng(lngText);
-    if (la === null || ln === null) errors.location = 'عرض و طول جغرافیایی هر دو را بنویسید (مثلاً ۳۴.۵۲۸۱ و ۶۹.۱۷۶۱).';
+    if (la === null || ln === null) errors.location = tNow('v.location.both');
     else if (la < AFGHANISTAN_BOUNDS.minLat || la > AFGHANISTAN_BOUNDS.maxLat || ln < AFGHANISTAN_BOUNDS.minLng || ln > AFGHANISTAN_BOUNDS.maxLng)
-      errors.location = 'موقعیت بیرون از افغانستان است.';
+      errors.location = tNow('v.location.outside');
     else {
       lat = la;
       lng = ln;
@@ -121,9 +129,9 @@ function compute(row: DraftRow): DraftCheck {
   }
 
   const address = row.address.replace(/\s+/g, ' ').trim();
-  if (address && address.length < 3) errors.address = 'دست‌کم ۳ حرف.';
-  else if (address.length > 300) errors.address = 'بیش از ۳۰۰ حرف نباشد.';
-  else if (!address && lat === undefined && !errors.location) errors.address = 'آدرس بنویسید، یا موقعیت روی نقشه بدهید.';
+  if (address && address.length < 3) errors.address = tNow('v.address.short');
+  else if (address.length > 300) errors.address = tNow('v.address.long');
+  else if (!address && lat === undefined && !errors.location) errors.address = tNow('v.address.required');
 
   if (Object.keys(errors).length > 0) return { ok: false, errors };
 
@@ -153,7 +161,7 @@ function compute(row: DraftRow): DraftCheck {
   for (const issue of parsed.error.issues) {
     const field = String(issue.path[0] ?? '') as DraftField;
     const known: DraftField[] = ['title', 'description', 'type', 'deal_type', 'price', 'currency', 'area_sqm', 'bedrooms', 'bathrooms', 'province', 'district', 'neighborhood', 'address', 'images'];
-    late[known.includes(field) ? field : 'title'] ??= field === 'images' ? 'نشانی عکس‌ها معتبر نیست.' : 'مقدار معتبر نیست.';
+    late[known.includes(field) ? field : 'title'] ??= field === 'images' ? tNow('v.images') : tNow('import.publish.invalidValue');
   }
   return { ok: false, errors: late };
 }

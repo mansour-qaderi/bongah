@@ -277,6 +277,9 @@ describe('registration and payment schemas', () => {
     expect(registerAgencySchema.safeParse({ ...agency, license_photo: 'file:///etc/passwd' }).success).toBe(false);
     expect(registerAgencySchema.safeParse({ ...agency, is_verified: true }).success).toBe(false);
   });
+  it('registerAgencySchema does not require a licence photo (the web panel sends none)', () => {
+    expect(registerAgencySchema.safeParse({ agency_name: 'Noor', address: 'Kabul city' }).success).toBe(true);
+  });
   it('initiatePaymentSchema is a closed union with no client-chosen amount', () => {
     expect(initiatePaymentSchema.safeParse({ purpose: 'SUBSCRIPTION', package_type: 'YEARLY' }).success).toBe(true);
     expect(initiatePaymentSchema.safeParse({ purpose: 'SUBSCRIPTION', package_type: 'YEARLY', amount: 1 }).success).toBe(false);

@@ -27,7 +27,6 @@ jest.mock('../src/auth/AuthContext', () => ({
 }));
 
 // Imported after the mock so the components pick it up.
-import AppLoader from '../src/components/AppLoader';
 import Button from '../src/components/Button';
 import CircleIconButton from '../src/components/CircleIconButton';
 import InlineLoader from '../src/components/InlineLoader';
@@ -50,7 +49,11 @@ const fs = require('node:fs') as {
   readdirSync(p: string): string[];
   statSync(p: string): { isDirectory(): boolean };
 };
-const path = require('node:path') as { join(...p: string[]): string };
+const path = require('node:path') as {
+  join(...p: string[]): string;
+  relative(from: string, to: string): string;
+  sep: string;
+};
 const source = (...parts: string[]) =>
   fs.readFileSync(path.join(__dirname, '..', ...parts), 'utf8');
 const walk = (dir: string): string[] =>
@@ -124,16 +127,58 @@ describe('no default spinner is left in the app', () => {
     expect(offenders).toEqual([]);
   });
 
-  it('shows the logo loader, in the middle of the space, where LoadingView used to show a spinner', async () => {
+  it('never uses the app logo as a loading indicator: only the opening screen and About draw it', () => {
+    const files = walk(path.join(__dirname, '..', 'src'))
+      .concat(path.join(__dirname, '..', 'App.tsx'))
+      .filter(file => /\.tsx?$/.test(file))
+      .map(file =>
+        path
+          .relative(path.join(__dirname, '..'), file)
+          .split(path.sep)
+          .join('/'),
+      );
+    // The logo component itself is gone from every loader: nothing imports Logo but the two places that show the brand.
+    const importsLogo = files.filter(file =>
+      /from '(\.{1,2}\/)+(components\/)?Logo'/.test(source(...file.split('/'))),
+    );
+    expect(importsLogo.sort()).toEqual([
+      'src/screens/about/AboutScreen.tsx',
+      'src/screens/splash/SplashScreen.tsx',
+    ]);
+    // The old logo loader is deleted, not just unused.
+    expect(files).not.toContain('src/components/AppLoader.tsx');
+    expect(
+      files.filter(f => source(...f.split('/')).includes('AppLoader')),
+    ).toEqual([]);
+    // Neither the green spinner nor the map pin looks at the logo's geometry.
+    for (const file of [
+      'Spinner.tsx',
+      'MapLoader.tsx',
+      'InlineLoader.tsx',
+      'States.tsx',
+    ]) {
+      expect(source('src', 'components', file)).not.toMatch(
+        /LOGO_GEOMETRY|\bLogo\b/,
+      );
+    }
+  });
+
+  it('draws every page, sheet and overlay loader with the one Spinner', () => {
+    expect(source('src', 'components', 'States.tsx')).toContain('<Spinner');
+    expect(source('src', 'components', 'Screen.tsx')).toContain('<Spinner');
+    expect(source('App.tsx')).toContain('<Spinner');
+  });
+
+  it('shows the green spinner, in the middle of the space, where LoadingView used to show the logo', async () => {
     const tree = await show(<LoadingView />);
     expect(byId(tree.root, 'loading-view')).toHaveLength(1);
-    const loader = byId(tree.root, 'app-loader')[0];
+    const loader = byId(tree.root, 'spinner')[0];
     expect(loader).toBeDefined();
     expect(loader.props.accessibilityLabel).toBe(prs.common.loading);
     expect(roles(tree.root, 'progressbar')).toHaveLength(1);
   });
 
-  it('shows the logo loader while the balance loads', async () => {
+  it('shows the green spinner while the balance loads', async () => {
     mockUser = { id: 'u1', role: 'USER' };
     fetchMock.mockImplementation(() => new Promise(() => undefined));
     (globalThis as { fetch: unknown }).fetch = fetchMock;
@@ -149,29 +194,7 @@ describe('no default spinner is left in the app', () => {
     );
     await settle();
     expect(byId(tree.root, 'loading-view')).toHaveLength(1);
-    expect(byId(tree.root, 'app-loader')).toHaveLength(1);
-  });
-});
-
-describe('AppLoader: the soft pulsing ground shadow', () => {
-  it('has a soft green ground shadow inside the ring that breathes with the pin', async () => {
-    reduceMotion(false);
-    const tree = await show(<AppLoader />);
-    await settle();
-    const ground = byId(tree.root, 'app-loader-shadow')[0];
-    expect(ground).toBeDefined();
-    // Moving: at rest-time it sits between the soft ends, not at the still value.
-    const opacity = styleOf(ground).opacity as number;
-    expect(opacity).toBeGreaterThanOrEqual(0.07);
-    expect(opacity).toBeLessThanOrEqual(0.2);
-    expect(opacity).not.toBe(0.12);
-  });
-
-  it('keeps the ground shadow still and faint with "reduce motion" on', async () => {
-    reduceMotion(true);
-    const tree = await show(<AppLoader />);
-    await settle();
-    expect(styleOf(byId(tree.root, 'app-loader-shadow')[0]).opacity).toBe(0.12);
+    expect(byId(tree.root, 'spinner')).toHaveLength(1);
   });
 });
 
@@ -247,7 +270,7 @@ describe('MapLoader on a green button', () => {
     const onBrand = await show(<MapLoader onBrand />);
     await settle();
     const ring = (tree: ReactTestRenderer.ReactTestRenderer) =>
-      styleOf(byId(tree.root, 'map-loader-ring-0')[0]).borderColor;
+      styleOf(byId(tree.root, 'map-loader-pulse-0')[0]).borderColor;
     expect(ring(normal)).toBe(colors.primary);
     expect(ring(onBrand)).toBe(colors.textOnPrimary);
   });
@@ -265,9 +288,9 @@ describe('MapLoader on a green button', () => {
     );
     await settle();
     expect(byId(tree.root, 'map-loader')).toHaveLength(1);
-    expect(byId(tree.root, 'map-loader-still-ring')).toHaveLength(1);
+    expect(byId(tree.root, 'map-loader-still-pulse')).toHaveLength(1);
     expect(
-      styleOf(byId(tree.root, 'map-loader-still-ring')[0]).borderColor,
+      styleOf(byId(tree.root, 'map-loader-still-pulse')[0]).borderColor,
     ).toBe(colors.textOnPrimary);
   });
 });

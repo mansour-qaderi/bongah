@@ -4,6 +4,7 @@ import { Check, Pencil, X } from 'lucide-react';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { cn } from '@/lib/cn';
 import { Input } from '@/components/ui/field';
+import { useT } from '@/i18n/provider';
 
 /**
  * Text that turns into an input when you click the pencil (or double-click the text). Enter saves, Escape cancels.
@@ -30,6 +31,7 @@ export function InlineEdit({
   inputMode?: 'text' | 'decimal' | 'numeric';
   className?: string;
 }) {
+  const t = useT();
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(value);
   const [error, setError] = useState<string | null>(null);
@@ -77,7 +79,7 @@ export function InlineEdit({
         <button
           type="button"
           onClick={start}
-          aria-label={`ویرایش ${label}`}
+          aria-label={t('inline.edit', { label })}
           className="shrink-0 rounded-md p-1 text-muted opacity-0 transition-opacity hover:bg-soft hover:text-primary focus-visible:opacity-100 group-hover/edit:opacity-100"
         >
           <Pencil aria-hidden className="h-3.5 w-3.5" />
@@ -110,10 +112,10 @@ export function InlineEdit({
           }}
           className={cn('h-8 rounded-lg px-2 text-[13px]', ltr && 'ltr text-start', inputClassName)}
         />
-        <button type="button" onClick={() => void commit()} disabled={saving} aria-label="ذخیره" className="rounded-md p-1.5 text-primary hover:bg-primary-tint">
+        <button type="button" onClick={() => void commit()} disabled={saving} aria-label={t('common.save')} className="rounded-md p-1.5 text-primary hover:bg-primary-tint">
           <Check className="h-4 w-4" />
         </button>
-        <button type="button" onClick={() => setEditing(false)} disabled={saving} aria-label="انصراف" className="rounded-md p-1.5 text-muted hover:bg-soft">
+        <button type="button" onClick={() => setEditing(false)} disabled={saving} aria-label={t('common.cancel')} className="rounded-md p-1.5 text-muted hover:bg-soft">
           <X className="h-4 w-4" />
         </button>
       </div>

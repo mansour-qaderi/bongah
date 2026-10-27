@@ -9,10 +9,22 @@ export function DropdownRoot(props: React.ComponentProps<typeof Menu.Root>) {
 }
 export const DropdownTrigger = Menu.Trigger;
 
-export function DropdownContent({ children, className, align = 'end' }: { children: ReactNode; className?: string; align?: 'start' | 'end' }) {
+export function DropdownContent({
+  children,
+  className,
+  align = 'end',
+  side = 'bottom',
+}: {
+  children: ReactNode;
+  className?: string;
+  align?: 'start' | 'end';
+  /** Which side of the trigger the menu opens on; `top` for a trigger at the bottom of the screen. */
+  side?: 'top' | 'bottom';
+}) {
   return (
     <Menu.Portal>
       <Menu.Content
+        side={side}
         align={align}
         sideOffset={6}
         className={cn('z-50 min-w-48 rounded-xl border border-line bg-surface p-1.5 text-sm', className)}

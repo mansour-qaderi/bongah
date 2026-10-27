@@ -11,9 +11,13 @@ import { AFGHANISTAN_BOUNDS, DEAL_TYPES, type AgencyListingPin, type DealType } 
 import { normalizePlaceName } from '@bongah/validation';
 import { errorMessage } from '@/lib/api';
 import { formatMoney, formatNumber } from '@/lib/format';
-import { DEAL_COLOR, DEAL_LABEL, STATUS_LABEL, TYPE_LABEL } from '@/lib/labels';
+import { DEAL_COLOR } from '@/lib/labels';
+import { tNow } from '@/i18n/active';
+import { useLanguage, useT } from '@/i18n/provider';
+import { useLabels } from '@/i18n/use-labels';
 import { refreshListingData, updateListing } from '@/lib/listing-actions';
-import { DEFAULT_CENTER, mapStyle, TILE_MAX_ZOOM } from '@/lib/map-config';
+import { provinceNameLabel } from '@/lib/provinces';
+import { DEFAULT_CENTER, fallbackSource, mapStyle, TILE_MAX_ZOOM } from '@/lib/map-config';
 import { useDashboard, useMapListings, useOfficePin } from '@/hooks/use-api';
 import { cn } from '@/lib/cn';
 import { Badge } from '@/components/ui/badge';
@@ -30,6 +34,9 @@ type Pos = { lat: number; lng: number };
 /** Room to leave on the map's right (the side panel covers it from the sm breakpoint up) so pins are not hidden. */
 const fitPadding = () => ({ top: 80, bottom: 80, left: 80, right: typeof window !== 'undefined' && window.innerWidth >= 640 ? 80 + 352 : 80 });
 
+/** Listings farther than this (in degrees, about 35 km) from the office are left out of the first view; "show all" has them. */
+const NEAR_OFFICE_DEGREES = 0.35;
+
 const inAfghanistan = (lat: number, lng: number) =>
   lat >= AFGHANISTAN_BOUNDS.minLat && lat <= AFGHANISTAN_BOUNDS.maxLat && lng >= AFGHANISTAN_BOUNDS.minLng && lng <= AFGHANISTAN_BOUNDS.maxLng;
 
@@ -39,6 +46,9 @@ interface Item extends AgencyListingPin {
 }
 
 export function OfficeMap() {
+  const t = useT();
+  const { language } = useLanguage();
+  const labels = useLabels();
   const params = useSearchParams();
   const { data, error, mutate } = useMapListings();
   const { data: dashboard } = useDashboard();
@@ -92,11 +102,20 @@ export function OfficeMap() {
   const live = useRef({ placed, selectedId, placingId, byId });
   live.current = { placed, selectedId, placingId, byId };
 
+  /** Where the office is: its own pin from the API (also set while the office is unverified), else the public map's. */
+  const office = useMemo<Pos | null>(() => {
+    if (data?.office) return data.office;
+    const mine = officePins?.find((p) => p.id === dashboard?.agency.id);
+    return mine ? { lat: mine.lat, lng: mine.lng } : null;
+  }, [data?.office, officePins, dashboard?.agency.id]);
+  const officeRef = useRef(office);
+  officeRef.current = office;
+
   // ── saving a position ──
   const savePosition = useCallback(
     async (id: string, to: Pos, from: Pos | null, label: string) => {
       if (!inAfghanistan(to.lat, to.lng)) {
-        toast.error('موقعیت بیرون از افغانستان است.');
+        toast.error(tNow('map.outside'));
         setOverrides((o) => {
           const n = new Map(o);
           if (from) n.set(id, from);
@@ -112,10 +131,10 @@ export function OfficeMap() {
         await updateListing(id, next);
         void mutate();
         void refreshListingData();
-        toast.success(`موقعیت «${label}» ذخیره شد.`, {
+        toast.success(tNow('map.saved', { label }), {
           action: from
             ? {
-                label: 'بازگرداندن',
+                label: tNow('map.undo'),
                 onClick: () => void savePosition(id, from, to, label),
               }
             : undefined,
@@ -151,6 +170,21 @@ export function OfficeMap() {
     map.touchZoomRotate.disableRotation();
     map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-left');
     mapRef.current = map;
+
+    // If the main tile server refuses us (403) or is unreachable, move to the fallback provider once.
+    let tileErrors = 0;
+    let usingFallback = false;
+    map.on('error', (e) => {
+      if (usingFallback || (e as { sourceId?: string }).sourceId !== 'base') return;
+      tileErrors += 1;
+      if (tileErrors < 3) return;
+      usingFallback = true;
+      if (!map.getSource('base')) return;
+      map.removeLayer('base');
+      map.removeSource('base');
+      map.addSource('base', fallbackSource());
+      map.addLayer({ id: 'base', type: 'raster', source: 'base' }, map.getLayer('listings-clusters') ? 'listings-clusters' : undefined);
+    });
 
     map.on('load', () => {
       map.addSource(SOURCE, { type: 'geojson', data: { type: 'FeatureCollection', features: [] }, cluster: true, clusterRadius: 48, clusterMaxZoom: 16 });
@@ -304,7 +338,7 @@ export function OfficeMap() {
     if (map && ready) syncMarkers(map);
   }, [selectedId, ready, items]);
 
-  // First view: fit everything placed (once), or the focused listing.
+  // First view: the office, close up, with the listings around it (once); or the focused listing.
   const fitted = useRef(false);
   useEffect(() => {
     const map = mapRef.current;
@@ -316,12 +350,27 @@ export function OfficeMap() {
       map.jumpTo({ center: [target.lng!, target.lat!], zoom: 16 });
       return;
     }
-    const pts = items.filter((p) => p.placed);
-    if (pts.length === 0) return;
+    const home = officeRef.current;
+    const all = items.filter((p) => p.placed);
+    // With an office pin the view is centred on it, with the listings near it; far-off ones are one tap away ("show all").
+    const pts = home ? all.filter((p) => Math.abs(p.lat! - home.lat) <= NEAR_OFFICE_DEGREES && Math.abs(p.lng! - home.lng) <= NEAR_OFFICE_DEGREES) : all;
+    if (pts.length === 0 && !home) return;
     const b = new maplibregl.LngLatBounds();
     pts.forEach((p) => b.extend([p.lng!, p.lat!]));
-    map.fitBounds(b, { padding: fitPadding(), maxZoom: 15, duration: 0 });
+    if (home) b.extend([home.lng, home.lat]);
+    map.fitBounds(b, { padding: fitPadding(), maxZoom: home ? 16 : 15, duration: 0 });
   }, [ready, data, items, params]);
+
+  // The office pin can arrive after the first view was drawn (an older API, or a slow dashboard call): centre on it once.
+  const centredOnOffice = useRef(false);
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready || !office || centredOnOffice.current) return;
+    centredOnOffice.current = true;
+    if (!fitted.current && !data) return; // the first view above will include it
+    if (params.get('focus')) return;
+    if (!map.getBounds().contains([office.lng, office.lat])) map.easeTo({ center: [office.lng, office.lat], zoom: Math.max(map.getZoom(), 14), duration: 0 });
+  }, [office, ready, data, params]);
 
   // The office's own pin.
   useEffect(() => {
@@ -329,9 +378,8 @@ export function OfficeMap() {
     if (!map || !ready) return;
     officeMarker.current?.remove();
     officeMarker.current = null;
-    const mine = officePins?.find((p) => p.id === dashboard?.agency.id);
-    if (mine) officeMarker.current = new maplibregl.Marker({ element: officeElement() }).setLngLat([mine.lng, mine.lat]).addTo(map);
-  }, [officePins, dashboard?.agency.id, ready]);
+    if (office) officeMarker.current = new maplibregl.Marker({ element: officeElement() }).setLngLat([office.lng, office.lat]).addTo(map);
+  }, [office, ready]);
 
   // Crosshair cursor while placing a listing.
   useEffect(() => {
@@ -356,7 +404,7 @@ export function OfficeMap() {
     setPlacingId(p.id);
     setSelectedId(p.id);
     setPanelOpen(false);
-    toast.info('روی نقشه کلیک کنید تا موقعیت آگهی ثبت شود (Esc = انصراف).');
+    toast.info(tNow('map.placeHint'));
   };
 
   const fitAll = () => {
@@ -375,12 +423,12 @@ export function OfficeMap() {
     <div className="relative -mx-4 -my-6 h-[calc(100dvh-4rem)] overflow-hidden sm:-mx-6">
       <div className="absolute inset-0">
         {/* MapLibre sets its own position on this element, so it only gets a size here. */}
-        <div ref={container} className="h-full w-full" aria-label="نقشه آگهی‌های دفتر" />
+        <div ref={container} className="h-full w-full" aria-label={t('map.aria.map')} />
       </div>
 
       {/* Side panel */}
       <aside
-        aria-label="فهرست آگهی‌ها"
+        aria-label={t('map.aria.list')}
         className={cn(
           'absolute inset-y-0 start-0 z-10 flex w-full max-w-sm flex-col border-e border-line bg-surface transition-transform duration-200 sm:w-[22rem]',
           panelOpen ? 'translate-x-0' : 'translate-x-full sm:translate-x-0',
@@ -388,14 +436,14 @@ export function OfficeMap() {
       >
         <div className="space-y-3 border-b border-line p-3">
           <div className="flex items-center justify-between sm:hidden">
-            <span className="text-sm font-bold">آگهی‌ها</span>
-            <button onClick={() => setPanelOpen(false)} aria-label="بستن فهرست" className="rounded-lg p-1.5 hover:bg-soft">
+            <span className="text-sm font-bold">{t('map.listings')}</span>
+            <button onClick={() => setPanelOpen(false)} aria-label={t('map.closeList')} className="rounded-lg p-1.5 hover:bg-soft">
               <X className="h-4 w-4" />
             </button>
           </div>
           <div className="relative">
             <Search aria-hidden className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
-            <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="جستجوی عنوان یا آدرس…" aria-label="جستجو" className="ps-9" />
+            <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder={t('map.searchPlaceholder')} aria-label={t('common.search')} className="ps-9" />
           </div>
           <div className="flex flex-wrap items-center gap-1.5">
             {DEAL_TYPES.map((d) => {
@@ -415,20 +463,20 @@ export function OfficeMap() {
                   className={cn('flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold', on ? 'border-ink bg-ink text-white' : 'border-line-strong text-ink-2')}
                 >
                   <span className="h-2.5 w-2.5 rounded-full" style={{ background: DEAL_COLOR[d].main }} />
-                  {DEAL_LABEL[d]}
+                  {labels.deal[d]}
                 </button>
               );
             })}
             <label className="ms-auto flex items-center gap-1.5 text-xs text-ink-2">
               <input type="checkbox" checked={showSold} onChange={(e) => setShowSold(e.target.checked)} className="h-3.5 w-3.5 accent-[#047857]" />
-              معامله‌شده‌ها
+              {t('map.showSold')}
             </label>
           </div>
           <div role="tablist" className="flex rounded-xl bg-soft p-1">
             {(
               [
-                ['placed', `روی نقشه (${formatNumber(placed.length)})`],
-                ['unplaced', `بدون موقعیت (${formatNumber(unplaced.length)})`],
+                ['placed', t('map.tab.placed', { n: formatNumber(placed.length) })],
+                ['unplaced', t('map.tab.unplaced', { n: formatNumber(unplaced.length) })],
               ] as const
             ).map(([k, label]) => (
               <button
@@ -458,11 +506,11 @@ export function OfficeMap() {
             <EmptyState
               compact
               icon={MapPinOff}
-              title="آگهی‌ای ندارید"
-              description="بعد از ثبت آگهی، اینجا روی نقشه می‌بینید و موقعیتش را با کشیدن اصلاح می‌کنید."
+              title={t('map.empty.title')}
+              description={t('map.empty.text')}
               action={
                 <Link href="/dashboard/listings/quick-add">
-                  <Button size="sm">ثبت آگهی</Button>
+                  <Button size="sm">{t('map.empty.add')}</Button>
                 </Link>
               }
             />
@@ -470,8 +518,8 @@ export function OfficeMap() {
             <EmptyState
               compact
               icon={tab === 'placed' ? MapPinOff : LocateFixed}
-              title={tab === 'placed' ? 'آگهی‌ای با این فیلتر روی نقشه نیست' : 'همهٔ آگهی‌ها موقعیت دارند'}
-              description={tab === 'placed' ? 'جستجو یا فیلترها را کم کنید.' : 'آگهی بدون موقعیت اینجا برای قرار دادن روی نقشه می‌آید.'}
+              title={tab === 'placed' ? t('map.none.placed') : t('map.none.unplaced')}
+              description={tab === 'placed' ? t('map.none.placedText') : t('map.none.unplacedText')}
             />
           ) : (
             <ul className="divide-y divide-line">
@@ -484,14 +532,14 @@ export function OfficeMap() {
                     <button onClick={() => (p.placed ? flyTo(p) : setSelectedId(p.id))} className="min-w-0 flex-1 text-start">
                       <div className="truncate text-[13px] font-semibold text-ink">{p.title}</div>
                       <div className="mt-0.5 truncate text-xs text-muted">
-                        {TYPE_LABEL[p.type]} · {p.district || p.province}
+                        {labels.type[p.type]} · {p.district || (p.province ? provinceNameLabel(p.province, language) : p.province)}
                       </div>
                       <div className="tabular mt-0.5 text-xs font-semibold text-ink-2">{formatMoney(p.price, p.currency)}</div>
                     </button>
                     {!p.placed ? (
                       <Button size="sm" variant="secondary" onClick={() => startPlacing(p)} className="gap-1">
                         <Crosshair aria-hidden className="h-3.5 w-3.5" />
-                        بگذار روی نقشه
+                        {t('map.place')}
                       </Button>
                     ) : null}
                   </div>
@@ -502,14 +550,14 @@ export function OfficeMap() {
           {list.length > limit ? (
             <div className="p-3">
               <Button variant="secondary" className="w-full justify-center" onClick={() => setLimit((l) => l + 60)}>
-                نمایش بیشتر ({formatNumber(list.length - limit)})
+                {t('map.more', { n: formatNumber(list.length - limit) })}
               </Button>
             </div>
           ) : null}
         </div>
         {data?.truncated ? (
           <p className="border-t border-line bg-accent-tint px-3 py-2 text-xs text-accent-text">
-            فقط {formatNumber(data.limit)} آگهی تازه‌تر نشان داده می‌شود؛ بقیه را از «مدیریت آگهی‌ها» ببینید.
+            {t('map.truncated', { n: formatNumber(data.limit) })}
           </p>
         ) : null}
       </aside>
@@ -520,28 +568,28 @@ export function OfficeMap() {
         className="absolute end-3 top-3 z-[5] flex items-center gap-2 rounded-xl border border-line bg-surface px-3 py-2 text-[13px] font-semibold sm:hidden"
       >
         <List aria-hidden className="h-4 w-4" />
-        فهرست ({formatNumber(total)})
+        {t('map.openList', { n: formatNumber(total) })}
       </button>
       <div className="absolute end-3 top-3 z-[5] hidden gap-2 sm:flex">
         <Button variant="secondary" size="sm" onClick={fitAll} disabled={placed.length === 0} className="gap-1.5 bg-surface">
           <LocateFixed aria-hidden className="h-4 w-4" />
-          نمایش همه
+          {t('map.fitAll')}
         </Button>
       </div>
 
       {placingId ? (
         <div role="status" className="absolute inset-x-0 top-3 z-[6] mx-auto flex w-fit max-w-[90%] items-center gap-3 rounded-xl border border-primary bg-surface px-4 py-2.5 text-[13px] font-semibold text-primary">
           <Crosshair aria-hidden className="h-4 w-4" />
-          روی نقشه کلیک کنید تا موقعیت «{byId.get(placingId)?.title}» ثبت شود
+          {t('map.placing', { title: byId.get(placingId)?.title ?? '' })}
           <button onClick={() => setPlacingId(null)} className="rounded-md px-2 py-0.5 text-xs text-ink-2 hover:bg-soft">
-            انصراف
+            {t('common.cancel')}
           </button>
         </div>
       ) : null}
 
       {capped ? (
         <div role="status" className="absolute bottom-3 end-3 z-[5] max-w-xs rounded-xl border border-line bg-surface px-3 py-2 text-xs text-ink-2">
-          آگهی‌های زیادی در این نما هست؛ نزدیک‌تر شوید یا فیلتر کنید تا همه نمایش داده شوند.
+          {t('map.capped')}
         </div>
       ) : null}
 
@@ -552,18 +600,18 @@ export function OfficeMap() {
       ) : null}
 
       {selected ? (
-        <div className="reveal absolute bottom-4 end-3 z-[7] w-[min(22rem,calc(100%-1.5rem))] rounded-2xl border border-line bg-surface p-4 sm:end-auto sm:start-[23.5rem]" role="dialog" aria-label="جزئیات آگهی">
+        <div className="reveal absolute bottom-4 end-3 z-[7] w-[min(22rem,calc(100%-1.5rem))] rounded-2xl border border-line bg-surface p-4 sm:end-auto sm:start-[23.5rem]" role="dialog" aria-label={t('map.details')}>
           <div className="flex items-start justify-between gap-2">
             <div className="min-w-0">
               <div className="truncate text-sm font-bold text-ink">{selected.title}</div>
               <div className="mt-1 flex flex-wrap items-center gap-1.5 text-xs text-muted">
-                <Badge tone={selected.deal_type === 'SALE' ? 'primary' : selected.deal_type === 'RENT' ? 'info' : 'gold'}>{DEAL_LABEL[selected.deal_type]}</Badge>
-                <span>{TYPE_LABEL[selected.type]}</span>
-                <Badge tone={selected.status === 'ACTIVE' ? 'primary' : 'neutral'}>{STATUS_LABEL[selected.status]}</Badge>
-                {selected.is_featured ? <Badge tone="gold">ویژه</Badge> : null}
+                <Badge tone={selected.deal_type === 'SALE' ? 'primary' : selected.deal_type === 'RENT' ? 'info' : 'gold'}>{labels.deal[selected.deal_type]}</Badge>
+                <span>{labels.type[selected.type]}</span>
+                <Badge tone={selected.status === 'ACTIVE' ? 'primary' : 'neutral'}>{labels.status[selected.status]}</Badge>
+                {selected.is_featured ? <Badge tone="gold">{t('list.col.featured')}</Badge> : null}
               </div>
             </div>
-            <button onClick={() => setSelectedId(null)} aria-label="بستن" className="rounded-lg p-1 text-muted hover:bg-soft">
+            <button onClick={() => setSelectedId(null)} aria-label={t('common.close')} className="rounded-lg p-1 text-muted hover:bg-soft">
               <X className="h-4 w-4" />
             </button>
           </div>
@@ -571,16 +619,16 @@ export function OfficeMap() {
           <p className="mt-1 line-clamp-2 text-xs text-muted">{selected.address}</p>
           <div className="mt-3 flex flex-wrap gap-2">
             {selected.placed ? (
-              <p className="w-full text-xs text-muted">برای اصلاح موقعیت، سنجاق را بکشید و رها کنید.</p>
+              <p className="w-full text-xs text-muted">{t('map.dragHint')}</p>
             ) : (
               <Button size="sm" onClick={() => startPlacing(selected)} className="gap-1.5">
                 <Crosshair aria-hidden className="h-4 w-4" />
-                بگذار روی نقشه
+                {t('map.place')}
               </Button>
             )}
             <Link href={`/dashboard/listings?q=${encodeURIComponent(selected.title)}&tab=ALL`}>
               <Button size="sm" variant="secondary">
-                در فهرست آگهی‌ها
+                {t('map.inList')}
               </Button>
             </Link>
           </div>

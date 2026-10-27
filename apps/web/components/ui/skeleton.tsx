@@ -1,5 +1,8 @@
+'use client';
+
 import type { HTMLAttributes } from 'react';
 import { cn } from '@/lib/cn';
+import { useT } from '@/i18n/provider';
 
 /** A shimmering placeholder block. Size it with className (h-4 w-24 …). */
 export function Skeleton({ className, ...rest }: HTMLAttributes<HTMLDivElement>) {
@@ -20,8 +23,9 @@ export function StatCardSkeleton() {
 }
 
 export function TableRowsSkeleton({ rows = 8, cols = 6 }: { rows?: number; cols?: number }) {
+  const t = useT();
   return (
-    <div role="status" aria-label="در حال بارگذاری فهرست" className="divide-y divide-line">
+    <div role="status" aria-label={t('common.loadingList')} className="divide-y divide-line">
       {Array.from({ length: rows }, (_, r) => (
         <div key={r} className="flex items-center gap-4 px-4 py-3.5">
           <Skeleton className="h-4 w-4 rounded" />
@@ -50,8 +54,9 @@ export function ChartSkeleton({ height = 260 }: { height?: number }) {
 }
 
 export function CardListSkeleton({ rows = 4 }: { rows?: number }) {
+  const t = useT();
   return (
-    <div role="status" aria-label="در حال بارگذاری" className="space-y-3">
+    <div role="status" aria-label={t('common.loading')} className="space-y-3">
       {Array.from({ length: rows }, (_, i) => (
         <div key={i} className="flex items-center gap-3 rounded-xl border border-line bg-surface p-3">
           <Skeleton className="h-12 w-12 shrink-0 rounded-lg" />

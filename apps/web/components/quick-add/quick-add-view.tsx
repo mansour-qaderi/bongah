@@ -1,6 +1,7 @@
 'use client';
 
 import { ClipboardPaste, FileSpreadsheet, PencilLine } from 'lucide-react';
+import { useT } from '@/i18n/provider';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { DraftGrid } from './draft-grid';
 import { FileImport } from './file-import';
@@ -9,11 +10,12 @@ import { SingleForm } from './single-form';
 import { SmartText } from './smart-text';
 
 export function QuickAddView() {
+  const t = useT();
   return (
     <div className="mx-auto max-w-7xl space-y-5">
       <div>
-        <h2 className="text-lg font-extrabold text-ink">ثبت سریع و گروهی آگهی</h2>
-        <p className="text-[13px] text-muted">یک آگهی را سریع بنویسید، یا چندین آگهی را از متن پیام‌ها و فایل اکسل یک‌جا وارد کنید.</p>
+        <h2 className="text-lg font-extrabold text-ink">{t('qa.title')}</h2>
+        <p className="text-[13px] text-muted">{t('qa.subtitle')}</p>
       </div>
 
       <PinnedPanel />
@@ -22,15 +24,15 @@ export function QuickAddView() {
         <TabsList className="max-w-full overflow-x-auto">
           <TabsTrigger value="form">
             <PencilLine aria-hidden className="h-4 w-4" />
-            فرم سریع
+            {t('qa.tab.form')}
           </TabsTrigger>
           <TabsTrigger value="text">
             <ClipboardPaste aria-hidden className="h-4 w-4" />
-            متن هوشمند
+            {t('qa.tab.text')}
           </TabsTrigger>
           <TabsTrigger value="file">
             <FileSpreadsheet aria-hidden className="h-4 w-4" />
-            فایل CSV / اکسل
+            {t('qa.tab.file')}
           </TabsTrigger>
         </TabsList>
         <TabsContent value="form" className="outline-none">
@@ -44,7 +46,7 @@ export function QuickAddView() {
         </TabsContent>
       </Tabs>
 
-      <section id="drafts" aria-label="پیش‌نویس‌ها" className="scroll-mt-20">
+      <section id="drafts" aria-label={t('qa.drafts.aria')} className="scroll-mt-20">
         <DraftGrid />
       </section>
     </div>

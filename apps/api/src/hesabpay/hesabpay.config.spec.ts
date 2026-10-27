@@ -29,6 +29,22 @@ describe('readHesabPaySettings', () => {
     expect(s.baseUrl).toBe('https://api.hesab.com/api/v1');
   });
 
+  it('auto-success is off unless asked for, and only ever applies to the mock gateway', () => {
+    const base = { HESABPAY_WEBHOOK_SECRET: SECRET };
+    expect(readHesabPaySettings(config(base)).mockAutoSuccess).toBe(false);
+    expect(readHesabPaySettings(config({ ...base, HESABPAY_MOCK_AUTO_SUCCESS: 'true' })).mockAutoSuccess).toBe(true);
+    expect(readHesabPaySettings(config({ ...base, HESABPAY_MOCK_AUTO_SUCCESS: '1' })).mockAutoSuccess).toBe(true);
+    expect(readHesabPaySettings(config({ ...base, HESABPAY_MOCK_AUTO_SUCCESS: 'false' })).mockAutoSuccess).toBe(false);
+    // Live mode: the flag is ignored, real payments are never auto-approved.
+    expect(readHesabPaySettings(config({ ...LIVE_ENV, HESABPAY_MOCK_AUTO_SUCCESS: 'true' })).mockAutoSuccess).toBe(false);
+    // A key-less "live" deployment falls back to the mock gateway, where the flag does apply.
+    const { HESABPAY_API_KEY: _key, ...keyless } = LIVE_ENV;
+    expect(
+      readHesabPaySettings(config({ ...keyless, HESABPAY_WEBHOOK_SECRET: SECRET, HESABPAY_MOCK_AUTO_SUCCESS: 'true' })),
+    ).toMatchObject({ mode: 'mock', mockAutoSuccess: true });
+    expect(() => readHesabPaySettings(config({ ...base, HESABPAY_MOCK_AUTO_SUCCESS: 'yes' }))).toThrow(/true.*false/);
+  });
+
   it('prices the four plans from one monthly list price, 1000 unless set', () => {
     const s = readHesabPaySettings(config(LIVE_ENV));
     expect(s.prices.subscriptionListMonthly).toBe('1000');

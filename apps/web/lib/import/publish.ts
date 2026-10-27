@@ -4,6 +4,7 @@ import type { CreatePropertyInput } from '@bongah/validation';
 import { ApiError, api, errorMessage, messageForCode } from '../api';
 import { pooled, withBackoff } from '../listing-actions';
 import type { DraftErrors, DraftField } from './draft-validation';
+import { tNow } from '@/i18n/active';
 
 export interface PublishItem {
   key: string;
@@ -27,7 +28,7 @@ function fieldErrors(list: { field: string; message: string }[] | undefined): Dr
   for (const e of list) {
     const name = e.field.split('.')[0] as string;
     const field: DraftField = name === 'lat' || name === 'lng' || name === 'boundary' ? 'location' : FIELDS.includes(name as DraftField) ? (name as DraftField) : 'title';
-    out[field] ??= 'مقدار معتبر نیست.';
+    out[field] ??= tNow('import.publish.invalidValue');
   }
   return out;
 }
@@ -66,7 +67,7 @@ export async function publishDrafts(
             results.push({
               key: item.key,
               ok: false,
-              message: messageForCode(row.code) ?? (row.errors?.length ? 'اطلاعات این ردیف معتبر نیست.' : row.message),
+              message: messageForCode(row.code) ?? (row.errors?.length ? tNow('import.publish.invalidRow') : row.message),
               errors: fieldErrors(row.errors),
             });
         }

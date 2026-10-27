@@ -14,7 +14,10 @@ const config: NextConfig = {
         headers: [
           { key: 'X-Content-Type-Options', value: 'nosniff' },
           { key: 'X-Frame-Options', value: 'DENY' },
-          { key: 'Referrer-Policy', value: 'same-origin' },
+          // Not 'same-origin': that strips the Referer from the map-tile requests, and tile.openstreetmap.org answers
+          // those with "403 Access blocked" (its usage policy asks for a Referer). The origin alone is sent across
+          // sites; paths and query strings never leave the panel.
+          { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
           { key: 'Permissions-Policy', value: 'camera=(), microphone=(), geolocation=(self)' },
         ],
       },

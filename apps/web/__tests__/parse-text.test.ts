@@ -208,7 +208,7 @@ https://example.com/a.jpg`;
   it('leaves out rooms for land and says what is missing', () => {
     const r = parseListing('زمین فروشی ۴۰۰ متر در پروان');
     expect(r.bedrooms).toBe('');
-    expect(r.notes.join(' ')).toContain('قیمت پیدا نشد');
+    expect(r.price).toBe(''); // missing facts are listed by the grid, not as a note on every row
   });
 
   it('keeps Persian digits out of stored numbers', () => {

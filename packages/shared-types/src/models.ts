@@ -1000,6 +1000,8 @@ export interface AgencyListingPin {
 /** GET /agencies/me/properties/map: every listing the agency still has (archived ones are left out). */
 export interface AgencyMapListings {
   data: AgencyListingPin[];
+  /** The agency's own office pin (null until placed). Unlike the public map, it does not depend on being verified. */
+  office: { lat: number; lng: number } | null;
   /** True when the agency has more listings than one answer carries (see `limit`); the newest are sent. */
   truncated: boolean;
   limit: number;

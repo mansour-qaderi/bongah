@@ -122,6 +122,14 @@ describe.skipIf(!hasDb)('Registration (e2e)', () => {
       expect((await ctx.prisma.user.findUniqueOrThrow({ where: { id: admin.id } })).role).toBe(Role.ADMIN);
     });
 
+    it('registers without a licence photo (the web panel asks for none)', async () => {
+      const user = await ctx.user();
+      const { license_photo: _omitted, ...withoutPhoto } = agencyBody();
+      const res = await ctx.post('/agencies/register', withoutPhoto, user.token).expect(201);
+      expect(res.body.license_photo).toBe('');
+      expect((await ctx.get('/users/me', user.token).expect(200)).body.role).toBe('AGENCY');
+    });
+
     it('leaves the account unchanged when the request is invalid', async () => {
       const user = await ctx.user();
       for (const bad of [

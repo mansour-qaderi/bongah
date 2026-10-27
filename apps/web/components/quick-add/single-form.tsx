@@ -14,9 +14,12 @@ import { composeTitle } from '@/lib/import/parse-text';
 import { emptyDraft, type DraftRow } from '@/lib/import/types';
 import { useDrafts } from '@/lib/import/drafts-store';
 import { formatNumber } from '@/lib/format';
-import { CURRENCY_NAME, DEAL_LABEL, TERMS_LABEL, TYPE_LABEL, hasRoomsFor } from '@/lib/labels';
+import { hasRoomsFor } from '@/lib/labels';
 import { refreshListingData, withBackoff } from '@/lib/listing-actions';
-import { PROVINCES } from '@/lib/provinces';
+import { PROVINCES, provinceLabel } from '@/lib/provinces';
+import { tNow } from '@/i18n/active';
+import { useLanguage, useT } from '@/i18n/provider';
+import { useLabels } from '@/i18n/use-labels';
 import { usePinned } from '@/hooks/use-pinned';
 import { cn } from '@/lib/cn';
 import { Button } from '@/components/ui/button';
@@ -58,13 +61,16 @@ function Segmented<T extends string>({
   );
 }
 
-/** What the form clears after «ذخیره و ثبت بعدی»: everything about this one listing. */
+/** What the form clears after «save and add next»: everything about this one listing. */
 function freshRow(pinned: ReturnType<typeof usePinned>[0]): DraftRow {
   // Province and district are not copied in: while they are empty the form follows the pinned panel live.
   return emptyDraft('form', { deal_type: pinned.deal_type, currency: pinned.currency });
 }
 
 export function SingleForm() {
+  const t = useT();
+  const { language } = useLanguage();
+  const labels = useLabels();
   const router = useRouter();
   const [pinned, setPinned] = usePinned();
   const { actions } = useDrafts();
@@ -95,14 +101,17 @@ export function SingleForm() {
     setServerError(null);
   };
 
-  const suggestedTitle = composeTitle({
-    type: effective.type,
-    deal: effective.deal_type,
-    bedrooms: Number(effective.bedrooms) || null,
-    area: Number(effective.area_sqm) || null,
-    district: effective.district,
-    province: effective.province,
-  });
+  const suggestedTitle = composeTitle(
+    {
+      type: effective.type,
+      deal: effective.deal_type,
+      bedrooms: Number(effective.bedrooms) || null,
+      area: Number(effective.area_sqm) || null,
+      district: effective.district,
+      province: effective.province,
+    },
+    language,
+  );
 
   function withDefaults(): DraftRow {
     const next: DraftRow = { ...effective };
@@ -136,7 +145,7 @@ export function SingleForm() {
     const draft = withDefaults();
     const verdict = checkDraft(draft);
     if (!verdict.ok || !verdict.input) {
-      toast.error('چند مورد را کامل یا اصلاح کنید.');
+      toast.error(tNow('form.fix'));
       return;
     }
     setBusy(true);
@@ -145,7 +154,7 @@ export function SingleForm() {
       await withBackoff(() => api.post<Property>('properties', verdict.input));
       void refreshListingData();
       setSavedCount((n) => n + 1);
-      toast.success(`آگهی «${verdict.input.title}» ثبت شد.`);
+      toast.success(tNow('form.saved', { title: verdict.input.title }));
       if (after === 'next') reset();
       else router.push('/dashboard/listings');
     } catch (err) {
@@ -160,11 +169,11 @@ export function SingleForm() {
     setSubmitted(true);
     const draft = withDefaults();
     if (!draft.type || !draft.price) {
-      toast.error('دست‌کم نوع ملک و قیمت را بنویسید.');
+      toast.error(tNow('form.minimum'));
       return;
     }
     actions.add([draft]);
-    toast.success('به فهرست پیش‌نویس‌ها اضافه شد.');
+    toast.success(tNow('form.toDrafts'));
     reset();
   }
 
@@ -182,78 +191,78 @@ export function SingleForm() {
         className="space-y-5"
       >
         <div className="flex flex-wrap items-end gap-4">
-          <Field label="نوع ملک" required error={errors.type} className="w-full sm:w-48">
+          <Field label={t('filter.type')} required error={errors.type} className="w-full sm:w-48">
             {(p) => (
               <Select {...p} ref={first} value={row.type} onChange={(e) => set({ type: e.target.value as DraftRow['type'] })}>
-                <option value="">انتخاب کنید</option>
-                {PROPERTY_TYPES.map((t) => (
-                  <option key={t} value={t}>
-                    {TYPE_LABEL[t]}
+                <option value="">{t('common.choose')}</option>
+                {PROPERTY_TYPES.map((type) => (
+                  <option key={type} value={type}>
+                    {labels.type[type]}
                   </option>
                 ))}
               </Select>
             )}
           </Field>
-          <Field label="نوع معامله" required error={errors.deal_type} className="w-full sm:w-72">
+          <Field label={t('filter.deal')} required error={errors.deal_type} className="w-full sm:w-72">
             {() => (
               <Segmented
-                label="نوع معامله"
+                label={t('filter.deal')}
                 value={row.deal_type}
                 invalid={Boolean(errors.deal_type)}
                 onChange={(deal_type) => set({ deal_type })}
-                options={DEAL_TYPES.map((d) => ({ value: d, label: DEAL_LABEL[d] }))}
+                options={DEAL_TYPES.map((d) => ({ value: d, label: labels.deal[d] }))}
               />
             )}
           </Field>
         </div>
 
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <Field label="قیمت" required error={errors.price} className="lg:col-span-1">
+          <Field label={t('import.field.price')} required error={errors.price} className="lg:col-span-1">
             {(p) => <Input {...p} inputMode="decimal" value={row.price} onChange={(e) => set({ price: e.target.value })} placeholder="۸۵۰۰۰" className="ltr text-start" />}
           </Field>
-          <Field label="ارز" required error={errors.currency}>
+          <Field label={t('import.field.currency')} required error={errors.currency}>
             {() => (
               <Segmented
-                label="ارز"
+                label={t('import.field.currency')}
                 value={row.currency}
                 invalid={Boolean(errors.currency)}
                 onChange={(currency) => set({ currency })}
-                options={CURRENCIES.map((c) => ({ value: c, label: CURRENCY_NAME[c] }))}
+                options={CURRENCIES.map((c) => ({ value: c, label: labels.currency[c] }))}
               />
             )}
           </Field>
-          <Field label="شرایط قیمت">
+          <Field label={t('import.field.price_terms')}>
             {(p) => (
               <Select {...p} value={row.price_terms} onChange={(e) => set({ price_terms: e.target.value as DraftRow['price_terms'] })}>
-                <option value="">نامشخص</option>
-                {PRICE_TERMS.map((t) => (
-                  <option key={t} value={t}>
-                    {TERMS_LABEL[t]}
+                <option value="">{t('form.unspecified')}</option>
+                {PRICE_TERMS.map((term) => (
+                  <option key={term} value={term}>
+                    {labels.terms[term]}
                   </option>
                 ))}
               </Select>
             )}
           </Field>
-          <Field label="متراژ (متر مربع)" required error={errors.area_sqm}>
+          <Field label={t('form.areaLabel')} required error={errors.area_sqm}>
             {(p) => <Input {...p} inputMode="decimal" value={row.area_sqm} onChange={(e) => set({ area_sqm: e.target.value })} placeholder="۲۰۰" className="ltr text-start" />}
           </Field>
         </div>
 
         {showRooms ? (
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <Field label="اتاق خواب" error={errors.bedrooms}>
+            <Field label={t('import.field.bedrooms')} error={errors.bedrooms}>
               {(p) => <Input {...p} inputMode="numeric" value={row.bedrooms} onChange={(e) => set({ bedrooms: e.target.value })} placeholder="۳" className="ltr text-start" />}
             </Field>
-            <Field label="حمام" error={errors.bathrooms}>
+            <Field label={t('import.field.bathrooms')} error={errors.bathrooms}>
               {(p) => <Input {...p} inputMode="numeric" value={row.bathrooms} onChange={(e) => set({ bathrooms: e.target.value })} placeholder="۲" className="ltr text-start" />}
             </Field>
           </div>
         ) : null}
 
         <fieldset className="space-y-4 rounded-2xl border border-line p-4">
-          <legend className="px-2 text-[13px] font-bold text-ink-2">موقعیت</legend>
+          <legend className="px-2 text-[13px] font-bold text-ink-2">{t('form.location')}</legend>
           <div className="grid gap-4 sm:grid-cols-3">
-            <Field label="ولایت" required error={errors.province}>
+            <Field label={t('import.field.province')} required error={errors.province}>
               {(p) => (
                 <Select
                   {...p}
@@ -263,16 +272,16 @@ export function SingleForm() {
                     setPinned({ province: e.target.value });
                   }}
                 >
-                  <option value="">انتخاب کنید</option>
+                  <option value="">{t('common.choose')}</option>
                   {PROVINCES.map((x) => (
                     <option key={x.id} value={x.name}>
-                      {x.name}
+                      {provinceLabel(x, language)}
                     </option>
                   ))}
                 </Select>
               )}
             </Field>
-            <Field label="ناحیه / ولسوالی" error={errors.district}>
+            <Field label={t('import.field.district')} error={errors.district}>
               {(p) => (
                 <Input
                   {...p}
@@ -281,24 +290,24 @@ export function SingleForm() {
                     set({ district: e.target.value });
                     setPinned({ district: e.target.value });
                   }}
-                  placeholder="ناحیه ۴"
+                  placeholder={t('form.districtPlaceholder')}
                 />
               )}
             </Field>
-            <Field label="محله" error={errors.neighborhood}>
-              {(p) => <Input {...p} value={row.neighborhood} onChange={(e) => set({ neighborhood: e.target.value })} placeholder="کارته سه" />}
+            <Field label={t('form.neighborhood')} error={errors.neighborhood}>
+              {(p) => <Input {...p} value={row.neighborhood} onChange={(e) => set({ neighborhood: e.target.value })} placeholder={t('form.neighborhoodPlaceholder')} />}
             </Field>
           </div>
           <div className="grid gap-4 sm:grid-cols-3">
-            <Field label="آدرس" error={errors.address} hint="خالی بگذارید تا از ولایت و ناحیه ساخته شود." className="sm:col-span-2">
-              {(p) => <Input {...p} value={row.address} onChange={(e) => set({ address: e.target.value })} placeholder="نزدیک مسجد جامع، کوچهٔ دوم" />}
+            <Field label={t('import.field.address')} error={errors.address} hint={t('form.addressHint')} className="sm:col-span-2">
+              {(p) => <Input {...p} value={row.address} onChange={(e) => set({ address: e.target.value })} placeholder={t('form.addressPlaceholder')} />}
             </Field>
-            <Field label="موقعیت روی نقشه (اختیاری)" error={errors.location} hint="مثل ۳۴.۵۲۸۱, ۶۹.۱۷۶۱">
+            <Field label={t('form.mapLocation')} error={errors.location} hint={t('form.mapHint')}>
               {(p) => (
                 <div className="flex gap-2">
-                  <Input {...p} value={locText} onChange={(e) => setLocation(e.target.value)} placeholder="عرض, طول" className="ltr text-start" />
+                  <Input {...p} value={locText} onChange={(e) => setLocation(e.target.value)} placeholder={t('form.mapPlaceholder')} className="ltr text-start" />
                   {officePin ? (
-                    <Button type="button" variant="secondary" size="icon" aria-label="موقعیت دفتر" title="موقعیت دفتر" onClick={() => setLocation(officePin)}>
+                    <Button type="button" variant="secondary" size="icon" aria-label={t('form.officePin')} title={t('form.officePin')} onClick={() => setLocation(officePin)}>
                       <MapPin className="h-4 w-4" />
                     </Button>
                   ) : null}
@@ -309,16 +318,16 @@ export function SingleForm() {
         </fieldset>
 
         <div className="grid gap-4 lg:grid-cols-2">
-          <Field label="عنوان" error={errors.title} hint="خالی بگذارید تا خودکار نوشته شود.">
+          <Field label={t('import.field.title')} error={errors.title} hint={t('form.titleHint')}>
             {(p) => <Input {...p} value={row.title} onChange={(e) => set({ title: e.target.value })} placeholder={suggestedTitle} maxLength={150} />}
           </Field>
-          <Field label="توضیحات" error={errors.description} hint="خالی بگذارید تا از مشخصات ساخته شود.">
+          <Field label={t('form.descriptionLabel')} error={errors.description} hint={t('form.descriptionHint')}>
             {(p) => <Textarea {...p} rows={2} value={row.description} onChange={(e) => set({ description: e.target.value })} maxLength={5000} />}
           </Field>
         </div>
 
         <div>
-          <div className="mb-1.5 text-[13px] font-semibold text-ink-2">عکس‌ها (اختیاری)</div>
+          <div className="mb-1.5 text-[13px] font-semibold text-ink-2">{t('form.images')}</div>
           <ImagePicker images={pics} onChange={setPics} />
         </div>
 
@@ -327,7 +336,7 @@ export function SingleForm() {
             {serverError.message}{' '}
             {serverError.quota ? (
               <Link href="/dashboard/subscription" className="font-bold underline">
-                افزایش سهمیه
+                {t('form.moreQuota')}
               </Link>
             ) : null}
           </div>
@@ -335,20 +344,20 @@ export function SingleForm() {
 
         <div className="flex flex-wrap items-center gap-3 border-t border-line pt-4">
           <Button type="submit" size="lg" loading={busy}>
-            ذخیره و ثبت بعدی
+            {t('form.saveNext')}
           </Button>
           <Button type="button" variant="secondary" size="lg" disabled={busy} onClick={() => void save('list')}>
-            ذخیره و دیدن فهرست
+            {t('form.saveList')}
           </Button>
           <Button type="button" variant="ghost" size="lg" disabled={busy} onClick={toDrafts} className="gap-2">
             <ListPlus aria-hidden className="h-4 w-4" />
-            افزودن به پیش‌نویس‌ها
+            {t('form.addToDrafts')}
           </Button>
-          <span className="ms-auto hidden text-xs text-muted sm:block">Ctrl + Enter = ذخیره و ثبت بعدی</span>
+          <span className="ms-auto hidden text-xs text-muted sm:block">{t('form.shortcut')}</span>
           {savedCount > 0 ? (
             <span className="flex items-center gap-1.5 text-[13px] font-semibold text-primary">
               <CheckCircle2 aria-hidden className="h-4 w-4" />
-              {formatNumber(savedCount)} آگهی در این نشست ثبت شد
+              {t('form.sessionCount', { n: formatNumber(savedCount) })}
             </span>
           ) : null}
         </div>

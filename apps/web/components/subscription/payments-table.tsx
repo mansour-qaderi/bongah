@@ -6,7 +6,9 @@ import { ChevronLeft, ChevronRight, Printer, Receipt as ReceiptIcon } from 'luci
 import type { PaymentSummary, Receipt } from '@bongah/shared-types';
 import { errorMessage, fetcher } from '@/lib/api';
 import { formatDateTime, formatMoney, formatNumber } from '@/lib/format';
-import { PLAN_LABEL, PURPOSE_LABEL, TX_STATUS_LABEL } from '@/lib/labels';
+import type { Labels } from '@/lib/labels';
+import { useT } from '@/i18n/provider';
+import { useLabels } from '@/i18n/use-labels';
 import { usePayments } from '@/hooks/use-api';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -17,56 +19,58 @@ import { Skeleton, TableRowsSkeleton } from '@/components/ui/skeleton';
 
 const TONE = { SUCCESS: 'primary', PENDING: 'gold', FAILED: 'danger' } as const;
 
-function describe(p: PaymentSummary): string {
-  const base = PURPOSE_LABEL[p.purpose];
-  if (p.purpose === 'SUBSCRIPTION' && p.package_type) return `${base} ${PLAN_LABEL[p.package_type]}`;
+function describe(p: PaymentSummary, labels: Labels): string {
+  const base = labels.purpose[p.purpose];
+  if (p.purpose === 'SUBSCRIPTION' && p.package_type) return `${base} ${labels.plan[p.package_type]}`;
   if (p.property_title) return `${base} · ${p.property_title}`;
   if (p.quantity && p.purpose === 'FEATURED_CREDITS') return `${base} (${formatNumber(p.quantity)})`;
   return base;
 }
 
 export function PaymentsTable() {
+  const t = useT();
+  const labels = useLabels();
   const [page, setPage] = useState(1);
   const { data, error, mutate } = usePayments(page);
   const [receiptFor, setReceiptFor] = useState<string | null>(null);
 
   return (
     <Card>
-      <CardHeader title="تاریخچهٔ پرداخت‌ها" description="پرداخت‌های در انتظار بعد از تأیید حساب‌پی خودکار به‌روز می‌شوند." />
+      <CardHeader title={t('pay.title')} description={t('pay.desc')} />
       <div className="p-5 pt-3">
         {!data && !error ? (
           <TableRowsSkeleton rows={4} cols={4} />
         ) : error && !data ? (
           <ErrorState message={errorMessage(error)} onRetry={() => void mutate()} />
         ) : !data || data.data.length === 0 ? (
-          <EmptyState compact icon={ReceiptIcon} title="هنوز پرداختی ندارید" description="اشتراک و بسته‌هایی که می‌خرید اینجا با رسید دیده می‌شود." />
+          <EmptyState compact icon={ReceiptIcon} title={t('pay.emptyTitle')} description={t('pay.emptyText')} />
         ) : (
           <>
             <div className="overflow-x-auto">
               <table className="w-full min-w-[34rem] text-[13px]">
                 <thead>
                   <tr className="border-b border-line text-start text-xs text-muted">
-                    <th className="py-2 pe-3 text-start font-semibold">برای</th>
-                    <th className="py-2 pe-3 text-start font-semibold">مبلغ</th>
-                    <th className="py-2 pe-3 text-start font-semibold">وضعیت</th>
-                    <th className="py-2 pe-3 text-start font-semibold">تاریخ</th>
-                    <th className="py-2 text-start font-semibold">رسید</th>
+                    <th className="py-2 pe-3 text-start font-semibold">{t('pay.col.for')}</th>
+                    <th className="py-2 pe-3 text-start font-semibold">{t('pay.col.amount')}</th>
+                    <th className="py-2 pe-3 text-start font-semibold">{t('pay.col.status')}</th>
+                    <th className="py-2 pe-3 text-start font-semibold">{t('pay.col.date')}</th>
+                    <th className="py-2 text-start font-semibold">{t('pay.col.receipt')}</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-line">
                   {data.data.map((p) => (
                     <tr key={p.id}>
-                      <td className="max-w-[16rem] truncate py-2.5 pe-3 font-semibold text-ink">{describe(p)}</td>
+                      <td className="max-w-[16rem] truncate py-2.5 pe-3 font-semibold text-ink">{describe(p, labels)}</td>
                       <td className="tabular py-2.5 pe-3 text-ink-2">{formatMoney(p.amount, p.currency)}</td>
                       <td className="py-2.5 pe-3">
-                        <Badge tone={TONE[p.status]}>{TX_STATUS_LABEL[p.status]}</Badge>
+                        <Badge tone={TONE[p.status]}>{labels.txStatus[p.status]}</Badge>
                       </td>
                       <td className="tabular py-2.5 pe-3 text-xs text-muted">{formatDateTime(p.paid_at ?? p.created_at)}</td>
                       <td className="py-2.5">
                         {p.receipt_number ? (
                           <Button size="sm" variant="ghost" onClick={() => setReceiptFor(p.id)} className="gap-1.5">
                             <ReceiptIcon aria-hidden className="h-3.5 w-3.5" />
-                            رسید
+                            {t('pay.col.receipt')}
                           </Button>
                         ) : (
                           <span className="text-xs text-muted">—</span>
@@ -81,13 +85,13 @@ export function PaymentsTable() {
               <div className="mt-3 flex items-center justify-between text-[13px] text-muted">
                 <Button size="sm" variant="secondary" disabled={page <= 1} onClick={() => setPage((n) => n - 1)} className="gap-1">
                   <ChevronRight aria-hidden className="h-4 w-4" />
-                  قبلی
+                  {t('pay.prev')}
                 </Button>
                 <span className="tabular">
-                  {formatNumber(page)} از {formatNumber(data.meta.total_pages)}
+                  {t('pay.page', { page: formatNumber(page), total: formatNumber(data.meta.total_pages) })}
                 </span>
                 <Button size="sm" variant="secondary" disabled={page >= data.meta.total_pages} onClick={() => setPage((n) => n + 1)} className="gap-1">
-                  بعدی
+                  {t('pay.next')}
                   <ChevronLeft aria-hidden className="h-4 w-4" />
                 </Button>
               </div>
@@ -101,18 +105,20 @@ export function PaymentsTable() {
 }
 
 function ReceiptDialog({ id, onClose }: { id: string | null; onClose: () => void }) {
+  const t = useT();
+  const labels = useLabels();
   const { data, error } = useSWR<Receipt>(id ? `hesabpay/payments/${id}/receipt` : null, fetcher);
   return (
     <Dialog
       open={!!id}
       onOpenChange={(o) => !o && onClose()}
-      title="رسید پرداخت"
+      title={t('pay.receipt.title')}
       size="sm"
       footer={
         data ? (
           <Button variant="secondary" size="sm" className="gap-1.5" onClick={() => window.print()}>
             <Printer aria-hidden className="h-4 w-4" />
-            چاپ
+            {t('pay.receipt.print')}
           </Button>
         ) : null
       }
@@ -127,13 +133,13 @@ function ReceiptDialog({ id, onClose }: { id: string | null; onClose: () => void
         </div>
       ) : (
         <dl className="divide-y divide-line text-[13px]">
-          <Row label="شمارهٔ رسید" value={<span className="ltr tabular">{data.receipt_number}</span>} />
-          <Row label="برای" value={PURPOSE_LABEL[data.purpose] + (data.package_type ? ` ${PLAN_LABEL[data.package_type]}` : '')} />
-          {data.property ? <Row label="آگهی" value={data.property.title} /> : null}
-          <Row label="مبلغ" value={<span className="tabular font-bold">{formatMoney(data.amount, data.currency)}</span>} />
-          <Row label="تاریخ" value={<span className="tabular">{formatDateTime(data.issued_at)}</span>} />
-          <Row label="پرداخت‌کننده" value={data.payer.agency_name ?? data.payer.full_name ?? '—'} />
-          <Row label="مرجع حساب‌پی" value={<span className="ltr tabular break-all">{data.reference}</span>} />
+          <Row label={t('pay.receipt.number')} value={<span className="ltr tabular">{data.receipt_number}</span>} />
+          <Row label={t('pay.col.for')} value={labels.purpose[data.purpose] + (data.package_type ? ` ${labels.plan[data.package_type]}` : '')} />
+          {data.property ? <Row label={t('pay.receipt.listing')} value={data.property.title} /> : null}
+          <Row label={t('pay.col.amount')} value={<span className="tabular font-bold">{formatMoney(data.amount, data.currency)}</span>} />
+          <Row label={t('pay.col.date')} value={<span className="tabular">{formatDateTime(data.issued_at)}</span>} />
+          <Row label={t('pay.receipt.payer')} value={data.payer.agency_name ?? data.payer.full_name ?? '—'} />
+          <Row label={t('pay.receipt.reference')} value={<span className="ltr tabular break-all">{data.reference}</span>} />
         </dl>
       )}
     </Dialog>

@@ -2,51 +2,49 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { ChevronsLeft, ChevronsRight } from 'lucide-react';
 import { cn } from '@/lib/cn';
 import { LogoLockup } from '@/components/ui/logo';
 import { Tip } from '@/components/ui/tooltip';
+import { AccountMenu } from './account-menu';
 import { isActive, NAV_ITEMS } from './nav';
+import { useT } from '@/i18n/provider';
 
 /**
  * The right-hand navigation. Expanded it is 256px wide; collapsed it is a 72px rail of icons with tooltips. Below the
- * lg breakpoint it is an off-canvas drawer opened from the header (`mobileOpen`).
+ * lg breakpoint it is an off-canvas drawer. Both are controlled from the header (the sidebar icon there); the sidebar
+ * itself has no collapse button.
+ *
+ * Layout: a column that is exactly as tall as the app frame (`lg:h-full`, the frame is one viewport) and never scrolls
+ * as a whole: logo on top, the links in the middle (`min-h-0 flex-1`, the only part that may scroll, and only when the
+ * links really do not fit), the signed-in person pinned at the bottom. Without `min-h-0` a flex child will not shrink
+ * below its content, which is how a scrollbar used to appear beside the sidebar while the page was still loading.
  */
-export function Sidebar({
-  collapsed,
-  onToggle,
-  mobileOpen,
-  onNavigate,
-}: {
-  collapsed: boolean;
-  onToggle: () => void;
-  mobileOpen: boolean;
-  onNavigate: () => void;
-}) {
+export function Sidebar({ collapsed, mobileOpen, onNavigate }: { collapsed: boolean; mobileOpen: boolean; onNavigate: () => void }) {
   const pathname = usePathname();
+  const t = useT();
 
   return (
     <>
-      {mobileOpen ? (
-        <div className="fixed inset-0 z-30 bg-black/45 lg:hidden" onClick={onNavigate} aria-hidden />
-      ) : null}
+      {mobileOpen ? <div className="fixed inset-0 z-30 bg-black/45 lg:hidden" onClick={onNavigate} aria-hidden /> : null}
       <aside
-        aria-label="منوی اصلی"
+        id="app-sidebar"
+        aria-label={t('nav.main')}
         className={cn(
-          'fixed inset-y-0 start-0 z-40 flex flex-col border-e border-line bg-surface transition-[width,transform] duration-200',
-          'w-64 lg:sticky lg:top-0 lg:h-dvh lg:translate-x-0 lg:shrink-0',
+          'fixed inset-y-0 start-0 z-40 flex flex-col overflow-hidden border-e border-line bg-surface transition-[width,transform] duration-200',
+          'w-64 lg:static lg:h-full lg:translate-x-0 lg:shrink-0',
           collapsed ? 'lg:w-[72px]' : 'lg:w-64',
           mobileOpen ? 'translate-x-0' : 'translate-x-full lg:translate-x-0',
         )}
       >
-        <div className={cn('flex h-16 items-center border-b border-line px-4', collapsed && 'lg:justify-center lg:px-0')}>
+        <div className={cn('flex h-16 shrink-0 items-center border-b border-line px-4', collapsed && 'lg:justify-center lg:px-0')}>
           <LogoLockup collapsed={collapsed} className={cn(collapsed && 'max-lg:flex')} />
         </div>
 
-        <nav className="flex-1 space-y-1 overflow-y-auto p-3">
+        <nav className="scrollbar-thin min-h-0 flex-1 space-y-1 overflow-y-auto overflow-x-hidden p-3">
           {NAV_ITEMS.map((item) => {
             const active = isActive(item, pathname);
             const Icon = item.icon;
+            const label = t(item.labelKey);
             const link = (
               <Link
                 key={item.href}
@@ -60,11 +58,11 @@ export function Sidebar({
                 )}
               >
                 <Icon aria-hidden className="h-[18px] w-[18px] shrink-0" strokeWidth={active ? 2.2 : 1.9} />
-                <span className={cn('truncate', collapsed && 'lg:sr-only')}>{item.label}</span>
+                <span className={cn('truncate', collapsed && 'lg:sr-only')}>{label}</span>
               </Link>
             );
             return collapsed ? (
-              <Tip key={item.href} label={item.label} side="left">
+              <Tip key={item.href} label={label} side="left">
                 {link}
               </Tip>
             ) : (
@@ -73,20 +71,7 @@ export function Sidebar({
           })}
         </nav>
 
-        <div className="hidden border-t border-line p-3 lg:block">
-          <button
-            onClick={onToggle}
-            aria-label={collapsed ? 'باز کردن منو' : 'جمع کردن منو'}
-            aria-expanded={!collapsed}
-            className={cn(
-              'flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm text-muted hover:bg-soft',
-              collapsed && 'justify-center px-0',
-            )}
-          >
-            {collapsed ? <ChevronsLeft className="h-[18px] w-[18px]" /> : <ChevronsRight className="h-[18px] w-[18px]" />}
-            {collapsed ? null : <span>جمع کردن منو</span>}
-          </button>
-        </div>
+        <AccountMenu collapsed={collapsed} />
       </aside>
     </>
   );

@@ -95,6 +95,14 @@
     font: inherit;
     color: inherit;
   }
+  /* A field that holds Persian digits (۰-۹): the page's own Persian face, with no lining/Latin figure features that
+     a fallback font might apply. */
+  .fa-digits {
+    font-family: var(--font-sans);
+    font-variant-numeric: normal;
+    font-feature-settings: normal;
+    letter-spacing: 0.04em;
+  }
   button:not(:disabled),
   [role='button']:not([aria-disabled='true']) {
     cursor: pointer;

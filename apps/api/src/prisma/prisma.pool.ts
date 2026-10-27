@@ -15,11 +15,17 @@ import type { PoolConfig } from 'pg';
  *  - DB_IDLE_TIMEOUT_MS            how long an unused connection is kept (default 5 minutes).
  *  - DB_CONNECT_TIMEOUT_MS         how long to wait for a new connection to open (default 15 s).
  *  - DB_TRANSACTION_MAX_WAIT_MS    how long a query/transaction waits for a free connection (default 10 s).
+ *  - DB_CONNECT_RETRIES            how many times to try again when OPENING a connection fails with a network error
+ *                                  such as "Connection terminated due to connection timeout" (default 2; 0 = never).
+ *  - DB_KEEPALIVE_INTERVAL_MS      how often a trivial query keeps one connection warm so the next request does not pay
+ *                                  for a cold start (default 60 s; 0 = off).
  */
 export interface PoolSettings {
   pool: Pick<PoolConfig, 'max' | 'idleTimeoutMillis' | 'connectionTimeoutMillis' | 'keepAlive'>;
   transactionMaxWaitMs: number;
   transactionTimeoutMs: number;
+  connectRetries: number;
+  keepAliveIntervalMs: number;
 }
 
 function whole(config: Pick<ConfigService, 'get'>, name: string, fallback: number, min: number, max: number): number {
@@ -32,6 +38,13 @@ function whole(config: Pick<ConfigService, 'get'>, name: string, fallback: numbe
   return value;
 }
 
+/** 0 switches the keep-warm query off; otherwise 5 s to 10 minutes (the pool drops idle connections after 5 minutes by default). */
+function keepAliveInterval(config: Pick<ConfigService, 'get'>): number {
+  const raw = (config.get<string>('DB_KEEPALIVE_INTERVAL_MS') ?? '').toString().trim();
+  if (raw === '0') return 0;
+  return whole(config, 'DB_KEEPALIVE_INTERVAL_MS', 60_000, 5_000, 600_000);
+}
+
 export function readPoolSettings(config: Pick<ConfigService, 'get'>): PoolSettings {
   return {
     pool: {
@@ -42,5 +55,7 @@ export function readPoolSettings(config: Pick<ConfigService, 'get'>): PoolSettin
     },
     transactionMaxWaitMs: whole(config, 'DB_TRANSACTION_MAX_WAIT_MS', 10_000, 1_000, 60_000),
     transactionTimeoutMs: 15_000,
+    connectRetries: whole(config, 'DB_CONNECT_RETRIES', 2, 0, 5),
+    keepAliveIntervalMs: keepAliveInterval(config),
   };
 }

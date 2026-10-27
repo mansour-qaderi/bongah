@@ -16,6 +16,12 @@ export interface HesabPaySettings {
   mode: 'mock' | 'live';
   baseUrl: string;
   apiKey: string;
+  /**
+   * Test checkout: in mock mode only, a payment is settled the moment it is started, through the same delivery a
+   * real webhook triggers (plan, credits, receipt), so nobody has to sign a webhook by hand. Always false in live
+   * mode. HESABPAY_MOCK_AUTO_SUCCESS=true.
+   */
+  mockAutoSuccess: boolean;
   /** Signs/verifies webhooks in mock mode. (Live webhooks are verified by HesabPay itself.) */
   webhookSecret: string;
   currency: Currency;
@@ -85,6 +91,23 @@ export function readHesabPaySettings(config: ConfigService): HesabPaySettings {
   };
 
   const apiKey = mode === 'live' ? required('HESABPAY_API_KEY') : text('HESABPAY_API_KEY');
+
+  const autoRaw = text('HESABPAY_MOCK_AUTO_SUCCESS').toLowerCase();
+  if (autoRaw && !['true', 'false', '1', '0'].includes(autoRaw)) {
+    throw new Error('HESABPAY_MOCK_AUTO_SUCCESS must be "true" or "false".');
+  }
+  const wantsAutoSuccess = autoRaw === 'true' || autoRaw === '1';
+  // Real money is never auto-approved: the flag only counts when the gateway is the mock one.
+  const mockAutoSuccess = wantsAutoSuccess && mode === 'mock';
+  if (wantsAutoSuccess && mode === 'live') {
+    logger.warn('HESABPAY_MOCK_AUTO_SUCCESS is ignored in live mode: real payments are only completed by HesabPay.');
+  } else if (mockAutoSuccess) {
+    logger.warn(
+      'HESABPAY_MOCK_AUTO_SUCCESS is on: every purchase succeeds instantly and nobody is charged. ' +
+        (production ? 'THIS IS PRODUCTION: everyone gets plans and credits for free. ' : '') +
+        'Turn it off to take real payments.',
+    );
+  }
   // Mock webhooks are signed with this secret, so it must be unguessable even in dev.
   let webhookSecret = text('HESABPAY_WEBHOOK_SECRET');
   if (mode === 'mock' && webhookSecret.length < 16) {
@@ -149,6 +172,7 @@ export function readHesabPaySettings(config: ConfigService): HesabPaySettings {
 
   return {
     mode,
+    mockAutoSuccess,
     baseUrl: (text('HESABPAY_BASE_URL') || DEFAULT_BASE_URL).replace(/\/+$/, ''),
     apiKey,
     webhookSecret,

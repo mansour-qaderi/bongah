@@ -3,6 +3,8 @@
 import { CheckCheck, Frame, Handshake, Power, Trash2, X } from 'lucide-react';
 import { formatNumber } from '@/lib/format';
 import { Button } from '@/components/ui/button';
+import { useT } from '@/i18n/provider';
+import { useLabels } from '@/i18n/use-labels';
 
 export function BulkBar({
   count,
@@ -27,40 +29,42 @@ export function BulkBar({
   onActivate: () => void;
   onArchive: () => void;
 }) {
+  const t = useT();
+  const labels = useLabels();
   if (count === 0) return null;
   return (
     // Fixed to the window (the table card clips and scrolls, so a sticky bar inside it would never show).
     <div className="pointer-events-none fixed inset-x-4 bottom-4 z-30 flex justify-center">
       <div
         role="region"
-        aria-label="کارهای گروهی"
+        aria-label={t('bulk.region')}
         className="reveal pointer-events-auto flex w-full max-w-4xl flex-wrap items-center gap-2 rounded-2xl border border-primary bg-surface px-4 py-3"
       >
-        <span className="tabular me-1 text-sm font-bold text-primary">{formatNumber(count)} آگهی انتخاب شد</span>
+        <span className="tabular me-1 text-sm font-bold text-primary">{t('bulk.selected', { n: formatNumber(count) })}</span>
         {!allSelected && total > count ? (
           <Button variant="ghost" size="sm" loading={loadingAll} onClick={onSelectAll} className="gap-1.5 text-primary">
             <CheckCheck aria-hidden className="h-4 w-4" />
-            انتخاب هر {formatNumber(total)} نتیجه
+            {t('bulk.selectAll', { n: formatNumber(total) })}
           </Button>
         ) : null}
         <div className="ms-auto flex flex-wrap items-center gap-2">
           <Button variant="gold" size="sm" onClick={onFeatured} className="gap-1.5">
             <Frame aria-hidden className="h-4 w-4" />
-            پوشش با کادر ویژه
+            {t('bulk.featured')}
           </Button>
           <Button variant="secondary" size="sm" onClick={onSold} className="gap-1.5">
             <Handshake aria-hidden className="h-4 w-4" />
-            معامله شد
+            {labels.status.SOLD}
           </Button>
           <Button variant="secondary" size="sm" onClick={onActivate} className="gap-1.5">
             <Power aria-hidden className="h-4 w-4" />
-            فعال‌سازی
+            {t('status.activate')}
           </Button>
           <Button variant="secondary" size="sm" onClick={onArchive} className="gap-1.5 text-danger hover:border-danger hover:text-danger">
             <Trash2 aria-hidden className="h-4 w-4" />
-            حذف
+            {t('common.delete')}
           </Button>
-          <Button variant="ghost" size="icon" onClick={onClear} aria-label="لغو انتخاب">
+          <Button variant="ghost" size="icon" onClick={onClear} aria-label={t('bulk.clear')}>
             <X className="h-4 w-4" />
           </Button>
         </div>

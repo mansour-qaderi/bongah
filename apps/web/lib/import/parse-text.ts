@@ -1,8 +1,11 @@
 import type { Currency, DealType, PriceTerms, PropertyType } from '@bongah/shared-types';
-import { PROVINCES } from '../provinces';
+import { PROVINCES, provinceNameLabel } from '../provinces';
 import { addressFrom } from '../address';
-import { CURRENCY_LABEL, formatNumber } from '../format';
-import { DEAL_LABEL, hasRoomsFor, TYPE_LABEL } from '../labels';
+import { currencyName, formatNumber } from '../format';
+import { hasRoomsFor, labelsFor, labelsNow } from '../labels';
+import { activeLanguage, tNow } from '@/i18n/active';
+import { translate } from '@/i18n/translate';
+import type { Language } from '@/i18n/config';
 import { cutAt, flatten, isSeparatorLine, stripDecoration, whole, WORD } from './text-utils';
 import { emptyDraft, NO_PIN, type DraftRow, type PinnedDefaults } from './types';
 
@@ -19,13 +22,16 @@ const ONES: Record<string, number> = {
   صفر: 0, یک: 1, دو: 2, سه: 3, چهار: 4, پنج: 5, شش: 6, هفت: 7, هشت: 8, نه: 9, ده: 10, یازده: 11, دوازده: 12,
   سیزده: 13, چهارده: 14, پانزده: 15, شانزده: 16, هفده: 17, هجده: 18, نوزده: 19,
   بیست: 20, سی: 30, چهل: 40, پنجاه: 50, شصت: 60, هفتاد: 70, هشتاد: 80, نود: 90, صد: 100,
+  // Pashto number words (the text is flattened first, so «ي» is already «ی»)
+  یو: 1, دوه: 2, درې: 3, څلور: 4, پنځه: 5, شپږ: 6, اوه: 7, اته: 8, لس: 10, یوولس: 11, دولس: 12, دیارلس: 13, څوارلس: 14,
+  پنځلس: 15, شپاړس: 16, اوولس: 17, اتلس: 18, نولس: 19, شل: 20, دېرش: 30, څلوېښت: 40, پنځوس: 50, شپېته: 60, اویا: 70, اتیا: 80, سل: 100,
 };
 const NUMBER_WORD = Object.keys(ONES).sort((a, b) => b.length - a.length).join('|');
 /** "پنج", "بیست و پنج" */
-const WORD_NUMBER = `(?:${NUMBER_WORD})(?:\\s+و\\s+(?:${NUMBER_WORD}))*`;
+const WORD_NUMBER = `(?:${NUMBER_WORD})(?:\\s+(?:و|او)\\s+(?:${NUMBER_WORD}))*`;
 
 function wordsToNumber(text: string): number | null {
-  const parts = text.split(/\s+و\s+/);
+  const parts = text.split(/\s+(?:و|او)\s+/);
   let sum = 0;
   for (const part of parts) {
     const v = ONES[part.trim()];
@@ -53,14 +59,14 @@ const ANY_NUMBER = `(?:${DIGITS}|${WORD_NUMBER})`;
 const typeWord = (source: string) => whole(`(?:${source})(?:\\s?ی)?`);
 
 const TYPE_PATTERNS: [PropertyType, RegExp][] = [
-  ['APARTMENT', new RegExp(typeWord('آپارتمان|اپارتمان|فلت'), 'u')],
+  ['APARTMENT', new RegExp(typeWord('آپارتمان|اپارتمان|آپارتمنت|اپارتمنت|اپارتمانت|فلت|فلټ'), 'u')],
   ['VILLA', new RegExp(typeWord('ویلا|ویلایی'), 'u')],
   ['GARDEN', new RegExp(typeWord('باغ'), 'u')],
-  ['SHOP', new RegExp(typeWord('دکان|دوکان|مغازه|دکانچه'), 'u')],
+  ['SHOP', new RegExp(typeWord('دکان|دوکان|مغازه|دکانچه|دکان تجارتی|مارکیت|مارکت|سرای تجارتی'), 'u')],
   ['OFFICE', new RegExp(`(?<![${WORD}])(?:دفتر|آفیس|دفتر کار)(?!\\s*(?:املاک|بنگاه|معاملات|ملکی))(?![${WORD}])`, 'u')],
-  ['LAND', new RegExp(typeWord('زمین|پلاٹ|پلات'), 'u')],
-  ['GARAGE', new RegExp(typeWord('گاراژ'), 'u')],
-  ['HOUSE_HAWILI', new RegExp(typeWord('خانه|منزل|حویلی|سرای'), 'u')],
+  ['LAND', new RegExp(typeWord('زمین|پلاٹ|پلات|پلاټ|ځمکه|ځمکې'), 'u')],
+  ['GARAGE', new RegExp(typeWord('گاراژ|ګاراژ|ګراج'), 'u')],
+  ['HOUSE_HAWILI', new RegExp(typeWord('خانه|خانه مسکونی|منزل|منزل مسکونی|حویلی|حویلۍ|سرای|کور|هاوس|تاون هاوس'), 'u')],
 ];
 
 /** The earliest property-type word in the text (first line wins when several are there). */
@@ -78,9 +84,9 @@ export function detectType(flat: string): PropertyType | null {
 }
 
 const DEAL_PATTERNS: [DealType, RegExp][] = [
-  ['RENT', new RegExp(whole('کرایه|کرایی|کرایه‌ای|اجاره|اجاره ای|اجاره‌ای|کرایه ای|کرائی'), 'u')],
-  ['MORTGAGE_GROWI', new RegExp(whole('گروی|گرو|رهن|رهنی'), 'u')],
-  ['SALE', new RegExp(whole('فروش|فروشی|به فروش|بفروش|برای فروش|می‌فروشم|میفروشم|میفروشیم'), 'u')],
+  ['RENT', new RegExp(whole('کرایه|کرایی|کرایې|کرایه‌ای|اجاره|اجاره ای|اجاره‌ای|کرایه ای|کرائی'), 'u')],
+  ['MORTGAGE_GROWI', new RegExp(whole('گروی|گرو|گیروی|گیرو|رهن|رهنی|ګروی|ګرو'), 'u')],
+  ['SALE', new RegExp(whole('فروش|فروشی|به فروش|بفروش|برای فروش|می‌فروشم|میفروشم|میفروشیم|پلور|پلورنه|پلورنې'), 'u')],
 ];
 
 export function detectDeal(flat: string): DealType | null {
@@ -95,19 +101,31 @@ export function detectDeal(flat: string): DealType | null {
 // ───────────── Price ─────────────
 
 const UNIT_VALUE: Record<string, number> = {
-  هزار: 1e3, لک: 1e5, لکه: 1e5, لکھ: 1e5, میلیون: 1e6, ملیون: 1e6, کرور: 1e7, میلیارد: 1e9, ملیارد: 1e9,
+  هزار: 1e3, زر: 1e3, زره: 1e3, لک: 1e5, لکه: 1e5, لکھ: 1e5, میلیون: 1e6, ملیون: 1e6, کرور: 1e7, میلیارد: 1e9, ملیارد: 1e9,
 };
 const UNIT = Object.keys(UNIT_VALUE).sort((a, b) => b.length - a.length).join('|');
 const HALF = '(?:\\s*و\\s*نیم)';
 const PRICE_RE = new RegExp(
-  `(?<![\\d.,])(?<num>${ANY_NUMBER})(?<half1>${HALF})?(?:\\s*(?<unit>${UNIT})(?![${WORD}]))?(?<half2>${HALF})?`,
+  `(?<![\\d.,])(?<num>${ANY_NUMBER})(?<half1>${HALF})?(?:\\s*(?<unit>${UNIT})(?![${WORD}]))?(?<half2>${HALF})?(?:\\s*(?:و|او)\\s*(?<n2>${DIGITS})\\s*(?<u2>${UNIT})(?![${WORD}]))?`,
   'gu',
 );
-const CURRENCY_AFTER = /^\s*[:：]?\s*(افغانی|افغانیه|افغانیها|افغانی ها|افغانی‌ها|afn|afs|؋|دالر|دلار|دالری|دالره|usd|\$)/iu;
-const CURRENCY_BEFORE = /(\$|usd|دالر|دلار|؋|افغانی)\s*[:：]?\s*$/iu;
-const PRICE_KEYWORD = /(قیمت|بها|مبلغ|فی|کرایه|کرایی|اجاره|گروی|گرو|رهن|price|نرخ)\s*[:：]?\s*(?:ماهانه|ماهیانه|سالانه|نهایی|کل)?\s*[:：]?\s*$/iu;
-const NOT_PRICE_AFTER = /^\s*(متر|م2|م²|m2|m²|مترمربع|خوابه|اتاق|حمام|تشناب|توالت|منزل|طبقه|سال|کوچه|واحد|باب|جریب|بسوه|فیصد|%|نفر|کیلو|سانتی|ساله|روز|ماه|عدد|دانه|متری)/iu;
-const NOT_PRICE_BEFORE = /(ناحیه|کوچه|سرک|پلاک|شماره|واحد|طبقه|بلاک|بلوک|قطعه|ساحه|فاز|ماه|سال|مساحت|متراژ|زیربنا|ابعاد)\s*[:：]?\s*$/u;
+const CURRENCY_AFTER = /^\s*[:：]?\s*(افغانی|افغانیه|افغانیها|افغانی ها|افغانی‌ها|افغانۍ|افغانیو|afn|afs|؋|دالر|دلار|دالری|دالره|ډالر|ډالره|ډالرو|usd|\$)/iu;
+const CURRENCY_BEFORE = /(\$|usd|دالر|دلار|ډالر|؋|افغانی|افغانۍ)\s*[:：]?\s*$/iu;
+/**
+ * What can stand right before a price: «قیمت:», «قیمت فروش:», «قیمت نهایی ماهانه =», «کرایه -», «مبلغ گروی», or a deal word
+ * used as the label («فروش: ...»).
+ */
+const PRICE_WORD = 'قیمت|بها|بیه|بیې|مبلغ|فی|کرایه|کرایی|کرایې|اجاره|گیروی|گیرو|گروی|گرو|ګروی|ګرو|رهن|price|نرخ|پول';
+const PRICE_QUALIFIER = 'فروش|فروشی|کرایه|کرایی|اجاره|گروی|رهن|ماهانه|ماهیانه|سالانه|نهایی|قطعی|کل|کلی|تقریبی|پیشنهادی|ملک|خانه|حویلی|آپارتمان|زمین|دکان|پلور|پلورنې|میاشتنۍ|کلنۍ|افغانی|دالر';
+const PRICE_KEYWORD = new RegExp(
+  `(?<![${WORD}])(?:(?:${PRICE_WORD})(?:\\s+(?:${PRICE_QUALIFIER})){0,2}|(?:فروش|فروشی|پلور|پلورنه)(?=\\s*[:：=]))\\s*(?:[:：=]|[-–—]+|است|می‌باشد|میباشد)?\\s*(?:[:：=]|[-–—]+)?\\s*$`,
+  'iu',
+);
+/** «هر متر ۲۰ هزار»: the price of a metre, not of the property. */
+const PER_UNIT_BEFORE = /(?:هر|فی|به ازای هر)\s*(?:متر مربع|متر|جریب|بسوه)\s*(?:[:：=]|[-–—]+)?\s*(?:قیمت|بها)?\s*[:：=]?\s*$/u;
+const PER_UNIT_AFTER = /^\s*(?:افغانی|افغانۍ|دالر|دلار|ډالر|\$|؋)?\s*(?:فی|هر|به ازای هر)\s*(?:متر|جریب|بسوه)/iu;
+const NOT_PRICE_AFTER = /^\s*(متر|م2|م²|m2|m²|مترمربع|خوابه|اتاق|حمام|تشناب|توالت|منزل|طبقه|سال|کوچه|واحد|باب|جریب|بسوه|فیصد|%|نفر|کیلو|سانتی|ساله|روز|ماه|عدد|دانه|متری|خوب|خونه|خونې|پوړ|کوڅه|کاله|ورځ|میاشت|سلنه)/iu;
+const NOT_PRICE_BEFORE = /(کد|کود|ایدی|آی دی|id|ناحیه|کوچه|کوڅه|سرک|پلاک|شماره|واحد|طبقه|پوړ|بلاک|بلوک|قطعه|ساحه|فاز|ماه|سال|میاشت|مساحت|متراژ|زیربنا|ابعاد)\s*[:：]?\s*$/u;
 
 const PHONE_RE = /(?<![\d])(?:\+93|0093|93|0)[\s-]?7\d(?:[\s-]?\d){7}(?![\d])/g;
 
@@ -142,21 +160,27 @@ export function findPrice(flat: string): PriceResult | null {
     const after = flat.slice(end, end + 24);
     if (!unit && NOT_PRICE_AFTER.test(after)) continue;
     if (unit && NOT_PRICE_AFTER.test(after) && !CURRENCY_AFTER.test(after)) continue;
+    if (PER_UNIT_AFTER.test(after)) continue;
     const lineBefore = before.slice(before.lastIndexOf('\n') + 1);
+    if (PER_UNIT_BEFORE.test(lineBefore)) continue;
 
     let currency: Currency | null = null;
     const ca = CURRENCY_AFTER.exec(after);
-    if (ca) currency = /دالر|دلار|usd|\$/i.test(ca[1]!) ? 'USD' : 'AFGHANI';
+    if (ca) currency = /دالر|دلار|ډالر|usd|\$/i.test(ca[1]!) ? 'USD' : 'AFGHANI';
     else {
       const cb = CURRENCY_BEFORE.exec(lineBefore);
-      if (cb) currency = /دالر|دلار|usd|\$/i.test(cb[1]!) ? 'USD' : 'AFGHANI';
+      if (cb) currency = /دالر|دلار|ډالر|usd|\$/i.test(cb[1]!) ? 'USD' : 'AFGHANI';
     }
     const keyword = PRICE_KEYWORD.test(lineBefore);
-    if (!unit && !currency && !keyword) continue;
+    // A bare number is a price only when it is plainly one: written with a keyword, a unit or a currency, or so large
+    // that nothing else it could be («1,700,000», «۱۷۰۰۰۰۰»).
+    const hugeBare = !unit && !currency && !keyword && base >= 1_000_000 && !NOT_PRICE_BEFORE.test(lineBefore);
+    if (!unit && !currency && !keyword && !hugeBare) continue;
     if (!unit && NOT_PRICE_BEFORE.test(lineBefore) && !currency) continue;
 
     let value = base * (unit ? UNIT_VALUE[unit]! : 1);
     if (g.half1 || g.half2) value += 0.5 * (unit ? UNIT_VALUE[unit]! : 1);
+    if (unit && g.n2 && g.u2 && UNIT_VALUE[g.u2]! < UNIT_VALUE[unit]!) value += Number(g.n2.replace(/,/g, '')) * UNIT_VALUE[g.u2]!;
     value = Math.round(value * 100) / 100;
     if (!(value > 0) || value > 999_999_999_999) continue;
 
@@ -170,18 +194,18 @@ export function findPrice(flat: string): PriceResult | null {
 }
 
 export function detectPriceTerms(flat: string): PriceTerms | null {
-  if (new RegExp(whole('جورآمد|جور آمد|قابل معامله|قابل بحث|قابل مذاکره|قابل چانه'), 'u').test(flat)) return 'NEGOTIABLE';
-  if (new RegExp(whole('مقطوع|قیمت نهایی|قیمت قطعی|بدون کم و کسر|بدون چانه'), 'u').test(flat)) return 'FIXED';
+  if (new RegExp(whole('جورآمد|جور آمد|قابل معامله|قابل بحث|قابل مذاکره|قابل چانه|د معاملې وړ|د توافق وړ|د جوړجاړي وړ'), 'u').test(flat)) return 'NEGOTIABLE';
+  if (new RegExp(whole('مقطوع|قیمت نهایی|قیمت قطعی|بدون کم و کسر|بدون چانه|قطعی بیه|نهایی بیه|بې چانې|بې له چانې'), 'u').test(flat)) return 'FIXED';
   return null;
 }
 
 // ───────────── Area, rooms ─────────────
 
-const AREA_UNIT = '(?:متر\\s*مربع|مترمربع|متری\\s*مربع|متر|متری|م2|م²|m2|m²|sqm)';
+const AREA_UNIT = '(?:متر\\s*مربع|مترمربع|متری\\s*مربع|متر|متری|مترې|مترو|متره|م2|م²|m2|m²|sqm)';
 const AREA_RE = new RegExp(`(?<![\\d.,])(\\d+(?:\\.\\d+)?)\\s*${AREA_UNIT}(?![${WORD}])`, 'giu');
-const AREA_LABEL_RE = new RegExp(`(?<![${WORD}])(?:مساحت(?: زمین)?|متراژ|اندازه)\\s*[:：]?\\s*(\\d+(?:\\.\\d+)?)(?![\\d.,]|\\s*(?:جریب|بسوه))`, 'giu');
-const STREET_BEFORE = /(کوچه|سرک|جاده|خیابان|عرض|پهنا|راه|مسیر|دیوار|ارتفاع)\s*[:：]?\s*(?:ی|به)?\s*$/u;
-const BUILT_BEFORE = /(زیربنا|زیر بنا|بنا|ساخته|ساختمان|فضای)\s*[:：]?\s*$/u;
+const AREA_LABEL_RE = new RegExp(`(?<![${WORD}])(?:مساحت(?:\\s+(?:زمین|کل|کلی|ملک|حویلی|خانه))?|مساحه|رقبه(?:\\s+زمین)?|متراژ|اندازه)\\s*[:：=]?\\s*(\\d+(?:\\.\\d+)?)(?![\\d.,]|\\s*(?:جریب|بسوه))`, 'giu');
+const STREET_BEFORE = /(کوچه|کوڅه|سرک|سړک|جاده|خیابان|عرض|پهنا|راه|مسیر|دیوار|ارتفاع)\s*[:：]?\s*(?:ی|به)?\s*$/u;
+const BUILT_BEFORE = /(زیربنا|زیر بنا|بنا|ساخته|ساختمان|ودانۍ|فضای)\s*[:：]?\s*$/u;
 const DIMENSIONS_RE = /(?<![\d.,])(\d+(?:\.\d+)?)\s*[x×*]\s*(\d+(?:\.\d+)?)(?![\d.,])/giu;
 const JERIB_RE = /(\d+(?:\.\d+)?)\s*(جریب|بسوه|بیسوه|بسوا)/u;
 
@@ -229,8 +253,8 @@ function countBefore(flat: string, nouns: string): number | null {
   return null;
 }
 
-export const findBedrooms = (flat: string) => countBefore(flat, 'اتاق خواب|اتاقه|اتاق|خوابه|خواب');
-export const findBathrooms = (flat: string) => countBefore(flat, 'حمام|تشناب|توالت|دستشویی|بیت الخلا');
+export const findBedrooms = (flat: string) => countBefore(flat, 'اتاق خواب|اتاق ها|اتاقها|اتاقه|اتاق|کمره|خوابه|خواب|خوب خونې|خوبو|خونې|خونو|خونه');
+export const findBathrooms = (flat: string) => countBefore(flat, 'حمام ها|حمامها|حمام|حمامونه|حمامو|تشناب|تشناب ها|توالت|دستشویی|بیت الخلا|غسلخانه');
 
 // ───────────── Place ─────────────
 
@@ -249,6 +273,8 @@ const PROVINCE_ENTRIES: { needle: string; province: string }[] = [
   ...PROVINCES.flatMap((p) => [
     { needle: p.name, province: p.name },
     ...(p.capital ? [{ needle: p.capital, province: p.name }] : []),
+    { needle: p.name_ps, province: p.name },
+    ...(p.capital_ps ? [{ needle: p.capital_ps, province: p.name }] : []),
   ]),
   ...Object.entries(PROVINCE_ALIASES).map(([needle, province]) => ({ needle, province })),
 ].map((e) => ({ needle: flatten(e.needle), province: e.province }));
@@ -279,7 +305,7 @@ export function findDistrict(flat: string): string | null {
 }
 
 const LOCALITY_STOP = new Set(['فروشی', 'فروش', 'برای', 'دارای', 'با', 'و', 'در', 'است', 'که', 'قیمت', 'مساحت', 'کرایی', 'کرایه', 'گروی', 'تماس', 'شماره', 'آدرس', 'موقعیت', 'مناسب', 'ناحیه', 'نزدیک', 'پهلوی', 'خانه', 'منزل', 'حویلی', 'زمین', 'آپارتمان', 'دکان', 'ویلا', 'باغ', 'دفتر', 'متر']);
-const LOCALITY_RE = new RegExp(`(?<![${WORD}])(?:کارته|شهرک|قلعه|مکروریان|چهارراهی|پروژه|گذر|ساحه|منطقه|تپه|دشت|ده)\\s+[${WORD}]+(?:\\s+[${WORD}]+){0,2}`, 'gu');
+const LOCALITY_RE = new RegExp(`(?<![${WORD}])(?:کارته|شهرک|قلعه|مکروریان|چهارراهی|پروژه|گذر|ساحه|منطقه|تپه|دشت|ده|کلی|ښارګوټی)\\s+[${WORD}]+(?:\\s+[${WORD}]+){0,2}`, 'gu');
 
 export function findNeighborhood(flat: string): string | null {
   for (const m of flat.matchAll(LOCALITY_RE)) {
@@ -296,7 +322,7 @@ export function findNeighborhood(flat: string): string | null {
   return null;
 }
 
-const ADDRESS_LABEL_RE = /(?:^|\n)\s*[^\n\p{L}]*(?:آدرس|ادرس|نشانی|موقعیت|محل|موقعیت ملک|آدرس ملک)\s*[:：]\s*([^\n]+)/u;
+const ADDRESS_LABEL_RE = /(?:^|\n)\s*[^\n\p{L}]*(?:آدرس|ادرس|نشانی|پته|موقعیت|محل|موقعیت ملک|آدرس ملک)\s*[:：]\s*([^\n]+)/u;
 
 export function findAddress(flat: string): string | null {
   const m = ADDRESS_LABEL_RE.exec(flat);
@@ -308,7 +334,7 @@ export function findAddress(flat: string): string | null {
 // ───────────── Pieces of the text ─────────────
 
 const IMAGE_RE = /https?:\/\/[^\s)>\]"']+\.(?:jpe?g|png|webp)(?:\?[^\s)>\]"']*)?/giu;
-const CONTACT_LABEL_LINE = /^[^\p{L}\p{N}]*(?:شماره\s*)?(?:تماس|تلفن|موبایل|واتساپ|واتس اپ|وتساپ|whatsapp|contact|call)[^\p{L}\p{N}]*$/iu;
+const CONTACT_LABEL_LINE = /^[^\p{L}\p{N}]*(?:شماره\s*)?(?:تماس|تلفن|تلیفون|موبایل|اړیکه|واتساپ|واتس اپ|وتساپ|whatsapp|contact|call)[^\p{L}\p{N}]*$/iu;
 
 /** Digit-normalised copy of the same length, so positions found in it are positions in the original. */
 function asciiSameLength(text: string): string {
@@ -333,12 +359,30 @@ export function stripPhoneNumbers(text: string): { text: string; removed: number
   return { text: lines.join('\n').replace(/\n{3,}/g, '\n\n').trim(), removed: spans.length };
 }
 
+/** Lines that give one fact under a label — «قیمت فروش: ...», «آدرس: ...», «نوع ملک: خانه» — and so are never a listing's start or title. */
+const STRONG_LABEL = new RegExp(`^(?:قیمت|بها|بیه|مبلغ|نرخ|آدرس|ادرس|نشانی|پته|مساحت|متراژ|رقبه|تماس|تلفن|تلیفون|شماره تماس|موبایل|واتساپ|واتس اپ|اړیکه|توضیحات|تشریحات|مشخصات|امکانات|جزئیات)(?![${WORD}])`, 'iu');
+const WEAK_LABEL = new RegExp(`^(?:موقعیت|محل|نوعیت|نوع|کد|کود|آی دی|ایدی|id|تعداد|اتاق|حمام|طبقه|منزل|سند|نوع سند|وضعیت|پرداخت|سال ساخت|زیربنا|جهت|نما|اندازه|ساحه)(?:\\s+[${WORD}]+){0,2}\\s*[:：=]`, 'iu');
+export const isDetailLine = (flatLine: string) => STRONG_LABEL.test(flatLine) || WEAK_LABEL.test(flatLine);
+
+/** «کد: 245», «VIP», «#فوری», «شماره آگهی ۱۲»: the tag line above a post, not the post. */
+const HEADER_LINE = new RegExp(
+  `^(?:(?:کد|کود|ایدی|آی دی|id)(?![${WORD}])|(?:شماره|نمبر)\\s*(?:آگهی|ملک|اعلان)|(?:vip|ویژه|فوری|جدید|new|لاین)$|#[^\\s]+(?:\\s+#[^\\s]+)*$)`,
+  'iu',
+);
+const isHeaderLine = (flatLine: string) => HEADER_LINE.test(flatLine.trim());
+
+/** Channel and link footers: «@channel», «t.me/…», «instagram.com/…», «wa.me/…» and any other web link that is not a photo. */
+const PROMO_LINK = /(?:t\.me\/|telegram\.me\/|wa\.me\/|instagram\.com|facebook\.com|youtube\.com|tiktok\.com|@[A-Za-z0-9_]{4,}|https?:\/\/(?![^\s]+\.(?:jpe?g|png|webp)(?:[?\s]|$)))/iu;
+const PROMO_WORDS = /(?:کانال|چنل|channel|join|جوین|دنبال کنید|ما را|صفحه ما|فالو|follow|املاک|بنگاه|مشاور|معاملات ملکی|خرید و فروش|خریدوفروش|آدرس دفتر|گروپ|گروه ما)/iu;
+
 function titleLine(raw: string): string | null {
   for (const rawLine of raw.split('\n')) {
     const line = stripDecoration(rawLine.replace(IMAGE_RE, ''))
-      .replace(/^(?:عنوان|موضوع)\s*[:：]\s*/u, '');
+      .replace(/^(?:عنوان|سرلیک|موضوع)\s*[:：]\s*/u, '');
     if (!line) continue;
     if (!/\p{L}/u.test(line)) continue; // only a number or symbols
+    const flatText = flatten(line);
+    if (isDetailLine(flatText) || isHeaderLine(flatText) || PROMO_LINK.test(flatText)) continue; // a label line or tag is not a title
     const flat = flatten(line);
     const mostlyPhone = phoneSpans(asciiSameLength(line)).length > 0 && flat.replace(/[\d\s+-]/g, '').length < 6;
     if (mostlyPhone) continue;
@@ -348,14 +392,23 @@ function titleLine(raw: string): string | null {
   return null;
 }
 
-export function composeTitle(f: { type?: PropertyType | ''; deal?: DealType | ''; bedrooms?: number | null; area?: number | null; district?: string; province?: string }): string {
+/**
+ * «خانه سه خوابه ۲۰۰ متری برای فروش در ناحیه ۴ کابل», written in `language` (the one on screen by default). Pass the
+ * language explicitly when this runs while rendering, where the browser-wide one is not available (the server).
+ */
+export function composeTitle(
+  f: { type?: PropertyType | ''; deal?: DealType | ''; bedrooms?: number | null; area?: number | null; district?: string; province?: string },
+  language: Language = activeLanguage(),
+): string {
+  const t = (key: Parameters<typeof translate>[1], params?: Record<string, string | number>) => translate(language, key, params);
+  const labels = labelsFor(language);
   const parts: string[] = [];
-  parts.push(f.type ? TYPE_LABEL[f.type].replace(' / حویلی', '') : 'ملک');
-  if (f.bedrooms && f.type && hasRoomsFor(f.type)) parts.push(`${formatNumber(f.bedrooms)} خوابه`);
-  if (f.area) parts.push(`${formatNumber(f.area)} متری`);
-  if (f.deal) parts.push(f.deal === 'SALE' ? 'برای فروش' : f.deal === 'RENT' ? 'برای کرایه' : 'گروی');
-  const place = [f.district, f.province].filter(Boolean).join(' ');
-  if (place) parts.push(`در ${place}`);
+  parts.push(f.type ? (labels.type[f.type].split(' / ')[0] ?? labels.type[f.type]) : t('title.property'));
+  if (f.bedrooms && f.type && hasRoomsFor(f.type)) parts.push(t('title.rooms', { n: formatNumber(f.bedrooms) }));
+  if (f.area) parts.push(t('title.area', { n: formatNumber(f.area) }));
+  if (f.deal) parts.push(t(f.deal === 'SALE' ? 'title.SALE' : f.deal === 'RENT' ? 'title.RENT' : 'title.MORTGAGE_GROWI'));
+  const place = [f.district, f.province ? provinceNameLabel(f.province, language) : ''].filter(Boolean).join(' ');
+  if (place) parts.push(t('title.in', { place }));
   return cutAt(parts.join(' '), 150);
 }
 
@@ -369,16 +422,15 @@ export function parseListing(block: string, options: ParseOptions = {}): DraftRo
 
   const type = detectType(flat);
   if (type) row.type = type;
-  else notes.push('نوع ملک تشخیص داده نشد؛ انتخاب کنید.');
 
   const deal = detectDeal(flat);
   if (deal) row.deal_type = deal;
   else if (defaults.deal_type) {
     row.deal_type = defaults.deal_type;
-    notes.push(`نوع معامله در متن نبود؛ «${DEAL_LABEL[defaults.deal_type]}» (پیش‌فرض شما) گذاشته شد.`);
+    notes.push(tNow('import.note.dealDefault', { deal: labelsNow().deal[defaults.deal_type] }));
   } else {
     row.deal_type = 'SALE';
-    notes.push('نوع معامله در متن نبود؛ «فروشی» گذاشته شد. اگر نیست، عوضش کنید.');
+    notes.push(tNow('import.note.dealAssumed', { deal: labelsNow().deal.SALE }));
   }
 
   const price = findPrice(flat);
@@ -388,14 +440,11 @@ export function parseListing(block: string, options: ParseOptions = {}): DraftRo
     else {
       const guess: Currency = defaults.currency || 'AFGHANI';
       row.currency = guess;
-      notes.push(`ارز نوشته نشده بود؛ ${CURRENCY_LABEL[guess]} (${defaults.currency ? 'پیش‌فرض شما' : 'فرض'}) گذاشته شد.`);
+      notes.push(tNow(defaults.currency ? 'import.note.currencyDefault' : 'import.note.currencyGuess', { currency: currencyName(guess) }));
     }
-    if (price.assumedKarur) notes.push('«کرور» برابر ۱۰ میلیون حساب شد؛ قیمت را یک بار ببینید.');
-    if (price.candidates > 1) notes.push('چند قیمت در متن بود؛ محتمل‌ترین انتخاب شد.');
-  } else {
-    notes.push('قیمت پیدا نشد.');
-    if (defaults.currency) row.currency = defaults.currency;
-  }
+    if (price.assumedKarur) notes.push(tNow('import.note.karur'));
+    if (price.candidates > 1) notes.push(tNow('import.note.manyPrices'));
+  } else if (defaults.currency) row.currency = defaults.currency;
 
   const terms = detectPriceTerms(flat);
   if (terms) row.price_terms = terms;
@@ -403,11 +452,9 @@ export function parseListing(block: string, options: ParseOptions = {}): DraftRo
   const area = findArea(flat);
   if (area.value !== null) {
     row.area_sqm = String(area.value);
-    if (area.fromDimensions) notes.push('متراژ از ابعاد (طول × عرض) حساب شد.');
+    if (area.fromDimensions) notes.push(tNow('import.note.areaDims'));
   } else if (area.jerib) {
-    notes.push('مساحت به جریب/بسوه نوشته شده؛ به متر مربع تبدیل کنید.');
-  } else {
-    notes.push('متراژ پیدا نشد.');
+    notes.push(tNow('import.note.areaJerib'));
   }
 
   if (row.type === '' || hasRoomsFor(row.type)) {
@@ -419,8 +466,7 @@ export function parseListing(block: string, options: ParseOptions = {}): DraftRo
 
   const province = findProvince(flat);
   row.province = province ?? defaults.province;
-  if (!province && defaults.province) notes.push(`ولایت در متن نبود؛ «${defaults.province}» (ثابت‌شده) گذاشته شد.`);
-  if (!row.province) notes.push('ولایت تشخیص داده نشد.');
+  if (!province && defaults.province) notes.push(tNow('import.note.provincePinned', { province: defaults.province }));
 
   const district = findDistrict(flat);
   row.district = district ?? defaults.district;
@@ -431,8 +477,7 @@ export function parseListing(block: string, options: ParseOptions = {}): DraftRo
   if (written) row.address = written;
   else {
     row.address = addressFrom({ province: row.province, district: row.district, neighborhood: row.neighborhood, street: '' });
-    if (row.address && row.address !== row.province) notes.push('آدرس از ولایت، ناحیه و محله ساخته شد؛ اگر لازم است کامل‌تر کنید.');
-    else if (!row.address) notes.push('آدرس پیدا نشد.');
+    if (row.address && row.address !== row.province) notes.push(tNow('import.note.addressBuilt'));
   }
   if (written && row.province && !written.includes(row.province)) {
     row.address = addressFrom({ province: row.province, district: '', neighborhood: '', street: written });
@@ -450,7 +495,13 @@ export function parseListing(block: string, options: ParseOptions = {}): DraftRo
   if (options.stripPhones !== false) {
     const stripped = stripPhoneNumbers(description);
     description = stripped.text;
-    if (stripped.removed > 0) notes.push('شماره تلفن از توضیحات برداشته شد (مشتری از طریق دکمهٔ تماس اپلیکیشن شماره را می‌بیند).');
+    if (stripped.removed > 0) notes.push(tNow('import.note.phoneStripped'));
+  }
+  // Channel/link footers («@agency», «t.me/…») are advertising for somewhere else; they do not belong in the listing.
+  const kept = description.split('\n').filter((l) => !PROMO_LINK.test(flatten(l)));
+  if (kept.length !== description.split('\n').length && kept.some((l) => l.trim())) {
+    description = kept.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+    notes.push(tNow('import.note.promoStripped'));
   }
 
   const title = titleLine(description) ?? composeTitle({
@@ -471,8 +522,47 @@ export function parseListing(block: string, options: ParseOptions = {}): DraftRo
 
 const FIRST_LINE_SIGNAL = (flatFirstLine: string) => detectType(flatFirstLine) !== null || detectDeal(flatFirstLine) !== null;
 
-function firstContentLine(block: string): string {
-  return flatten(block.split('\n').map(stripDecoration).find((l) => l.length > 0) ?? '');
+const contentLines = (block: string) => block.split('\n').map(stripDecoration).filter((l) => l.length > 0);
+
+interface BlockFacts {
+  flat: string;
+  first: string;
+  price: boolean;
+  area: boolean;
+  type: boolean;
+  deal: boolean;
+}
+
+function factsOf(block: string): BlockFacts {
+  const flat = flatten(block);
+  const first = flatten(contentLines(block)[0] ?? '');
+  return { flat, first, price: findPrice(flat) !== null, area: findArea(flat).value !== null, type: detectType(flat) !== null, deal: detectDeal(flat) !== null };
+}
+
+type Kind = 'listing' | 'continuation' | 'header' | 'promo';
+
+/**
+ * What a block of the paste is. A post often arrives in pieces (a tag line, the description, a «قیمت فروش: …» paragraph,
+ * a contact paragraph, a channel footer); only the piece that opens like a listing starts a new one.
+ *  - promo: advertising for the agent or channel with nothing about a property: dropped.
+ *  - header: «کد: 245 VIP»: kept and put in front of the listing that follows.
+ *  - continuation: belongs to the listing before it.
+ *  - listing: starts a new one.
+ * `separated` is true when the paste uses explicit separator lines, which are a stronger sign of a boundary.
+ */
+function classify(block: string, separated: boolean, previous: BlockFacts | null): Kind {
+  const f = factsOf(block);
+  const hasFacts = f.price || f.area;
+  const lines = contentLines(block).map(flatten);
+  if (!hasFacts && (PROMO_LINK.test(f.flat) || PROMO_WORDS.test(f.flat))) return 'promo';
+  if (!hasFacts && !f.type && !f.deal && lines.length > 0 && lines.length <= 2 && lines.every(isHeaderLine)) return 'header';
+  if (isDetailLine(f.first)) return 'continuation';
+  if (FIRST_LINE_SIGNAL(f.first)) return 'listing';
+  if (separated && (f.type || f.deal || hasFacts)) return 'listing';
+  // No opening signal in the first line (a banner like «🔥 فرصت طلایی 🔥»): a whole listing all the same when it names a
+  // property and a price and the one before is already complete.
+  if ((f.type || f.deal) && f.price && previous?.price) return 'listing';
+  return 'continuation';
 }
 
 /** Cuts a paste into one text per listing. */
@@ -481,26 +571,44 @@ export function splitListings(raw: string): string[] {
   if (!text) return [];
 
   const lines = text.split('\n');
-  if (lines.some(isSeparatorLine)) {
-    const blocks: string[] = [];
+  const separated = lines.some(isSeparatorLine);
+  let pieces: string[];
+  if (separated) {
+    pieces = [];
     let current: string[] = [];
     for (const line of lines) {
       if (isSeparatorLine(line)) {
-        if (current.join('').trim()) blocks.push(current.join('\n').trim());
+        if (current.join('').trim()) pieces.push(current.join('\n').trim());
         current = [];
       } else current.push(line);
     }
-    if (current.join('').trim()) blocks.push(current.join('\n').trim());
-    return blocks;
+    if (current.join('').trim()) pieces.push(current.join('\n').trim());
+  } else {
+    pieces = text.split(/\n\s*\n/).map((p) => p.trim()).filter(Boolean);
   }
 
-  // Blank lines separate listings, but a block that does not start like a listing is the previous one's continuation
-  // (the "price" paragraph, the "contact" paragraph…).
-  const paragraphs = text.split(/\n\s*\n/).map((p) => p.trim()).filter(Boolean);
   const merged: string[] = [];
-  for (const p of paragraphs) {
-    if (merged.length === 0 || FIRST_LINE_SIGNAL(firstContentLine(p))) merged.push(p);
-    else merged[merged.length - 1] += `\n${p}`;
+  let held = ''; // a tag line waiting for its listing
+  for (const piece of pieces) {
+    const previous = merged.length ? factsOf(merged[merged.length - 1]!) : null;
+    const kind = classify(piece, separated, previous);
+    if (kind === 'promo') continue;
+    if (kind === 'header') {
+      held = held ? `${held}\n${piece}` : piece;
+      continue;
+    }
+    if (kind === 'listing' || merged.length === 0) {
+      // A first piece that names nothing (a greeting) is not a listing.
+      if (kind === 'continuation') {
+        const f = factsOf(piece);
+        if (!f.type && !f.deal && !f.price && !f.area) continue;
+      }
+      merged.push(held ? `${held}\n${piece}` : piece);
+      held = '';
+    } else {
+      merged[merged.length - 1] += `${held ? `\n${held}` : ''}\n${piece}`;
+      held = '';
+    }
   }
 
   // No blank lines at all: one listing per line when each line carries its own type/deal and price.
@@ -509,13 +617,13 @@ export function splitListings(raw: string): string[] {
     if (blockLines.length < 2) return [block];
     const full = blockLines.filter((l) => {
       const f = flatten(l);
-      return FIRST_LINE_SIGNAL(f) && findPrice(f) !== null;
+      return FIRST_LINE_SIGNAL(f) && !isDetailLine(f) && findPrice(f) !== null;
     });
     if (full.length < 2) return [block];
     const out: string[] = [];
     for (const l of blockLines) {
       const f = flatten(l);
-      if (FIRST_LINE_SIGNAL(f) && findPrice(f) !== null) out.push(l);
+      if (FIRST_LINE_SIGNAL(f) && !isDetailLine(f) && findPrice(f) !== null) out.push(l);
       else if (out.length) out[out.length - 1] += `\n${l}`;
       else out.push(l);
     }

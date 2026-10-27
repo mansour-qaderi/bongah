@@ -1,10 +1,11 @@
 'use client';
 
 import Link from 'next/link';
-import { AlertTriangle, Clock3, Sparkles } from 'lucide-react';
-import type { AgencyDashboard, Wallet } from '@bongah/shared-types';
+import { Sparkles } from 'lucide-react';
+import type { Wallet } from '@bongah/shared-types';
 import type { ReactNode } from 'react';
 import { cn } from '@/lib/cn';
+import { useT } from '@/i18n/provider';
 
 function Banner({ tone, icon, children }: { tone: 'gold' | 'danger' | 'info'; icon: ReactNode; children: ReactNode }) {
   return (
@@ -23,28 +24,17 @@ function Banner({ tone, icon, children }: { tone: 'gold' | 'danger' | 'info'; ic
   );
 }
 
-/** Things the office needs to know first: its documents are not approved, or it has no plan running. */
-export function DashboardBanners({ dashboard, wallet }: { dashboard?: AgencyDashboard; wallet?: Wallet }) {
-  const status = dashboard?.agency.verification_status;
+/** What the account should know first: it has no plan running. */
+export function DashboardBanners({ wallet }: { wallet?: Wallet }) {
+  const t = useT();
   const noPlan = wallet?.subscription && !wallet.subscription.is_active;
   return (
     <div className="space-y-3 empty:hidden">
-      {status === 'PENDING' ? (
-        <Banner tone="gold" icon={<Clock3 className="h-4 w-4" />}>
-          مدارک دفتر در حال بررسی است. تا زمان تأیید، نشان «تأیید شده» روی آگهی‌های شما نمایش داده نمی‌شود.
-        </Banner>
-      ) : null}
-      {status === 'REJECTED' ? (
-        <Banner tone="danger" icon={<AlertTriangle className="h-4 w-4" />}>
-          مدارک دفتر رد شد{dashboard?.agency.rejection_reason ? `: ${dashboard.agency.rejection_reason}` : '.'} مدرک را در اپلیکیشن بنگاه اصلاح و دوباره
-          بفرستید.
-        </Banner>
-      ) : null}
       {noPlan ? (
         <Banner tone="info" icon={<Sparkles className="h-4 w-4" />}>
-          اشتراک فعالی ندارید. با اشتراک، ثبت گروهی آگهی، سهمیه بیشتر و هدیه‌های اولین خرید را دریافت می‌کنید.{' '}
+          {t('dash.banner.noPlan')}{' '}
           <Link href="/dashboard/subscription" className="font-bold underline">
-            دیدن پلن‌ها
+            {t('dash.banner.seePlans')}
           </Link>
         </Banner>
       ) : null}
