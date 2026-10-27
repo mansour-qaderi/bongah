@@ -5,17 +5,11 @@ import { Search, X } from 'lucide-react';
 import { CURRENCIES, DEAL_TYPES, PROPERTY_TYPES } from '@bongah/shared-types';
 import { MY_LISTING_SORTS, type MyListingSort } from '@bongah/validation';
 import type { ListingQuery } from '@/hooks/use-listing-query';
-import { CURRENCY_NAME, DEAL_LABEL, TYPE_LABEL } from '@/lib/labels';
+import { useT } from '@/i18n/provider';
+import { useLabels } from '@/i18n/use-labels';
 import { Button } from '@/components/ui/button';
 import { Input, Select } from '@/components/ui/field';
 
-const SORT_LABEL: Record<MyListingSort, string> = {
-  newest: 'جدیدترین',
-  oldest: 'قدیمی‌ترین',
-  price_asc: 'قیمت: کم به زیاد',
-  price_desc: 'قیمت: زیاد به کم',
-  views: 'بیشترین بازدید',
-};
 
 export function ListingFilters({
   query,
@@ -28,6 +22,8 @@ export function ListingFilters({
   reset: () => void;
   activeFilters: number;
 }) {
+  const t = useT();
+  const labels = useLabels();
   // The search box answers each keystroke at once but only asks the server once typing pauses.
   const [text, setText] = useState(query.q);
   const [minText, setMinText] = useState(query.min);
@@ -38,8 +34,8 @@ export function ListingFilters({
   useEffect(() => setMaxText(query.max), [query.max]);
   useEffect(() => {
     if (text === query.q && minText === query.min && maxText === query.max) return;
-    const t = setTimeout(() => update({ q: text, min: minText, max: maxText }), 350);
-    return () => clearTimeout(t);
+    const timer = setTimeout(() => update({ q: text, min: minText, max: maxText }), 350);
+    return () => clearTimeout(timer);
   }, [text, minText, maxText, query.q, query.min, query.max, update]);
 
   const priceUsed = Boolean(minText || maxText) || query.sort === 'price_asc' || query.sort === 'price_desc';
@@ -52,66 +48,66 @@ export function ListingFilters({
           <Input
             value={text}
             onChange={(e) => setText(e.target.value)}
-            placeholder="جستجو در عنوان، آدرس، ناحیه، ولایت…"
-            aria-label="جستجو در آگهی‌ها"
+            placeholder={t('filter.search')}
+            aria-label={t('filter.searchAria')}
             className="ps-9"
             maxLength={100}
           />
         </div>
-        <Select aria-label="ترتیب" value={query.sort} onChange={(e) => update({ sort: e.target.value as MyListingSort })} className="w-44">
+        <Select aria-label={t('filter.sort')} value={query.sort} onChange={(e) => update({ sort: e.target.value as MyListingSort })} className="w-44">
           {MY_LISTING_SORTS.map((s) => (
             <option key={s} value={s}>
-              {SORT_LABEL[s]}
+              {t(`list.sort.${s}`)}
             </option>
           ))}
         </Select>
       </div>
 
       <div className="flex flex-wrap items-end gap-3">
-        <Select aria-label="نوع ملک" value={query.type} onChange={(e) => update({ type: e.target.value as ListingQuery['type'] })} className="w-40">
-          <option value="">همه انواع ملک</option>
-          {PROPERTY_TYPES.map((t) => (
-            <option key={t} value={t}>
-              {TYPE_LABEL[t]}
+        <Select aria-label={t('filter.type')} value={query.type} onChange={(e) => update({ type: e.target.value as ListingQuery['type'] })} className="w-40">
+          <option value="">{t('filter.allTypes')}</option>
+          {PROPERTY_TYPES.map((type) => (
+            <option key={type} value={type}>
+              {labels.type[type]}
             </option>
           ))}
         </Select>
-        <Select aria-label="نوع معامله" value={query.deal} onChange={(e) => update({ deal: e.target.value as ListingQuery['deal'] })} className="w-36">
-          <option value="">همه معامله‌ها</option>
+        <Select aria-label={t('filter.deal')} value={query.deal} onChange={(e) => update({ deal: e.target.value as ListingQuery['deal'] })} className="w-36">
+          <option value="">{t('filter.allDeals')}</option>
           {DEAL_TYPES.map((d) => (
             <option key={d} value={d}>
-              {DEAL_LABEL[d]}
+              {labels.deal[d]}
             </option>
           ))}
         </Select>
-        <div className="flex items-center gap-2" role="group" aria-label="بازه قیمت">
+        <div className="flex items-center gap-2" role="group" aria-label={t('filter.priceRange')}>
           <Input
             inputMode="numeric"
             value={minText}
             onChange={(e) => setMinText(e.target.value)}
-            placeholder="قیمت از"
-            aria-label="کمترین قیمت"
+            placeholder={t('filter.minPlaceholder')}
+            aria-label={t('filter.minAria')}
             className="w-28"
           />
-          <span className="text-muted">تا</span>
+          <span className="text-muted">{t('filter.to')}</span>
           <Input
             inputMode="numeric"
             value={maxText}
             onChange={(e) => setMaxText(e.target.value)}
-            placeholder="قیمت تا"
-            aria-label="بیشترین قیمت"
+            placeholder={t('filter.maxPlaceholder')}
+            aria-label={t('filter.maxAria')}
             className="w-28"
           />
           <Select
-            aria-label="ارز"
+            aria-label={t('filter.currency')}
             value={query.currency || (priceUsed ? 'AFGHANI' : '')}
             onChange={(e) => update({ currency: e.target.value as ListingQuery['currency'] })}
             className="w-32"
           >
-            {priceUsed ? null : <option value="">همه ارزها</option>}
+            {priceUsed ? null : <option value="">{t('filter.allCurrencies')}</option>}
             {CURRENCIES.map((c) => (
               <option key={c} value={c}>
-                {CURRENCY_NAME[c]}
+                {labels.currency[c]}
               </option>
             ))}
           </Select>
@@ -119,7 +115,7 @@ export function ListingFilters({
         {activeFilters > 0 ? (
           <Button variant="ghost" size="sm" onClick={reset} className="gap-1.5 text-muted">
             <X aria-hidden className="h-3.5 w-3.5" />
-            پاک کردن فیلترها
+            {t('filter.clear')}
           </Button>
         ) : null}
       </div>

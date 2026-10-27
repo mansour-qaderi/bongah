@@ -3,12 +3,12 @@ import { cleanText, httpUrl } from './common';
 import { latitude, longitude } from './property.schema';
 
 /**
- * Registering a real-estate office (Rahnamaye Mamelat). The agency starts unverified;
- * an admin reviews the license photo and sets `is_verified`.
+ * Creating the profile of an account (name and address). The agency starts unverified. The licence photo is optional:
+ * the web panel does not ask for one; the phone app may still send it, and an admin can still review it.
  */
 export const registerAgencySchema = z.strictObject({
   agency_name: cleanText(2, 120),
-  license_photo: httpUrl,
+  license_photo: httpUrl.optional(),
   address: cleanText(3, 300),
   description: cleanText(1, 2000).nullish(),
 });

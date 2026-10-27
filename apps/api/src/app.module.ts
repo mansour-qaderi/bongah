@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { APP_FILTER } from '@nestjs/core';
 import { ConfigModule } from '@nestjs/config';
 import { ChatModule } from './chat/chat.module.js';
 import { ContactModule } from './contact/contact.module.js';
@@ -6,6 +7,7 @@ import { AppController } from './app.controller.js';
 import { AppService } from './app.service.js';
 import { AuthModule } from './auth/auth.module.js';
 import { PrismaModule } from './prisma/prisma.module.js';
+import { DbUnavailableFilter } from './prisma/db-unavailable.filter.js';
 import { UsersModule } from './users/users.module.js';
 import { AgenciesModule } from './agencies/agencies.module.js';
 import { PropertyModule } from './property/property.module.js';
@@ -44,6 +46,6 @@ import { PropertyImagesModule } from './property-images/property-images.module.j
     NotificationModule,
   ],
   controllers: [AppController],
-  providers: [AppService],
+  providers: [AppService, { provide: APP_FILTER, useClass: DbUnavailableFilter }],
 })
 export class AppModule {}

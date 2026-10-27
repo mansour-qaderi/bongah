@@ -6,7 +6,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { queryClient } from './src/api/hooks';
 import { AuthProvider } from './src/auth/AuthContext';
 import { ChatProvider } from './src/chat/ChatProvider';
-import AppLoader from './src/components/AppLoader';
+import Spinner from './src/components/Spinner';
 import { ToastHost } from './src/components/Toast';
 import i18n, { initI18n } from './src/i18n';
 import { isRtlActive } from './src/i18n/rtl';
@@ -66,7 +66,7 @@ export default function App() {
                 theme={navigationTheme}
                 linking={linking}
                 fallback={
-                  <AppLoader fullscreen label={i18n.t('common.loading')} />
+                  <Spinner fullscreen label={i18n.t('common.loading')} />
                 }
               >
                 <RootNavigator />
@@ -77,8 +77,8 @@ export default function App() {
           </AuthProvider>
         </QueryClientProvider>
       ) : (
-        // The languages are not loaded yet, so this one has no words (the logo is the loader).
-        <AppLoader fullscreen />
+        // The languages are not loaded yet, so this one has no words (the spinner is the loader).
+        <Spinner fullscreen />
       )}
     </SafeAreaProvider>
   );

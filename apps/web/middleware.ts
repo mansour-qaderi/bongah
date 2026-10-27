@@ -14,14 +14,14 @@ export function middleware(request: NextRequest) {
     url.pathname = '/login';
     url.search = '';
     const back = pathname + search;
-    if (back !== '/dashboard') url.searchParams.set('next', back);
+    if (back !== '/dashboard/map') url.searchParams.set('next', back);
     const response = NextResponse.redirect(url);
     if (request.cookies.has(SESSION_COOKIE)) response.cookies.delete(SESSION_COOKIE);
     return response;
   }
   if (pathname === '/login' && signedIn) {
     const url = request.nextUrl.clone();
-    url.pathname = '/dashboard';
+    url.pathname = '/dashboard/map';
     url.search = '';
     return NextResponse.redirect(url);
   }

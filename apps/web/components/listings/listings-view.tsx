@@ -11,7 +11,10 @@ import { moneyAmount } from '@bongah/validation';
 import type { Paginated, Property, PropertyStatus } from '@bongah/shared-types';
 import { errorMessage, fetcher } from '@/lib/api';
 import { formatMoney, formatNumber, formatShortDate, parseLooseNumber } from '@/lib/format';
-import { DEAL_LABEL, TYPE_LABEL } from '@/lib/labels';
+import { tNow } from '@/i18n/active';
+import { useLanguage, useT } from '@/i18n/provider';
+import { provinceNameLabel } from '@/lib/provinces';
+import { useLabels } from '@/i18n/use-labels';
 import {
   applyFeatured,
   archiveMany,
@@ -23,7 +26,7 @@ import {
   type BulkOutcome,
   type FeaturedSource,
 } from '@/lib/listing-actions';
-import { PAGE_SIZE, useListingQuery, type StatusTab } from '@/hooks/use-listing-query';
+import { DEFAULT_TAB, PAGE_SIZE, STATUS_TABS, useListingQuery, type StatusTab } from '@/hooks/use-listing-query';
 import { SYNC_INTERVAL_MS } from '@/hooks/use-api';
 import { cn } from '@/lib/cn';
 import { Badge } from '@/components/ui/badge';
@@ -42,13 +45,16 @@ import { InlineEdit } from './inline-edit';
 import { ProgressDialog, type RunState } from './progress-dialog';
 import { StatusActions, StatusBadge, useStatusChange } from './status-toggle';
 
-const TAB_LABEL: Record<StatusTab, string> = { ACTIVE: 'فعال', SOLD: 'معامله‌شده', ARCHIVED: 'غیرفعال', ALL: 'همه' };
 
 function DealBadge({ deal }: { deal: Property['deal_type'] }) {
-  return <Badge tone={deal === 'SALE' ? 'primary' : deal === 'RENT' ? 'info' : 'gold'}>{DEAL_LABEL[deal]}</Badge>;
+  const labels = useLabels();
+  return <Badge tone={deal === 'SALE' ? 'primary' : deal === 'RENT' ? 'info' : 'gold'}>{labels.deal[deal]}</Badge>;
 }
 
 export function ListingsView() {
+  const t = useT();
+  const { language } = useLanguage();
+  const labels = useLabels();
   const { query, update, reset, apiQuery, activeFilters } = useListingQuery();
   const swrKey = useMemo(() => {
     const p = new URLSearchParams();
@@ -99,7 +105,7 @@ export function ListingsView() {
     try {
       const all = await fetchAllListings(apiQuery);
       setSelected(new Map(all.map((p) => [p.id, p])));
-      if (all.length < total) toast.info(`برای امنیت، فقط ${formatNumber(all.length)} آگهی اول انتخاب شد.`);
+      if (all.length < total) toast.info(tNow('list.selectedAll', { n: formatNumber(all.length) }));
     } catch (e) {
       toast.error(errorMessage(e));
     } finally {
@@ -112,7 +118,7 @@ export function ListingsView() {
     await patchCachedListings(new Set([p.id]), patch);
     try {
       await updateListing(p.id, patch);
-      toast.success('ذخیره شد.');
+      toast.success(tNow('common.saved'));
     } catch (e) {
       toast.error(errorMessage(e));
       throw e;
@@ -153,7 +159,7 @@ export function ListingsView() {
   function bulkStatus(status: PropertyStatus, label: string, skipIf: PropertyStatus) {
     const items = selectedList.filter((p) => p.status !== skipIf);
     if (items.length === 0) {
-      toast.info('همه آگهی‌های انتخاب‌شده همین حالا در این وضعیت‌اند.');
+      toast.info(tNow('list.alreadyInStatus'));
       return;
     }
     void execute(label, items, (ids, progress) => updateMany(ids, { status }, progress), { status });
@@ -163,35 +169,35 @@ export function ListingsView() {
     () => [
       {
         id: 'select',
-        header: () => <Checkbox label="انتخاب همه این صفحه" checked={pageAllSelected} indeterminate={pageSomeSelected} onChange={togglePage} />,
+        header: () => <Checkbox label={t('list.col.selectPage')} checked={pageAllSelected} indeterminate={pageSomeSelected} onChange={togglePage} />,
         cell: ({ row }) => (
-          <Checkbox label={`انتخاب ${row.original.title}`} checked={selected.has(row.original.id)} onChange={(on) => toggleOne(row.original, on)} />
+          <Checkbox label={t('list.col.selectOne', { title: row.original.title })} checked={selected.has(row.original.id)} onChange={(on) => toggleOne(row.original, on)} />
         ),
         size: 44,
       },
       {
         id: 'listing',
-        header: 'آگهی',
+        header: t('list.col.listing'),
         cell: ({ row }) => {
           const p = row.original;
           return (
             <div className="min-w-0 max-w-[26rem]">
               <InlineEdit
-                label="عنوان"
+                label={t('list.col.titleLabel')}
                 value={p.title}
                 display={<span className="block truncate text-sm font-semibold text-ink">{p.title}</span>}
-                validate={(d) => (d.trim().length < 3 ? 'عنوان دست‌کم ۳ حرف باشد.' : d.trim().length > 150 ? 'عنوان بیش از ۱۵۰ حرف نباشد.' : null)}
+                validate={(d) => (d.trim().length < 3 ? t('list.col.titleShort') : d.trim().length > 150 ? t('list.col.titleLong') : null)}
                 onSave={(d) => saveField(p, { title: d.replace(/\s+/g, ' ').trim() })}
               />
               <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted">
                 <DealBadge deal={p.deal_type} />
-                <span>{TYPE_LABEL[p.type]}</span>
+                <span>{labels.type[p.type]}</span>
                 <span aria-hidden>·</span>
-                <span className="truncate">{[p.district, p.province].filter(Boolean).join('، ')}</span>
+                <span className="truncate">{[p.district, p.province ? provinceNameLabel(p.province, language) : ''].filter(Boolean).join('، ')}</span>
                 {p.is_featured ? (
                   <Badge tone="gold" className="gap-1">
                     <Star aria-hidden className="h-3 w-3" fill="currentColor" />
-                    ویژه
+                    {t('list.col.featured')}
                   </Badge>
                 ) : null}
               </div>
@@ -201,12 +207,12 @@ export function ListingsView() {
       },
       {
         id: 'price',
-        header: 'قیمت',
+        header: t('list.col.price'),
         cell: ({ row }) => {
           const p = row.original;
           return (
             <InlineEdit
-              label="قیمت"
+              label={t('list.col.price')}
               value={String(p.price)}
               inputMode="decimal"
               ltr
@@ -214,8 +220,8 @@ export function ListingsView() {
               display={<span className="tabular whitespace-nowrap text-sm font-semibold text-ink-2">{formatMoney(p.price, p.currency)}</span>}
               validate={(d) => {
                 const n = parseLooseNumber(d);
-                if (n === null || n <= 0) return 'قیمت را به عدد بنویسید.';
-                return moneyAmount.safeParse(n).success ? null : 'قیمت معتبر نیست (حداکثر دو رقم اعشار).';
+                if (n === null || n <= 0) return t('list.col.priceNumber');
+                return moneyAmount.safeParse(n).success ? null : t('list.col.priceInvalid');
               }}
               onSave={(d) => saveField(p, { price: parseLooseNumber(d)! })}
             />
@@ -224,7 +230,7 @@ export function ListingsView() {
       },
       {
         id: 'views',
-        header: 'بازدید',
+        header: t('list.col.views'),
         cell: ({ row }) => (
           <span className="tabular flex items-center gap-1 text-[13px] text-ink-2">
             <Eye aria-hidden className="h-3.5 w-3.5 text-muted" />
@@ -234,7 +240,7 @@ export function ListingsView() {
       },
       {
         id: 'status',
-        header: 'وضعیت',
+        header: t('list.col.status'),
         cell: ({ row }) => (
           <div className="flex flex-nowrap items-center gap-2 whitespace-nowrap">
             <StatusBadge status={row.original.status} />
@@ -244,35 +250,35 @@ export function ListingsView() {
       },
       {
         id: 'date',
-        header: 'ثبت',
+        header: t('list.col.created'),
         cell: ({ row }) => <span className="whitespace-nowrap text-xs text-muted">{formatShortDate(row.original.created_at)}</span>,
       },
       {
         id: 'menu',
-        header: () => <span className="sr-only">بیشتر</span>,
+        header: () => <span className="sr-only">{t('list.col.more')}</span>,
         cell: ({ row }) => {
           const p = row.original;
           return (
             <DropdownRoot>
               <DropdownTrigger asChild>
-                <Button variant="ghost" size="icon" aria-label={`گزینه‌های ${p.title}`}>
+                <Button variant="ghost" size="icon" aria-label={t('list.col.options', { title: p.title })}>
                   <MoreHorizontal className="h-4 w-4" />
                 </Button>
               </DropdownTrigger>
               <DropdownContent align="start">
                 <DropdownItem icon={<MapPin className="h-4 w-4" />} onSelect={() => router.push(`/dashboard/map?focus=${p.id}`)}>
-                  دیدن روی نقشه
+                  {t('list.menu.map')}
                 </DropdownItem>
                 <DropdownItem
                   icon={<Frame className="h-4 w-4" />}
                   disabled={p.status !== 'ACTIVE' || p.is_featured}
                   onSelect={() => setRowFeatured(p)}
                 >
-                  کادر ویژه
+                  {t('list.menu.featured')}
                 </DropdownItem>
                 <DropdownSeparator />
                 <DropdownItem danger disabled={p.status === 'ARCHIVED'} onSelect={() => void change(p, 'ARCHIVED')}>
-                  غیرفعال کردن
+                  {t('list.menu.archive')}
                 </DropdownItem>
               </DropdownContent>
             </DropdownRoot>
@@ -281,7 +287,7 @@ export function ListingsView() {
       },
     ],
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [selected, pageAllSelected, pageSomeSelected, rows, change, isPending, saveField, toggleOne, router],
+    [selected, pageAllSelected, pageSomeSelected, rows, change, isPending, saveField, toggleOne, router, t],
   );
 
   const table = useReactTable({ data: rows, columns, getCoreRowModel: getCoreRowModel(), getRowId: (r) => r.id, manualPagination: true });
@@ -297,13 +303,13 @@ export function ListingsView() {
     <div className="mx-auto max-w-7xl space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 className="text-lg font-extrabold text-ink">مدیریت آگهی‌ها</h2>
-          <p className="text-[13px] text-muted">جستجو، فیلتر، ویرایش سریع و کارهای گروهی روی آگهی‌های دفتر.</p>
+          <h2 className="text-lg font-extrabold text-ink">{t('list.title')}</h2>
+          <p className="text-[13px] text-muted">{t('list.subtitle')}</p>
         </div>
         <Link href="/dashboard/listings/quick-add">
           <Button variant="secondary" className="gap-2">
             <FilePlus2 aria-hidden className="h-4 w-4" />
-            ثبت سریع و گروهی
+            {t('nav.quickAdd')}
           </Button>
         </Link>
       </div>
@@ -312,9 +318,9 @@ export function ListingsView() {
         <div className="border-b border-line px-4 pt-4 sm:px-5">
           <Tabs value={query.tab} onValueChange={(v) => update({ tab: v as StatusTab })}>
             <TabsList className="max-w-full overflow-x-auto">
-              {(Object.keys(TAB_LABEL) as StatusTab[]).map((t) => (
-                <TabsTrigger key={t} value={t} count={t === query.tab && data ? formatNumber(total) : undefined}>
-                  {TAB_LABEL[t]}
+              {STATUS_TABS.map((tab) => (
+                <TabsTrigger key={tab} value={tab} count={tab === query.tab && data ? formatNumber(total) : undefined}>
+                  {t(`list.tab.${tab}`)}
                 </TabsTrigger>
               ))}
             </TabsList>
@@ -327,21 +333,21 @@ export function ListingsView() {
         ) : error && !data ? (
           <ErrorState message={errorMessage(error)} onRetry={() => void mutate()} />
         ) : noResults ? (
-          activeFilters > 0 || query.tab !== 'ACTIVE' ? (
+          activeFilters > 0 || query.tab !== DEFAULT_TAB ? (
             <EmptyState
               icon={SearchX}
-              title="آگهی‌ای پیدا نشد"
-              description="با این فیلترها آگهی‌ای نیست. فیلترها را کم کنید یا وضعیت دیگری را ببینید."
-              action={<Button variant="secondary" onClick={reset}>پاک کردن فیلترها</Button>}
+              title={t('list.empty.filteredTitle')}
+              description={t('list.empty.filteredText')}
+              action={<Button variant="secondary" onClick={reset}>{t('filter.clear')}</Button>}
             />
           ) : (
             <EmptyState
               icon={FilePlus2}
-              title="هنوز آگهی ثبت نکرده‌اید"
-              description="آگهی‌ها را یکی‌یکی، از متن پیام‌های تلگرام یا واتساپ، یا با فایل اکسل ثبت کنید."
+              title={t('list.empty.title')}
+              description={t('list.empty.text')}
               action={
                 <Link href="/dashboard/listings/quick-add">
-                  <Button>ثبت اولین آگهی</Button>
+                  <Button>{t('list.empty.first')}</Button>
                 </Link>
               }
             />
@@ -398,22 +404,22 @@ export function ListingsView() {
           onSelectAll={() => void selectEverything()}
           onClear={() => setSelected(new Map())}
           onFeatured={() => setFeaturedOpen(true)}
-          onSold={() => bulkStatus('SOLD', 'ثبت «معامله شد»', 'SOLD')}
-          onActivate={() => bulkStatus('ACTIVE', 'فعال‌سازی آگهی‌ها', 'ACTIVE')}
+          onSold={() => bulkStatus('SOLD', t('list.run.markSold'), 'SOLD')}
+          onActivate={() => bulkStatus('ACTIVE', t('list.run.activate'), 'ACTIVE')}
           onArchive={() => setConfirm('archive')}
         />
 
         {pages > 1 ? (
           <div className="flex items-center justify-between border-t border-line px-5 py-3 text-[13px] text-muted">
             <span>
-              صفحه {formatNumber(query.page)} از {formatNumber(pages)} · {formatNumber(total)} آگهی
+              {t('list.pagination', { page: formatNumber(query.page), pages: formatNumber(pages), total: formatNumber(total) })}
             </span>
             <div className="flex gap-2">
               <Button variant="secondary" size="sm" disabled={query.page <= 1} onClick={() => update({ page: query.page - 1 })}>
-                قبلی
+                {t('pay.prev')}
               </Button>
               <Button variant="secondary" size="sm" disabled={query.page >= pages} onClick={() => update({ page: query.page + 1 })}>
-                بعدی
+                {t('pay.next')}
               </Button>
             </div>
           </div>
@@ -434,21 +440,21 @@ export function ListingsView() {
           const items = rowFeatured ? [rowFeatured] : featuredEligible;
           setFeaturedOpen(false);
           setRowFeatured(null);
-          void execute('پوشش با کادر ویژه', items, (ids, progress) => applyFeatured(ids, source, progress));
+          void execute(t('bulk.featured'), items, (ids, progress) => applyFeatured(ids, source, progress));
         }}
       />
 
       <ConfirmDialog
         open={confirm === 'archive'}
         onOpenChange={(open) => !open && setConfirm(null)}
-        title={`حذف ${formatNumber(selected.size)} آگهی؟`}
-        description="آگهی‌ها از فهرست و از اپلیکیشن برداشته می‌شوند (به «غیرفعال» می‌روند) و بازدیدهایشان در آمار می‌ماند. هر زمان می‌توانید دوباره فعالشان کنید."
-        confirmLabel="حذف آگهی‌ها"
+        title={t('list.confirm.title', { n: formatNumber(selected.size) })}
+        description={t('list.confirm.text')}
+        confirmLabel={t('list.confirm.button')}
         onConfirm={() => {
           const items = selectedList.filter((p) => p.status !== 'ARCHIVED');
           setConfirm(null);
-          if (items.length) void execute('حذف آگهی‌ها', items, (ids, progress) => archiveMany(ids, progress), { status: 'ARCHIVED' });
-          else toast.info('آگهی‌های انتخاب‌شده از قبل غیرفعال‌اند.');
+          if (items.length) void execute(t('list.run.delete'), items, (ids, progress) => archiveMany(ids, progress), { status: 'ARCHIVED' });
+          else toast.info(t('list.alreadyArchived'));
         }}
       />
       <ProgressDialog run={run} onClose={() => setRun(null)} />

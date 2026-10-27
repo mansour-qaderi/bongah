@@ -18,7 +18,8 @@ import ContactActionBar from './ContactActionBar';
 import ContactLockSheet from './ContactLockSheet';
 import Icon from './Icon';
 import Price from './Price';
-import PropertyFacts, { propertyPlace } from './PropertyFacts';import MapLoader from './MapLoader';
+import PropertyFacts, { propertyPlace } from './PropertyFacts';
+import MapLoader from './MapLoader';
 
 
 interface Props {

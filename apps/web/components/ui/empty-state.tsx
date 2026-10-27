@@ -1,6 +1,9 @@
+'use client';
+
 import type { LucideIcon } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { cn } from '@/lib/cn';
+import { useT } from '@/i18n/provider';
 
 /** What a list or panel shows when there is nothing in it: what it is, why it is empty, and the next step. */
 export function EmptyState({
@@ -32,12 +35,13 @@ export function EmptyState({
 
 /** A request that failed: says so and offers a retry. */
 export function ErrorState({ message, onRetry }: { message: string; onRetry?: () => void }) {
+  const t = useT();
   return (
     <div role="alert" className="reveal flex flex-col items-center px-6 py-12 text-center">
       <p className="text-sm font-semibold text-danger">{message}</p>
       {onRetry ? (
         <button onClick={onRetry} className="mt-3 rounded-lg border border-line-strong px-4 py-1.5 text-[13px] font-semibold text-ink-2 hover:border-primary hover:text-primary">
-          تلاش دوباره
+          {t('common.retry')}
         </button>
       ) : null}
     </div>

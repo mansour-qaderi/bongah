@@ -5,6 +5,7 @@ import { formatNumber } from '@/lib/format';
 import type { BulkOutcome } from '@/lib/listing-actions';
 import { Button } from '@/components/ui/button';
 import { Dialog } from '@/components/ui/dialog';
+import { useT } from '@/i18n/provider';
 
 export interface RunState {
   title: string;
@@ -17,6 +18,7 @@ export interface RunState {
 
 /** Shows a long operation over many listings: a bar while it runs, then what worked and what did not. */
 export function ProgressDialog({ run, onClose }: { run: RunState | null; onClose: () => void }) {
+  const t = useT();
   const finished = Boolean(run?.outcome);
   const pct = run && run.total > 0 ? Math.round((run.done / run.total) * 100) : 0;
   return (
@@ -27,7 +29,7 @@ export function ProgressDialog({ run, onClose }: { run: RunState | null; onClose
       }}
       title={run?.title ?? ''}
       size="md"
-      footer={finished ? <Button onClick={onClose}>بستن</Button> : null}
+      footer={finished ? <Button onClick={onClose}>{t('common.close')}</Button> : null}
     >
       {run ? (
         finished && run.outcome ? (
@@ -38,8 +40,8 @@ export function ProgressDialog({ run, onClose }: { run: RunState | null; onClose
               ) : (
                 <TriangleAlert aria-hidden className="h-5 w-5 text-accent" />
               )}
-              {formatNumber(run.outcome.succeeded.length)} مورد انجام شد
-              {run.outcome.failed.length ? `، ${formatNumber(run.outcome.failed.length)} مورد ناموفق` : ''}.
+              {t('run.done', { n: formatNumber(run.outcome.succeeded.length) })}
+              {run.outcome.failed.length ? t('run.failedPart', { n: formatNumber(run.outcome.failed.length) }) : ''}.
             </div>
             {run.outcome.failed.length ? (
               <ul className="scrollbar-thin max-h-56 space-y-2 overflow-y-auto rounded-xl border border-line p-3 text-[13px]">
@@ -58,7 +60,7 @@ export function ProgressDialog({ run, onClose }: { run: RunState | null; onClose
               <div className="h-full rounded-full bg-primary transition-[width] duration-200" style={{ width: `${pct}%`, marginInlineStart: 0 }} />
             </div>
             <p className="tabular mt-3 text-center text-[13px] text-muted">
-              {formatNumber(run.done)} از {formatNumber(run.total)} — لطفاً این صفحه را نبندید.
+              {t('run.progress', { done: formatNumber(run.done), total: formatNumber(run.total) })}
             </p>
           </div>
         )

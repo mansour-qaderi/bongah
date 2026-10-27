@@ -1,17 +1,21 @@
+'use client';
+
 import { cn } from '@/lib/cn';
+import { useT } from '@/i18n/provider';
 
 /**
  * The Bongah mark: the roof and chimney with a map pin under it, standing on a ring. The shapes are the same ones the
  * phone app draws (apps/mobile LOGO_GEOMETRY), so the brand matches; the left halves are the darker emerald.
  */
 export function LogoMark({ className, size = 36 }: { className?: string; size?: number }) {
+  const t = useT();
   return (
     <svg
       viewBox="0 0 100 100"
       width={size}
       height={size}
       role="img"
-      aria-label="بنگاه"
+      aria-label={t('app.name')}
       className={cn('shrink-0', className)}
     >
       <ellipse cx="50" cy="87" rx="26" ry="8" fill="none" stroke="#E5E7EB" strokeWidth="2.6" />
@@ -29,13 +33,14 @@ export function LogoMark({ className, size = 36 }: { className?: string; size?: 
 }
 
 export function LogoLockup({ collapsed, className }: { collapsed?: boolean; className?: string }) {
+  const t = useT();
   return (
     <div className={cn('flex items-center gap-2.5', className)}>
       <LogoMark size={36} />
       {collapsed ? null : (
         <div className="leading-tight">
-          <div className="text-[17px] font-extrabold text-primary-dark">بنگاه</div>
-          <div className="text-[11px] text-muted">پنل مدیریت دفتر</div>
+          <div className="text-[17px] font-extrabold text-primary-dark">{t('app.name')}</div>
+          <div className="text-[11px] text-muted">{t('logo.subtitle')}</div>
         </div>
       )}
     </div>

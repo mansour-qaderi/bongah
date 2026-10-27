@@ -5,14 +5,17 @@ import { toast } from 'sonner';
 import type { Property, PropertyStatus } from '@bongah/shared-types';
 import { errorMessage } from '@/lib/api';
 import { patchCachedListings, refreshListingData, updateListing } from '@/lib/listing-actions';
-import { STATUS_LABEL } from '@/lib/labels';
+import { tNow } from '@/i18n/active';
+import { useT } from '@/i18n/provider';
+import { useLabels } from '@/i18n/use-labels';
 import { cn } from '@/lib/cn';
 import { Badge } from '@/components/ui/badge';
 
 const TONE = { ACTIVE: 'primary', SOLD: 'gold', ARCHIVED: 'neutral' } as const;
 
 export function StatusBadge({ status }: { status: PropertyStatus }) {
-  return <Badge tone={TONE[status]}>{STATUS_LABEL[status]}</Badge>;
+  const labels = useLabels();
+  return <Badge tone={TONE[status]}>{labels.status[status]}</Badge>;
 }
 
 /** Sets a listing's status from anywhere in the panel; the lists change at once and are re-read afterwards. */
@@ -25,9 +28,7 @@ export function useStatusChange() {
     await patchCachedListings(new Set([listing.id]), { status });
     try {
       await updateListing(listing.id, { status });
-      toast.success(
-        status === 'SOLD' ? 'آگهی «معامله شد» ثبت شد.' : status === 'ARCHIVED' ? 'آگهی غیرفعال شد.' : 'آگهی دوباره فعال شد.',
-      );
+      toast.success(tNow(`status.toast.${status}`));
     } catch (error) {
       toast.error(errorMessage(error));
     } finally {
@@ -70,7 +71,7 @@ function Chip({
   );
 }
 
-/** The inline actions of one row: «معامله شد» and «غیرفعال» for a live listing, «فعال‌سازی» for the others. */
+/** The inline actions of one row: "sold" and "inactive" for a live listing, "activate" for the others. */
 export function StatusActions({
   listing,
   change,
@@ -80,25 +81,27 @@ export function StatusActions({
   change: (listing: Pick<Property, 'id' | 'status' | 'title'>, status: PropertyStatus) => void;
   busy: boolean;
 }) {
+  const t = useT();
+  const labels = useLabels();
   return (
     <div className="flex items-center gap-1.5">
       {listing.status === 'ACTIVE' ? (
         <>
           <Chip tone="gold" disabled={busy} onClick={() => change(listing, 'SOLD')}>
-            معامله شد
+            {labels.status.SOLD}
           </Chip>
           <Chip disabled={busy} onClick={() => change(listing, 'ARCHIVED')}>
-            غیرفعال
+            {labels.status.ARCHIVED}
           </Chip>
         </>
       ) : (
         <>
           <Chip tone="primary" disabled={busy} onClick={() => change(listing, 'ACTIVE')}>
-            فعال‌سازی
+            {t('status.activate')}
           </Chip>
           {listing.status === 'SOLD' ? (
             <Chip disabled={busy} onClick={() => change(listing, 'ARCHIVED')}>
-              غیرفعال
+              {labels.status.ARCHIVED}
             </Chip>
           ) : null}
         </>

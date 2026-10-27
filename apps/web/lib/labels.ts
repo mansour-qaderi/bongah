@@ -1,5 +1,4 @@
 import type {
-  AgencyVerificationStatus,
   Currency,
   DealType,
   PriceTerms,
@@ -9,62 +8,59 @@ import type {
   TransactionPurpose,
   TransactionStatus,
 } from '@bongah/shared-types';
+import { activeLanguage } from '@/i18n/active';
+import type { Language } from '@/i18n/config';
+import { translate, type MessageKey } from '@/i18n/translate';
 
-export const TYPE_LABEL: Record<PropertyType, string> = {
-  HOUSE_HAWILI: 'خانه / حویلی',
-  APARTMENT: 'آپارتمان',
-  SHOP: 'دکان',
-  OFFICE: 'دفتر',
-  LAND: 'زمین',
-  GARDEN: 'باغ',
-  VILLA: 'ویلا',
-  GARAGE: 'گاراژ',
-  OTHER: 'دیگر',
-};
+/** The names of the property types, deals, statuses and so on, in one language. Build it with `useLabels()` in a component. */
+export interface Labels {
+  type: Record<PropertyType, string>;
+  deal: Record<DealType, string>;
+  status: Record<PropertyStatus, string>;
+  terms: Record<PriceTerms, string>;
+  plan: Record<SubscriptionPackage, string>;
+  purpose: Record<TransactionPurpose, string>;
+  txStatus: Record<TransactionStatus, string>;
+  currency: Record<Currency, string>;
+}
 
-export const DEAL_LABEL: Record<DealType, string> = {
-  SALE: 'فروشی',
-  RENT: 'کرایی',
-  MORTGAGE_GROWI: 'گروی',
-};
+const PROPERTY_TYPES: readonly PropertyType[] = ['HOUSE_HAWILI', 'APARTMENT', 'SHOP', 'OFFICE', 'LAND', 'GARDEN', 'VILLA', 'GARAGE', 'OTHER'];
+const DEAL_TYPES: readonly DealType[] = ['SALE', 'RENT', 'MORTGAGE_GROWI'];
+const STATUSES: readonly PropertyStatus[] = ['ACTIVE', 'SOLD', 'ARCHIVED'];
+const TERMS: readonly PriceTerms[] = ['FIXED', 'NEGOTIABLE'];
+const PLANS: readonly SubscriptionPackage[] = ['MONTHLY', 'QUARTERLY', 'SEMIANNUAL', 'YEARLY'];
+const PURPOSES: readonly TransactionPurpose[] = ['SUBSCRIPTION', 'LADDER', 'FEATURED_AD', 'MAP_LOCATION', 'CONTACT_CREDITS', 'FEATURED_CREDITS'];
+const TX_STATUSES: readonly TransactionStatus[] = ['PENDING', 'SUCCESS', 'FAILED'];
+const CURRENCIES: readonly Currency[] = ['AFGHANI', 'USD'];
 
-export const STATUS_LABEL: Record<PropertyStatus, string> = {
-  ACTIVE: 'فعال',
-  SOLD: 'معامله شد',
-  ARCHIVED: 'غیرفعال',
-};
+function pick<K extends string>(language: Language, keys: readonly K[], key: (k: K) => MessageKey): Record<K, string> {
+  const out = {} as Record<K, string>;
+  for (const k of keys) out[k] = translate(language, key(k));
+  return out;
+}
 
-export const TERMS_LABEL: Record<PriceTerms, string> = { FIXED: 'مقطوع', NEGOTIABLE: 'جورآمد' };
+const cache = new Map<Language, Labels>();
 
-export const PLAN_LABEL: Record<SubscriptionPackage, string> = {
-  MONTHLY: 'ماهانه',
-  QUARTERLY: 'سه‌ماهه',
-  SEMIANNUAL: 'شش‌ماهه',
-  YEARLY: 'سالانه',
-};
+export function labelsFor(language: Language): Labels {
+  let hit = cache.get(language);
+  if (!hit) {
+    hit = {
+      type: pick(language, PROPERTY_TYPES, (k) => `label.type.${k}`),
+      deal: pick(language, DEAL_TYPES, (k) => `label.deal.${k}`),
+      status: pick(language, STATUSES, (k) => `label.status.${k}`),
+      terms: pick(language, TERMS, (k) => `label.terms.${k}`),
+      plan: pick(language, PLANS, (k) => `label.plan.${k}`),
+      purpose: pick(language, PURPOSES, (k) => `label.purpose.${k}`),
+      txStatus: pick(language, TX_STATUSES, (k) => `label.tx.${k}`),
+      currency: pick(language, CURRENCIES, (k) => `label.currency.${k}`),
+    };
+    cache.set(language, hit);
+  }
+  return hit;
+}
 
-export const PURPOSE_LABEL: Record<TransactionPurpose, string> = {
-  SUBSCRIPTION: 'اشتراک',
-  LADDER: 'نردبان آگهی',
-  FEATURED_AD: 'کادر ویژه',
-  MAP_LOCATION: 'موقعیت دقیق نقشه',
-  CONTACT_CREDITS: 'اعتبار تماس',
-  FEATURED_CREDITS: 'بسته کادر ویژه',
-};
-
-export const TX_STATUS_LABEL: Record<TransactionStatus, string> = {
-  PENDING: 'در انتظار',
-  SUCCESS: 'موفق',
-  FAILED: 'ناموفق',
-};
-
-export const VERIFICATION_LABEL: Record<AgencyVerificationStatus, string> = {
-  PENDING: 'در انتظار تأیید',
-  VERIFIED: 'تأیید شده',
-  REJECTED: 'رد شده',
-};
-
-export const CURRENCY_NAME: Record<Currency, string> = { AFGHANI: 'افغانی', USD: 'دالر' };
+/** For code that is not a component (parsers, validators, toasts): the labels of the language shown right now. */
+export const labelsNow = (): Labels => labelsFor(activeLanguage());
 
 /** Marker and badge colours per deal, as in the mobile app: emerald sale, blue rent, gold mortgage. */
 export const DEAL_COLOR: Record<DealType, { main: string; on: string }> = {

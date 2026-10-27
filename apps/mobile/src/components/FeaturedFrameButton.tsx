@@ -16,7 +16,8 @@ import LadderFrameOption from './LadderFrameOption';
 import PaymentProgress from './PaymentProgress';
 import { rowStyles } from './SwitchRow';
 import { showToast } from './Toast';
-import { useErrorToast } from './useErrorToast';import InlineLoader from './InlineLoader';
+import { useErrorToast } from './useErrorToast';
+import InlineLoader from './InlineLoader';
 
 
 type Promotable = Pick<

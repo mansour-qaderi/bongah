@@ -24,7 +24,8 @@ import Banner from './Banner';
 import Button from './Button';
 import PaymentProgress from './PaymentProgress';
 import { ToastHost } from './Toast';
-import { useErrorToast } from './useErrorToast';import { LoadingView } from './States';
+import { useErrorToast } from './useErrorToast';
+import { LoadingView } from './States';
 
 
 interface Props {
@@ -162,7 +163,7 @@ function SheetBody({
                 {t('contact.buyTitle')}
               </AppText>
               {pricing.isPending ? (
-                <LoadingView size={72} />
+                <LoadingView size={40} />
               ) : !prices ? (
                 <Banner kind="error" message={t('checkout.pricesFailed')}>
                   <Button

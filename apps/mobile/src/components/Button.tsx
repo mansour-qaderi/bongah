@@ -8,7 +8,8 @@ import {
 } from 'react-native';
 import { colors, radius, spacing } from '../theme';
 import ActionIcon, { type ActionIconName } from './ActionIcon';
-import AppText from './AppText';import InlineLoader from './InlineLoader';
+import AppText from './AppText';
+import InlineLoader from './InlineLoader';
 
 
 type Variant = 'primary' | 'secondary' | 'outline' | 'danger';

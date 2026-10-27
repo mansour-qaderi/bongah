@@ -1,4 +1,5 @@
 import type { ApiErrorBody } from '@bongah/shared-types';
+import { tNow } from '@/i18n/active';
 
 /** Every call from the page goes to the panel's own server, which adds the token and forwards to the API. */
 const BASE = '/api/bongah';
@@ -19,44 +20,54 @@ export class ApiError extends Error {
 }
 
 function messageForStatus(status: number): string {
-  if (status === 401) return 'نشست شما پایان یافته است. دوباره وارد شوید.';
-  if (status === 403) return 'برای این کار دسترسی ندارید.';
-  if (status === 404) return 'پیدا نشد.';
-  if (status === 429) return 'تعداد درخواست‌ها زیاد است. کمی بعد دوباره تلاش کنید.';
-  if (status >= 500) return 'خطایی در سرور رخ داد. دوباره تلاش کنید.';
-  return 'درخواست انجام نشد.';
+  if (status === 401) return tNow('err.401');
+  if (status === 403) return tNow('err.403');
+  if (status === 404) return tNow('err.404');
+  if (status === 429) return tNow('err.429');
+  if (status >= 500) return tNow('err.5xx');
+  return tNow('err.default');
 }
 
-/** The API's messages are in English; the codes it attaches to business-rule errors get Persian wording here. */
-const CODE_MESSAGES: Record<string, string> = {
-  PERKS_REQUIRED: 'این کار به اشتراک فعال دفتر نیاز دارد.',
-  SUBSCRIPTION_REQUIRED: 'این کار به اشتراک فعال دفتر نیاز دارد.',
-  AGENCY_PROFILE_REQUIRED: 'برای این حساب دفتر ثبت نشده است.',
-  AGENCY_LISTING_LIMIT_REACHED: 'سهمیه آگهی این دوره تمام شده است. اشتراک را تمدید کنید یا با نردبان سهمیه بگیرید.',
-  FREE_LISTING_LIMIT_REACHED: 'سهمیه آگهی رایگان این ماه تمام شده است.',
-  NOT_ENOUGH_LADDERS: 'نردبان کافی ندارید.',
-  NO_FEATURED_CREDITS: 'اعتبار کادر ویژه ندارید. یک بسته بخرید.',
-  PROPERTY_NOT_ACTIVE: 'فقط آگهی فعال را می‌شود ویژه کرد.',
-  LISTING_REMOVED: 'این آگهی توسط مدیریت برداشته شده است.',
-  VALIDATION_FAILED: 'اطلاعات واردشده درست نیست.',
-  IMAGE_TOO_LARGE: 'حجم عکس بیش از حد مجاز است.',
-  CROSS_SITE_REQUEST: 'این درخواست از خود پنل ارسال نشده است. صفحه را تازه کنید.',
-  PAYLOAD_TOO_LARGE: 'حجم درخواست بیش از حد مجاز است.',
-};
+/** The API's messages are in English; the codes it attaches to business-rule errors get wording here, in the language shown. */
+const KNOWN_CODES = [
+  'PERKS_REQUIRED',
+  'SUBSCRIPTION_REQUIRED',
+  'AGENCY_PROFILE_REQUIRED',
+  'AGENCY_LISTING_LIMIT_REACHED',
+  'FREE_LISTING_LIMIT_REACHED',
+  'NOT_ENOUGH_LADDERS',
+  'NO_FEATURED_CREDITS',
+  'PROPERTY_NOT_ACTIVE',
+  'LISTING_REMOVED',
+  'VALIDATION_FAILED',
+  'VALIDATION_ERROR',
+  'IMAGE_TOO_LARGE',
+  'CROSS_SITE_REQUEST',
+  'PAYLOAD_TOO_LARGE',
+  'DATABASE_UNAVAILABLE',
+  'API_UNREACHABLE',
+  'API_BAD_RESPONSE',
+  'NOT_FOUND',
+  'UNAUTHORIZED',
+] as const;
 
-/** The Persian wording for an API error code, when there is one. */
-export const messageForCode = (code: string | undefined): string | undefined => (code ? CODE_MESSAGES[code] : undefined);
+/** The wording for an API error code in the language shown now, when there is one. */
+export function messageForCode(code: string | undefined): string | undefined {
+  if (!code || !(KNOWN_CODES as readonly string[]).includes(code)) return undefined;
+  return tNow(`err.code.${code as (typeof KNOWN_CODES)[number]}`);
+}
 
-/** A readable Persian message for any thrown value. */
+/** A readable message, in the language shown, for any thrown value. */
 export function errorMessage(error: unknown): string {
   if (error instanceof ApiError) {
-    if (error.code && CODE_MESSAGES[error.code]) return CODE_MESSAGES[error.code]!;
+    const known = messageForCode(error.code);
+    if (known) return known;
     const first = error.body.errors?.[0];
     if (first && error.status === 400) return `${error.message} (${first.field}: ${first.message})`;
     return error.message;
   }
-  if (error instanceof TypeError) return 'اتصال به اینترنت برقرار نیست.';
-  return error instanceof Error && error.message ? error.message : 'خطای ناشناخته.';
+  if (error instanceof TypeError) return tNow('err.network');
+  return error instanceof Error && error.message ? error.message : tNow('err.unknown');
 }
 
 let signingOut = false;

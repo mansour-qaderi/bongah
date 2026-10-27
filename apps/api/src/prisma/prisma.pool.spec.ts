@@ -11,6 +11,16 @@ describe('readPoolSettings', () => {
     expect(s.pool.keepAlive).toBe(true);
   });
 
+  it('retries opening a connection twice and keeps a connection warm every minute, unless told otherwise', () => {
+    const s = readPoolSettings(config());
+    expect(s.connectRetries).toBe(2);
+    expect(s.keepAliveIntervalMs).toBe(60_000);
+    expect(readPoolSettings(config({ DB_CONNECT_RETRIES: '0' })).connectRetries).toBe(0);
+    expect(readPoolSettings(config({ DB_KEEPALIVE_INTERVAL_MS: '0' })).keepAliveIntervalMs).toBe(0);
+    expect(() => readPoolSettings(config({ DB_KEEPALIVE_INTERVAL_MS: '10' }))).toThrow(/DB_KEEPALIVE_INTERVAL_MS/);
+    expect(() => readPoolSettings(config({ DB_CONNECT_RETRIES: '9' }))).toThrow(/DB_CONNECT_RETRIES/);
+  });
+
   it('reads overrides and rejects nonsense', () => {
     expect(readPoolSettings(config({ DB_POOL_MAX: '4' })).pool.max).toBe(4);
     expect(() => readPoolSettings(config({ DB_POOL_MAX: '0' }))).toThrow(/DB_POOL_MAX/);

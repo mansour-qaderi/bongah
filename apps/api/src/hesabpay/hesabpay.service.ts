@@ -89,10 +89,20 @@ export class HesabpayService {
       },
     });
 
+    // Test checkout (mock gateway + HESABPAY_MOCK_AUTO_SUCCESS): there is nobody to pay and no webhook to wait for, so
+    // settle it now through the very delivery a real webhook uses. If that fails the error reaches the caller and the
+    // payment stays PENDING; nothing is half-delivered, because delivery runs in one transaction.
+    let status = payment.status;
+    if (this.settings.mockAutoSuccess) {
+      await this.settleSuccess(payment);
+      const settled = await this.prisma.transaction.findUnique({ where: { id: payment.id }, select: { status: true } });
+      status = settled?.status ?? payment.status;
+    }
+
     return {
       id: payment.id,
       purpose: payment.purpose,
-      status: payment.status,
+      status,
       amount: payment.amount.toNumber(),
       currency: this.settings.currency,
       created_at: payment.createdAt.toISOString(),
@@ -243,7 +253,16 @@ export class HesabpayService {
       return;
     }
 
-    await this.prisma.$transaction(async (db) => {
+    await this.settleSuccess(payment);
+  }
+
+  /**
+   * Marks a PENDING payment SUCCESS and delivers what it bought, atomically. The one place that does so: a verified
+   * webhook and the test checkout both end here, so a test purchase exercises exactly the production delivery.
+   * Returns false when another caller had already settled it.
+   */
+  private async settleSuccess(payment: Transaction): Promise<boolean> {
+    const delivered = await this.prisma.$transaction(async (db) => {
       // One statement flips the status AND issues the receipt (the database's CHECK constraint allows
       // a receipt only on a successful payment), and only the delivery that wins the PENDING -> SUCCESS race
       // gets a count of 1. The receipt number comes from a sequence, so a lost race never burns a duplicate.
@@ -252,10 +271,12 @@ export class HesabpayService {
         UPDATE transactions
            SET status = 'SUCCESS', paid_at = ${now}, updated_at = ${now}, receipt_number = next_receipt_number()
          WHERE id = ${payment.id}::uuid AND status = 'PENDING'`;
-      if (claimed !== 1) return; // another delivery of the same webhook won the race
+      if (claimed !== 1) return false; // another delivery of the same webhook won the race
       await fulfil(db, payment, this.settings.featuredAdDays, now, this.promotion);
+      return true;
     });
-    this.logger.log(`Payment ${payment.id} (${payment.purpose}) fulfilled`);
+    if (delivered) this.logger.log(`Payment ${payment.id} (${payment.purpose}) fulfilled`);
+    return delivered;
   }
 
   private describeMismatch(payment: Transaction, event: VerifiedWebhookEvent): string | null {

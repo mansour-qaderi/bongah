@@ -6,6 +6,7 @@ import { X } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { cn } from '@/lib/cn';
 import { Button } from './button';
+import { useT } from '@/i18n/provider';
 
 const OVERLAY = 'fixed inset-0 z-50 bg-black/45 data-[state=open]:animate-[reveal_150ms_ease-out]';
 const PANEL =
@@ -29,6 +30,7 @@ export function Dialog({
   footer?: ReactNode;
   size?: 'sm' | 'md' | 'lg';
 }) {
+  const t = useT();
   return (
     <DialogPrimitive.Root open={open} onOpenChange={onOpenChange}>
       <DialogPrimitive.Portal>
@@ -45,7 +47,7 @@ export function Dialog({
                 <DialogPrimitive.Description className="sr-only">{title}</DialogPrimitive.Description>
               )}
             </div>
-            <DialogPrimitive.Close aria-label="بستن" className="rounded-lg p-1.5 text-muted hover:bg-soft">
+            <DialogPrimitive.Close aria-label={t('common.close')} className="rounded-lg p-1.5 text-muted hover:bg-soft">
               <X className="h-4 w-4" />
             </DialogPrimitive.Close>
           </div>
@@ -77,6 +79,7 @@ export function ConfirmDialog({
   loading?: boolean;
   onConfirm: () => void;
 }) {
+  const t = useT();
   return (
     <AlertPrimitive.Root open={open} onOpenChange={onOpenChange}>
       <AlertPrimitive.Portal>
@@ -87,7 +90,7 @@ export function ConfirmDialog({
           <div className="mt-6 flex justify-end gap-2">
             <AlertPrimitive.Cancel asChild>
               <Button variant="secondary" disabled={loading}>
-                انصراف
+                {t('common.cancel')}
               </Button>
             </AlertPrimitive.Cancel>
             <Button variant={tone === 'danger' ? 'danger' : 'primary'} loading={loading} onClick={onConfirm}>

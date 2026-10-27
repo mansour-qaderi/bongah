@@ -1,12 +1,16 @@
+'use client';
+
 import { cn } from '@/lib/cn';
+import { useT } from '@/i18n/provider';
 
 /**
  * Three dots that rise in turn. Used inside buttons and small spots instead of a spinner: the panel has no default
  * spinners, in step with the phone app. Larger waits use skeletons (see skeleton.tsx).
  */
 export function LoadingDots({ className }: { className?: string }) {
+  const t = useT();
   return (
-    <span role="status" aria-label="در حال بارگذاری" className={cn('inline-flex items-center gap-1', className)}>
+    <span role="status" aria-label={t('common.loading')} className={cn('inline-flex items-center gap-1', className)}>
       {[0, 1, 2].map((i) => (
         <span
           key={i}

@@ -1,5 +1,6 @@
 import type { AgencyListingPin } from '@bongah/shared-types';
 import { DEAL_COLOR } from '@/lib/labels';
+import { tNow } from '@/i18n/active';
 
 const SOLD = '#9CA3AF';
 const GOLD = '#F59E0B';
@@ -46,15 +47,15 @@ export function clusterElement(count: number): HTMLElement {
   el.style.cssText = `width:${size}px;height:${size}px;border-radius:50%;background:#0F172A;color:#fff;border:3px solid #fff;display:flex;align-items:center;justify-content:center;font:700 13px Vazirmatn,system-ui,sans-serif;cursor:pointer;`;
   el.textContent = new Intl.NumberFormat('fa-AF-u-nu-arabext').format(count);
   el.setAttribute('role', 'button');
-  el.setAttribute('aria-label', `${count} آگهی؛ برای نزدیک شدن بزنید`);
+  el.setAttribute('aria-label', tNow('map.pin.listings', { count }));
   return el;
 }
 
 export function officeElement(): HTMLElement {
   const el = document.createElement('div');
   el.style.cssText = 'width:34px;height:34px;border-radius:10px;background:#fff;border:2px solid #047857;display:flex;align-items:center;justify-content:center;';
-  el.title = 'دفتر شما';
-  el.setAttribute('aria-label', 'دفتر شما');
+  el.title = tNow('map.pin.office');
+  el.setAttribute('aria-label', tNow('map.pin.office'));
   const ns = 'http://www.w3.org/2000/svg';
   const svg = document.createElementNS(ns, 'svg');
   svg.setAttribute('viewBox', '0 0 24 24');

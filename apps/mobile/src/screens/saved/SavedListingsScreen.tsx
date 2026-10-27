@@ -11,7 +11,8 @@ import { queryKeys } from '../../api/hooks';
 import AppText from '../../components/AppText';
 import EmptyState from '../../components/EmptyState';
 import PropertyCard from '../../components/PropertyCard';
-import { Screen } from '../../components/Screen';import { PropertyCardSkeleton } from '../../components/SkeletonLoader';
+import { Screen } from '../../components/Screen';
+import { PropertyCardSkeleton } from '../../components/SkeletonLoader';
 
 import { formatNumber } from '../../i18n/format';
 import { useSaved } from '../../favorites/store';

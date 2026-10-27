@@ -10,8 +10,10 @@ import { ErrorState } from '@/components/ui/empty-state';
 import { Skeleton } from '@/components/ui/skeleton';
 import { errorMessage } from '@/lib/api';
 import { usePricing, useReferrals, useWallet } from '@/hooks/use-api';
+import { useT } from '@/i18n/provider';
 
 export default function SubscriptionPage() {
+  const t = useT();
   const wallet = useWallet();
   const pricing = usePricing();
   const referrals = useReferrals();
@@ -19,8 +21,8 @@ export default function SubscriptionPage() {
   return (
     <div className="mx-auto max-w-7xl space-y-6">
       <div>
-        <h1 className="text-xl font-extrabold text-ink">اشتراک و سهمیه</h1>
-        <p className="mt-1 text-[13px] text-muted">بسته‌ها، نردبان، کادر ویژه و دعوت دوستان؛ با اپلیکیشن موبایل هم‌گام است.</p>
+        <h1 className="text-xl font-extrabold text-ink">{t('sub.page.title')}</h1>
+        <p className="mt-1 text-[13px] text-muted">{t('sub.page.subtitle')}</p>
       </div>
 
       {wallet.data ? (

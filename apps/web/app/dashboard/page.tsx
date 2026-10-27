@@ -14,10 +14,12 @@ import { EmptyState, ErrorState } from '@/components/ui/empty-state';
 import { ChartSkeleton, StatCardSkeleton } from '@/components/ui/skeleton';
 import { StatCard } from '@/components/ui/stat-card';
 import { cn } from '@/lib/cn';
+import { useT } from '@/i18n/provider';
 
 const RANGES = [7, 30, 90] as const;
 
 export default function OverviewPage() {
+  const t = useT();
   const [days, setDays] = useState<(typeof RANGES)[number]>(30);
   const dashboard = useDashboard();
   const wallet = useWallet();
@@ -29,47 +31,47 @@ export default function OverviewPage() {
 
   return (
     <div className="mx-auto max-w-7xl space-y-6">
-      <DashboardBanners dashboard={dashboard.data} wallet={wallet.data} />
+      <DashboardBanners wallet={wallet.data} />
 
-      <section aria-label="آمار" className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <section aria-label={t('dash.stats.aria')} className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {!dashboard.data && !dashboard.error ? (
           Array.from({ length: 4 }, (_, i) => <StatCardSkeleton key={i} />)
         ) : (
           <>
             <StatCard
-              label="آگهی‌های فعال"
+              label={t('dash.active.label')}
               icon={LayoutList}
               href="/dashboard/listings"
               value={formatNumber(stats?.active_listings ?? 0)}
-              hint={`از ${formatNumber(stats?.total_properties ?? 0)} آگهی · ${formatNumber(stats?.featured_listings ?? 0)} با کادر ویژه`}
+              hint={t('dash.active.hint', { total: formatNumber(stats?.total_properties ?? 0), featured: formatNumber(stats?.featured_listings ?? 0) })}
             />
             <StatCard
-              label="کل بازدیدها"
+              label={t('dash.views.label')}
               icon={Eye}
               tone="info"
               value={formatNumber(analytics.data?.lifetime_views ?? stats?.total_views ?? 0)}
-              hint={totals ? `${formatNumber(totals.views)} بازدید در ${formatNumber(days)} روز اخیر` : 'در حال محاسبه…'}
+              hint={totals ? t('dash.views.hint', { views: formatNumber(totals.views), days: formatNumber(days) }) : t('common.calculating')}
             />
             <StatCard
-              label="تماس‌ها و پیام‌ها"
+              label={t('dash.contacts.label')}
               icon={Phone}
               tone="gold"
               value={totals ? formatNumber(totals.phone_reveals + totals.leads) : '—'}
               hint={
                 totals
-                  ? `${formatNumber(totals.phone_reveals)} تماس · ${formatNumber(totals.leads)} پیام (${formatNumber(days)} روز اخیر)`
-                  : 'در حال محاسبه…'
+                  ? t('dash.contacts.hint', { calls: formatNumber(totals.phone_reveals), messages: formatNumber(totals.leads), days: formatNumber(days) })
+                  : t('common.calculating')
               }
             />
             <StatCard
-              label="سهمیه و نردبان باقی‌مانده"
+              label={t('dash.quota.label')}
               icon={Layers}
               href="/dashboard/subscription"
               value={
                 quota ? (
                   <span className="flex items-baseline gap-2">
-                    {quota.remaining === null ? 'نامحدود' : formatNumber(quota.remaining)}
-                    <span className="text-sm font-semibold text-muted">آگهی</span>
+                    {quota.remaining === null ? t('dash.quota.unlimited') : formatNumber(quota.remaining)}
+                    <span className="text-sm font-semibold text-muted">{t('dash.quota.unit')}</span>
                   </span>
                 ) : (
                   '—'
@@ -77,7 +79,8 @@ export default function OverviewPage() {
               }
               hint={
                 quota
-                  ? `${formatNumber(quota.ladders)} نردبان${quota.extra ? ` · ${formatNumber(quota.extra)} آگهی هدیه` : ''}`
+                  ? t('dash.quota.hint', { ladders: formatNumber(quota.ladders) }) +
+                    (quota.extra ? t('dash.quota.gift', { extra: formatNumber(quota.extra) }) : '')
                   : undefined
               }
             />
@@ -88,10 +91,10 @@ export default function OverviewPage() {
       <div className="grid gap-6 xl:grid-cols-3">
         <Card className="xl:col-span-2">
           <CardHeader
-            title="عملکرد آگهی‌ها"
-            description="بازدید، پیام و تماس به تفکیک روز (به وقت کابل)"
+            title={t('dash.perf.title')}
+            description={t('dash.perf.desc')}
             action={
-              <div role="group" aria-label="بازه زمانی" className="flex rounded-xl bg-soft p-1">
+              <div role="group" aria-label={t('dash.perf.range')} className="flex rounded-xl bg-soft p-1">
                 {RANGES.map((r) => (
                   <button
                     key={r}
@@ -102,7 +105,7 @@ export default function OverviewPage() {
                       days === r ? 'bg-surface text-primary ring-1 ring-line' : 'text-ink-2 hover:text-primary',
                     )}
                   >
-                    {formatNumber(r)} روز
+                    {t('time.days', { n: formatNumber(r) })}
                   </button>
                 ))}
               </div>
@@ -112,7 +115,7 @@ export default function OverviewPage() {
             {!analytics.data && !analytics.error ? (
               <ChartSkeleton />
             ) : analytics.error && !analytics.data ? (
-              <ErrorState message="نمودار بارگذاری نشد." onRetry={() => void analytics.mutate()} />
+              <ErrorState message={t('dash.perf.error')} onRetry={() => void analytics.mutate()} />
             ) : analytics.data ? (
               <PerformanceChart analytics={analytics.data} />
             ) : null}
@@ -120,7 +123,7 @@ export default function OverviewPage() {
         </Card>
 
         <Card>
-          <CardHeader title="پربازدیدترین آگهی‌ها" description="آگهی‌های فعال، بیشترین بازدید اول" />
+          <CardHeader title={t('dash.top.title')} description={t('dash.top.desc')} />
           <div className="mt-3 pb-2">
             {!dashboard.data && !dashboard.error ? (
               <div className="space-y-4 px-5 pb-3">
@@ -129,7 +132,7 @@ export default function OverviewPage() {
                 ))}
               </div>
             ) : dashboard.data && dashboard.data.top_listings.length === 0 ? (
-              <EmptyState compact icon={TrendingUp} title="هنوز بازدیدی نیست" description="وقتی آگهی‌هایتان بازدید بگیرند، اینجا دیده می‌شوند." />
+              <EmptyState compact icon={TrendingUp} title={t('dash.top.emptyTitle')} description={t('dash.top.emptyText')} />
             ) : (
               <ol className="divide-y divide-line">
                 {dashboard.data?.top_listings.map((l, i) => (

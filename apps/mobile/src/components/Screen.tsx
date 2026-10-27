@@ -2,9 +2,9 @@ import React from 'react';
 import { StyleSheet, type StyleProp, type ViewStyle } from 'react-native';
 import { SafeAreaView, type Edge } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
-import AppLoader from './AppLoader';
 import { colors, spacing } from '../theme';
 import { KeyboardAwareScrollView } from './KeyboardAware';
+import Spinner from './Spinner';
 
 interface Props {
   children: React.ReactNode;
@@ -13,7 +13,7 @@ interface Props {
   style?: StyleProp<ViewStyle>;
   /**
    * A request is in flight and nothing on the screen should be touched until it is done (sending the code, signing
-   * in): the branded loader lies over the screen under a pale veil.
+   * in): the green spinner lies over the screen under a pale veil.
    */
   busy?: boolean;
 }
@@ -21,7 +21,7 @@ interface Props {
 /** The veil. Its own component so the words come from the translations only when it is shown. */
 function BusyVeil() {
   const { t } = useTranslation();
-  return <AppLoader overlay size={96} label={t('common.loading')} />;
+  return <Spinner overlay size={44} label={t('common.loading')} />;
 }
 
 export function Screen({
