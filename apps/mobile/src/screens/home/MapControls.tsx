@@ -192,6 +192,28 @@ export function StatusPill({
 }
 
 /**
+ * The place the middle of the map is over («neighbourhood، district، province»), as a quiet pill under the top row.
+ * Nothing is drawn until a name is known, so the map never shows a placeholder.
+ */
+export function AreaTitle({ name }: { name: string | null }) {
+  const { t } = useTranslation();
+  if (!name) return null;
+  return (
+    <View
+      style={styles.area}
+      testID="map-area"
+      accessible
+      accessibilityLabel={`${t('map.areaAria')}: ${name}`}
+    >
+      <Icon name="pin" size={14} color={colors.primary} background={colors.surface} />
+      <AppText variant="caption" color={colors.text} numberOfLines={1} style={styles.areaText}>
+        {name}
+      </AppText>
+    </View>
+  );
+}
+
+/**
  * The pill at the foot of the map that swaps between the map and the list: both choices side by side. The current one
  * is filled in emerald; choosing the other one passes the fill over to it (it fades and scales in on the new tab while
  * it leaves the old one, and the icons and words change ink with it) instead of jumping. Tapping the current one does
@@ -333,6 +355,18 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  area: {
+    alignSelf: 'center',
+    maxWidth: '80%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    ...surfaces.floating,
+    borderRadius: radius.pill,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 4,
+  },
+  areaText: { flexShrink: 1, fontWeight: '600' },
   status: {
     alignSelf: 'center',
     flexDirection: 'row',

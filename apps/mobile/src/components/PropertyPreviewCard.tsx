@@ -17,7 +17,7 @@ import Badge, { badgeTones, DealBadge } from './Badge';
 import ContactActionBar from './ContactActionBar';
 import ContactLockSheet from './ContactLockSheet';
 import Icon from './Icon';
-import Price from './Price';
+import PriceLine from './PriceLine';
 import PropertyFacts, { propertyPlace } from './PropertyFacts';
 import MapLoader from './MapLoader';
 
@@ -95,9 +95,8 @@ export default function PropertyPreviewCard({
             <AppText variant="label" numberOfLines={2}>
               {property.title}
             </AppText>
-            <Price
-              amount={property.price}
-              currency={property.currency}
+            <PriceLine
+              property={property}
               variant="heading"
               color={colors.primaryDark}
             />

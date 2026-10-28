@@ -1,10 +1,14 @@
 import { randomBytes } from 'node:crypto';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
   CURRENCIES,
   SUBSCRIPTION_BASE_MONTHLY_PRICE,
   SUBSCRIPTION_PACKAGES,
+  type ManualPaymentAccount,
+  type ManualPaymentInfo,
 } from '@bongah/shared-types';
 import type { Currency, SubscriptionPackage } from '../generated/prisma/client.js';
 import { asPriceText, defaultPriceOf } from './subscription-prices.js';
@@ -12,8 +16,13 @@ import { asPriceText, defaultPriceOf } from './subscription-prices.js';
 export const HESABPAY_SETTINGS = Symbol('HESABPAY_SETTINGS');
 
 export interface HesabPaySettings {
-  /** "mock" never contacts HesabPay and charges nobody. In production it is only used when chosen on purpose, or as the fallback for a missing HESABPAY_API_KEY (with a warning). */
-  mode: 'mock' | 'live';
+  /**
+   * "mock" never contacts HesabPay and charges nobody. In production it is only used when chosen on purpose, or as the
+   * fallback for a missing HESABPAY_API_KEY (with a warning).
+   * "manual" takes real money without a payment provider: the customer sends it to the accounts in `manual` (HesabPay
+   * app or card-to-card), uploads a picture of the receipt, and an admin confirms it. No webhook is accepted.
+   */
+  mode: 'mock' | 'live' | 'manual';
   baseUrl: string;
   apiKey: string;
   /**
@@ -43,7 +52,15 @@ export interface HesabPaySettings {
   featuredAdDays: number;
   /** How many contact reveal credits one pack contains. Stored on the payment when it is started. */
   contactCreditsPerPack: number;
+  /** Where a manual payment is sent (mode "manual"; empty otherwise). */
+  manual: ManualPaymentInfo;
+  /** The largest receipt picture a customer may upload (MANUAL_PAY_PROOF_MAX_BYTES). */
+  proofMaxBytes: number;
+  /** Where receipt pictures are kept (UPLOAD_DIR, like the chat pictures). Production needs object storage, see ChatImageStorage. */
+  uploadDir: string;
 }
+
+export const DEFAULT_PROOF_MAX_BYTES = 5_000_000;
 
 const DEFAULT_BASE_URL = 'https://api.hesab.com/api/v1';
 
@@ -67,8 +84,8 @@ export function readHesabPaySettings(config: ConfigService): HesabPaySettings {
   const production = config.get<string>('NODE_ENV') === 'production';
   const logger = new Logger('HesabPayConfig');
   const requested = config.get<string>('HESABPAY_MODE')?.trim() || (production ? 'live' : 'mock');
-  if (requested !== 'mock' && requested !== 'live') {
-    throw new Error('HESABPAY_MODE must be "mock" or "live".');
+  if (requested !== 'mock' && requested !== 'live' && requested !== 'manual') {
+    throw new Error('HESABPAY_MODE must be "mock", "live" or "manual".');
   }
 
   const text = (name: string): string => config.get<string>(name)?.trim() ?? '';
@@ -91,6 +108,8 @@ export function readHesabPaySettings(config: ConfigService): HesabPaySettings {
   };
 
   const apiKey = mode === 'live' ? required('HESABPAY_API_KEY') : text('HESABPAY_API_KEY');
+  // Live and manual both take real money, so what they charge is never left to a placeholder.
+  const realMoney = mode !== 'mock';
 
   const autoRaw = text('HESABPAY_MOCK_AUTO_SUCCESS').toLowerCase();
   if (autoRaw && !['true', 'false', '1', '0'].includes(autoRaw)) {
@@ -99,8 +118,8 @@ export function readHesabPaySettings(config: ConfigService): HesabPaySettings {
   const wantsAutoSuccess = autoRaw === 'true' || autoRaw === '1';
   // Real money is never auto-approved: the flag only counts when the gateway is the mock one.
   const mockAutoSuccess = wantsAutoSuccess && mode === 'mock';
-  if (wantsAutoSuccess && mode === 'live') {
-    logger.warn('HESABPAY_MOCK_AUTO_SUCCESS is ignored in live mode: real payments are only completed by HesabPay.');
+  if (wantsAutoSuccess && mode !== 'mock') {
+    logger.warn(`HESABPAY_MOCK_AUTO_SUCCESS is ignored in ${mode} mode: real payments are only completed by ${mode === 'live' ? 'HesabPay' : 'an admin'}.`);
   } else if (mockAutoSuccess) {
     logger.warn(
       'HESABPAY_MOCK_AUTO_SUCCESS is on: every purchase succeeds instantly and nobody is charged. ' +
@@ -127,21 +146,21 @@ export function readHesabPaySettings(config: ConfigService): HesabPaySettings {
   }
 
   const price = (name: keyof typeof MOCK_DEFAULT_PRICES): string => {
-    const raw = mode === 'live' ? required(name) : text(name) || MOCK_DEFAULT_PRICES[name];
+    const raw = realMoney ? required(name) : text(name) || MOCK_DEFAULT_PRICES[name];
     if (!PRICE_PATTERN.test(raw) || Number(raw) <= 0) {
       throw new Error(`${name} must be a positive amount with at most 2 decimals (got "${raw}").`);
     }
     return raw;
   };
 
-  const rawDays = mode === 'live' ? required('HESABPAY_FEATURED_AD_DAYS') : text('HESABPAY_FEATURED_AD_DAYS') || '7';
+  const rawDays = realMoney ? required('HESABPAY_FEATURED_AD_DAYS') : text('HESABPAY_FEATURED_AD_DAYS') || '7';
   const featuredAdDays = Number(rawDays);
   if (!Number.isInteger(featuredAdDays) || featuredAdDays < 1 || featuredAdDays > 365) {
     throw new Error('HESABPAY_FEATURED_AD_DAYS must be a whole number of days between 1 and 365.');
   }
 
   const rawPack =
-    mode === 'live'
+    realMoney
       ? required('HESABPAY_CONTACT_CREDITS_PER_PACK')
       : text('HESABPAY_CONTACT_CREDITS_PER_PACK') || MOCK_DEFAULT_CONTACT_CREDITS_PER_PACK;
   const contactCreditsPerPack = Number(rawPack);
@@ -187,5 +206,48 @@ export function readHesabPaySettings(config: ConfigService): HesabPaySettings {
     },
     featuredAdDays,
     contactCreditsPerPack,
+    manual: mode === 'manual' ? readManualPayment(text) : { accounts: [], note: null },
+    proofMaxBytes: proofMaxBytes(text('MANUAL_PAY_PROOF_MAX_BYTES')),
+    uploadDir: text('UPLOAD_DIR') || join(tmpdir(), 'bongah-uploads'),
   };
+}
+
+function proofMaxBytes(raw: string): number {
+  if (!raw) return DEFAULT_PROOF_MAX_BYTES;
+  const value = Number(raw);
+  if (!/^\d+$/.test(raw) || value < 100_000 || value > 50_000_000) {
+    throw new Error('MANUAL_PAY_PROOF_MAX_BYTES must be a whole number of bytes between 100000 and 50000000.');
+  }
+  return value;
+}
+
+/**
+ * The accounts a customer sends a manual payment to, from the environment: a HesabPay wallet (the phone number it is
+ * registered to), a bank card, or both. At least one is required: a manual payment screen with nowhere to send the
+ * money would take orders nobody can pay. Nothing here is a default: these are the operator's own accounts.
+ */
+function readManualPayment(text: (name: string) => string): ManualPaymentInfo {
+  const accounts: ManualPaymentAccount[] = [];
+  const account = (kind: ManualPaymentAccount['kind'], numberVar: string, holderVar: string, bank: string | null) => {
+    const number = text(numberVar);
+    const holder = text(holderVar);
+    if (!number && !holder) return;
+    if (!number || !holder) throw new Error(`${numberVar} and ${holderVar} must be set together.`);
+    if (number.length > 40 || !/\d{6,}/.test(number.replace(/[\s\-+()]/g, ''))) {
+      throw new Error(`${numberVar} must be a phone or card number (digits, spaces and dashes).`);
+    }
+    if (holder.length > 80) throw new Error(`${holderVar} must be at most 80 characters.`);
+    accounts.push({ kind, number, holder, bank });
+  };
+  account('HESABPAY', 'MANUAL_PAY_HESABPAY_PHONE', 'MANUAL_PAY_HESABPAY_HOLDER', null);
+  account('CARD', 'MANUAL_PAY_CARD_NUMBER', 'MANUAL_PAY_CARD_HOLDER', text('MANUAL_PAY_CARD_BANK') || null);
+  if (accounts.length === 0) {
+    throw new Error(
+      'HESABPAY_MODE=manual needs somewhere to send the money: set MANUAL_PAY_HESABPAY_PHONE and ' +
+        'MANUAL_PAY_HESABPAY_HOLDER, or MANUAL_PAY_CARD_NUMBER and MANUAL_PAY_CARD_HOLDER (or both).',
+    );
+  }
+  const note = text('MANUAL_PAY_NOTE');
+  if (note.length > 300) throw new Error('MANUAL_PAY_NOTE must be at most 300 characters.');
+  return { accounts, note: note || null };
 }

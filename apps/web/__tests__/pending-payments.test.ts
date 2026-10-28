@@ -23,6 +23,12 @@ describe('pending payments', () => {
     expect(readPending(now + 20)).toEqual([]);
   });
 
+  it('remembers that a payment is paid by hand', () => {
+    rememberPayment({ id: 'm1', purpose: 'SUBSCRIPTION', manual: true }, now);
+    expect(readPending(now + 1)).toEqual([{ id: 'm1', purpose: 'SUBSCRIPTION', manual: true, startedAt: now }]);
+    forgetPayment('m1', now + 1);
+  });
+
   it('keeps only the last few', () => {
     for (let i = 0; i < 12; i += 1) rememberPayment({ id: `q${i}`, purpose: 'LADDER' }, now + i);
     const ids = readPending(now + 100).map((p) => p.id);

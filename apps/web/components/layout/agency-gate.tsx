@@ -1,6 +1,7 @@
 'use client';
 
 import type { ReactNode } from 'react';
+import { usePathname } from 'next/navigation';
 import { ShieldAlert } from 'lucide-react';
 import { ApiError } from '@/lib/api';
 import { useDashboard, useMe } from '@/hooks/use-api';
@@ -20,6 +21,11 @@ export function AgencyGate({ children }: { children: ReactNode }) {
   const t = useT();
   const { error } = useDashboard();
   const { data: me, error: meError } = useMe();
+  const pathname = usePathname();
+
+  // The admin pages are not about an office: an admin has none (and cannot get one), so the form or the notice below
+  // would only stand between the admin and the page.
+  if (pathname.startsWith('/dashboard/admin/')) return <>{children}</>;
 
   if (error instanceof ApiError && error.code === 'AGENCY_PROFILE_REQUIRED') {
     if (!me && !meError) return <Skeleton className="mx-auto h-72 max-w-4xl rounded-2xl" />;

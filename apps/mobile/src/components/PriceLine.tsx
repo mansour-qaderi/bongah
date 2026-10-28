@@ -14,10 +14,15 @@ export default function PriceLine({
   property,
   style,
   priceStyle,
+  variant = 'title',
+  color = colors.primary,
 }: {
   property: Pick<Property, 'price' | 'currency' | 'price_terms'>;
   style?: StyleProp<ViewStyle>;
   priceStyle?: StyleProp<TextStyle>;
+  /** The price's type size (the card's own: «title» on the lists, «heading» on the map card). */
+  variant?: React.ComponentProps<typeof Price>['variant'];
+  color?: string;
 }) {
   const { t } = useTranslation();
   return (
@@ -25,8 +30,8 @@ export default function PriceLine({
       <Price
         amount={property.price}
         currency={property.currency}
-        variant="title"
-        color={colors.primary}
+        variant={variant}
+        color={color}
         style={priceStyle}
       />
       {property.price_terms ? (

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Linking, Pressable, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useTranslation } from 'react-i18next';
 import { APP_VERSION } from '../../appInfo';
@@ -9,28 +9,18 @@ import Card from '../../components/Card';
 import FeedbackSheet from '../../components/FeedbackSheet';
 import Logo from '../../components/Logo';
 import { ScrollScreen } from '../../components/Screen';
-import { MAP_ATTRIBUTION, MAP_ATTRIBUTION_URL } from '../../config';
 import { toPersianDigits } from '../../i18n/format';
 import type { RootStackParamList } from '../../navigation/types';
 import { colors, spacing } from '../../theme';
 
 /** One "label … value" line of the app's details. */
-function Detail({
-  label,
-  value,
-  latin,
-}: {
-  label: string;
-  value: string;
-  /** The value is Latin text (a credit line) that must keep its digits and letters as they are. */
-  latin?: boolean;
-}) {
+function Detail({ label, value }: { label: string; value: string }) {
   return (
     <View style={styles.detail}>
       <AppText variant="caption" color={colors.textMuted}>
         {label}
       </AppText>
-      <AppText variant="label" latinDigits={latin}>
+      <AppText variant="label">
         {value}
       </AppText>
     </View>
@@ -38,8 +28,7 @@ function Detail({
 }
 
 /**
- * "درباره ما": what Bongah is for, what it lets you do, the app's own details (name, version, languages, where the map
- * comes from) and a way to reach the team, which is the feedback sheet. Plain facts only: nothing here is a claim the
+ * "درباره ما": what Bongah is for, what it lets you do, the app's own details (name, version, languages) and a way to reach the team, which is the feedback sheet. Plain facts only: nothing here is a claim the
  * app cannot back up.
  */
 type Props = NativeStackScreenProps<RootStackParamList, 'About'>;
@@ -80,14 +69,6 @@ export default function AboutScreen({ navigation }: Props) {
           label={t('about.languages')}
           value={t('about.languagesValue')}
         />
-        <Detail label={t('about.manager')} value={t('about.managerValue')} />
-        <Pressable
-          accessibilityRole="link"
-          accessibilityLabel={`${t('about.map')}: ${MAP_ATTRIBUTION}`}
-          onPress={() => Linking.openURL(MAP_ATTRIBUTION_URL).catch(() => {})}
-        >
-          <Detail label={t('about.map')} value={MAP_ATTRIBUTION} latin />
-        </Pressable>
       </Card>
 
       <Card>

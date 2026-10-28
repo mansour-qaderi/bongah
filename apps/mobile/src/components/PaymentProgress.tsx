@@ -8,6 +8,7 @@ import AppText from './AppText';
 import Banner from './Banner';
 import { useErrorToast } from './useErrorToast';
 import Button from './Button';
+import ManualPaymentPanel from './ManualPaymentPanel';
 
 /**
  * What the person sees after the HesabPay page was opened: waiting, paid, or failed, with the
@@ -29,6 +30,8 @@ export default function PaymentProgress({
     flow.openFailed,
   );
   if (!payment) return null;
+  // Paid by hand: no payment page was opened, so there is nothing to wait for or reopen.
+  if (flow.manual) return <ManualPaymentPanel flow={flow} onDone={onDone} />;
 
   return (
     <>

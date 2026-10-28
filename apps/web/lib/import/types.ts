@@ -16,6 +16,13 @@ export interface DraftRow {
   area_sqm: string;
   bedrooms: string;
   bathrooms: string;
+  /**
+   * How many storeys the house has ("2"), when the text said so. The API has no field for it, so it is not sent as one: it
+   * goes into the generated title and description. Optional because drafts saved before it existed do not have it.
+   */
+  floors?: string;
+  /** The contact number the text carried, as +93XXXXXXXXX. Kept for the agent to see; the API gets no phone (callers go through the app). */
+  phone?: string;
   province: string;
   district: string;
   neighborhood: string;
@@ -58,6 +65,8 @@ export function emptyDraft(source: DraftRow['source'], defaults: Partial<DraftRo
     area_sqm: '',
     bedrooms: '',
     bathrooms: '',
+    floors: '',
+    phone: '',
     province: '',
     district: '',
     neighborhood: '',

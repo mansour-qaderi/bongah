@@ -1,10 +1,7 @@
 'use client';
 
-import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Plus } from 'lucide-react';
 import { cn } from '@/lib/cn';
-import { Button } from '@/components/ui/button';
 import { SidebarIcon } from '@/components/ui/sidebar-icon';
 import { PlanBadge } from './plan-badge';
 import { titleKeyFor } from './nav';
@@ -15,7 +12,7 @@ const ICON_BUTTON =
 
 /**
  * The top bar. At its start (the right edge, next to the sidebar) sits the sidebar control and the page title; at its
- * end the plan and the main action. The signed-in person (name, phone, log out) is no longer here: it is the footer of
+ * end the plan badge, and nothing else: creating a listing lives in the sidebar, not up here. The signed-in person (name, phone, log out) is no longer here: it is the footer of
  * the sidebar. The control opens the drawer on a narrow screen and collapses or expands the sidebar from the lg
  * breakpoint up; it carries no visible text, only its accessible name.
  */
@@ -65,12 +62,6 @@ export function Header({
         <div className="hidden md:block">
           <PlanBadge />
         </div>
-        <Link href="/dashboard/listings/quick-add">
-          <Button size="md" className="gap-1.5">
-            <Plus aria-hidden className="h-4 w-4" strokeWidth={2.6} />
-            <span>{t('header.newListing')}</span>
-          </Button>
-        </Link>
       </div>
     </header>
   );

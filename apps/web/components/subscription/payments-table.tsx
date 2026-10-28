@@ -2,13 +2,14 @@
 
 import { useState } from 'react';
 import useSWR from 'swr';
-import { ChevronLeft, ChevronRight, Printer, Receipt as ReceiptIcon } from 'lucide-react';
+import { ChevronLeft, ChevronRight, ImagePlus, Printer, Receipt as ReceiptIcon } from 'lucide-react';
 import type { PaymentSummary, Receipt } from '@bongah/shared-types';
 import { errorMessage, fetcher } from '@/lib/api';
 import { formatDateTime, formatMoney, formatNumber } from '@/lib/format';
 import type { Labels } from '@/lib/labels';
 import { useT } from '@/i18n/provider';
 import { useLabels } from '@/i18n/use-labels';
+import { openManualPayment } from '@/lib/manual-payment';
 import { usePayments } from '@/hooks/use-api';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -19,7 +20,28 @@ import { Skeleton, TableRowsSkeleton } from '@/components/ui/skeleton';
 
 const TONE = { SUCCESS: 'primary', PENDING: 'gold', FAILED: 'danger' } as const;
 
-function describe(p: PaymentSummary, labels: Labels): string {
+/** The status, with what a payment made by hand is waiting for (the customer's receipt, then an admin) or why it was refused. */
+function StatusCell({ payment }: { payment: PaymentSummary }) {
+  const t = useT();
+  const labels = useLabels();
+  if (payment.method === 'MANUAL' && payment.status === 'PENDING') {
+    return payment.receipt_uploaded || payment.reference ? (
+      <Badge tone="info">{t('pm.status.review')}</Badge>
+    ) : (
+      <Badge tone="gold">{t('pm.status.needReceipt')}</Badge>
+    );
+  }
+  return (
+    <>
+      <Badge tone={TONE[payment.status]}>{labels.txStatus[payment.status]}</Badge>
+      {payment.status === 'FAILED' && payment.review_note ? (
+        <p className="mt-1 max-w-[14rem] text-xs leading-5 text-muted">{t('pm.reasonNote', { reason: payment.review_note })}</p>
+      ) : null}
+    </>
+  );
+}
+
+export function describePayment(p: PaymentSummary, labels: Labels): string {
   const base = labels.purpose[p.purpose];
   if (p.purpose === 'SUBSCRIPTION' && p.package_type) return `${base} ${labels.plan[p.package_type]}`;
   if (p.property_title) return `${base} · ${p.property_title}`;
@@ -60,10 +82,10 @@ export function PaymentsTable() {
                 <tbody className="divide-y divide-line">
                   {data.data.map((p) => (
                     <tr key={p.id}>
-                      <td className="max-w-[16rem] truncate py-2.5 pe-3 font-semibold text-ink">{describe(p, labels)}</td>
+                      <td className="max-w-[16rem] truncate py-2.5 pe-3 font-semibold text-ink">{describePayment(p, labels)}</td>
                       <td className="tabular py-2.5 pe-3 text-ink-2">{formatMoney(p.amount, p.currency)}</td>
                       <td className="py-2.5 pe-3">
-                        <Badge tone={TONE[p.status]}>{labels.txStatus[p.status]}</Badge>
+                        <StatusCell payment={p} />
                       </td>
                       <td className="tabular py-2.5 pe-3 text-xs text-muted">{formatDateTime(p.paid_at ?? p.created_at)}</td>
                       <td className="py-2.5">
@@ -71,6 +93,12 @@ export function PaymentsTable() {
                           <Button size="sm" variant="ghost" onClick={() => setReceiptFor(p.id)} className="gap-1.5">
                             <ReceiptIcon aria-hidden className="h-3.5 w-3.5" />
                             {t('pay.col.receipt')}
+                          </Button>
+                        ) : p.method === 'MANUAL' && p.status === 'PENDING' ? (
+                          // Paid by hand and not yet decided: this is where a receipt is sent, or sent again.
+                          <Button size="sm" variant="secondary" onClick={() => openManualPayment(p.id)} className="gap-1.5" data-testid="pay-upload">
+                            <ImagePlus aria-hidden className="h-3.5 w-3.5" />
+                            {t('pm.action.upload')}
                           </Button>
                         ) : (
                           <span className="text-xs text-muted">—</span>

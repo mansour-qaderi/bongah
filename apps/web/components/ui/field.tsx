@@ -1,12 +1,12 @@
 'use client';
 
-import { forwardRef, useId, type InputHTMLAttributes, type ReactNode, type SelectHTMLAttributes, type TextareaHTMLAttributes } from 'react';
-import { ChevronDown } from 'lucide-react';
+import { forwardRef, useId, type InputHTMLAttributes, type ReactNode, type TextareaHTMLAttributes } from 'react';
+import { Check, Minus } from 'lucide-react';
 import { cn } from '@/lib/cn';
+import { CONTROL } from './control';
 
-const CONTROL =
-  'w-full rounded-xl border bg-surface px-3 text-sm text-ink placeholder:text-placeholder transition-colors ' +
-  'focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 disabled:bg-soft disabled:text-muted';
+// The select is drawn by the app (select.tsx), not by the browser; it is still imported from here, with the other fields.
+export { Select, type SelectChangeEvent, type SelectProps } from './select';
 
 export const Input = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputElement> & { invalid?: boolean }>(
   function Input({ className, invalid, ...rest }, ref) {
@@ -30,24 +30,6 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaHTMLAttributes<H
         className={cn(CONTROL, 'min-h-24 py-2 leading-7', invalid ? 'border-danger' : 'border-line-strong', className)}
         {...rest}
       />
-    );
-  },
-);
-
-export const Select = forwardRef<HTMLSelectElement, SelectHTMLAttributes<HTMLSelectElement> & { invalid?: boolean }>(
-  function Select({ className, invalid, children, ...rest }, ref) {
-    return (
-      <div className="relative">
-        <select
-          ref={ref}
-          aria-invalid={invalid || undefined}
-          className={cn(CONTROL, 'h-10 appearance-none pe-3 ps-9', invalid ? 'border-danger' : 'border-line-strong', className)}
-          {...rest}
-        >
-          {children}
-        </select>
-        <ChevronDown aria-hidden className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
-      </div>
     );
   },
 );
@@ -90,6 +72,11 @@ export function Field({
   );
 }
 
+/**
+ * A check box drawn by the app: a rounded square that fills green with a tick (or a dash when only some of a group are
+ * ticked). It is a button with role=checkbox, so the keyboard (Space) and screen readers treat it as one; `label` is its
+ * name, and `children`, when given, is a visible label beside the box that toggles it too.
+ */
 export function Checkbox({
   checked,
   onChange,
@@ -97,6 +84,8 @@ export function Checkbox({
   indeterminate,
   className,
   disabled,
+  children,
+  id,
 }: {
   checked: boolean;
   onChange: (next: boolean) => void;
@@ -104,19 +93,38 @@ export function Checkbox({
   indeterminate?: boolean;
   className?: string;
   disabled?: boolean;
+  children?: ReactNode;
+  id?: string;
 }) {
+  const mixed = Boolean(indeterminate) && !checked;
   return (
-    <input
-      type="checkbox"
+    <button
+      type="button"
+      id={id}
+      role="checkbox"
+      aria-checked={mixed ? 'mixed' : checked}
       aria-label={label}
-      checked={checked}
       disabled={disabled}
-      ref={(el) => {
-        if (el) el.indeterminate = Boolean(indeterminate) && !checked;
-      }}
-      onChange={(e) => onChange(e.target.checked)}
-      className={cn('h-4 w-4 cursor-pointer rounded border-line-strong accent-[#047857]', className)}
-    />
+      onClick={() => onChange(!checked)}
+      className={cn(
+        'group inline-flex items-center gap-2 rounded-md text-start text-sm text-ink-2 outline-none disabled:cursor-not-allowed disabled:opacity-50',
+        'focus-visible:ring-2 focus-visible:ring-primary/30 focus-visible:ring-offset-2 focus-visible:ring-offset-surface',
+        className,
+      )}
+    >
+      <span
+        aria-hidden
+        className={cn(
+          'grid h-[18px] w-[18px] shrink-0 place-items-center rounded-[6px] border transition-colors duration-150',
+          checked || mixed
+            ? 'border-primary bg-primary text-white'
+            : 'border-line-strong bg-surface text-transparent group-hover:border-primary group-disabled:group-hover:border-line-strong',
+        )}
+      >
+        {mixed ? <Minus className="h-3 w-3" strokeWidth={3} /> : <Check className="h-3 w-3" strokeWidth={3} />}
+      </span>
+      {children ? <span className="min-w-0">{children}</span> : null}
+    </button>
   );
 }
 

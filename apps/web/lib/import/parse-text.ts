@@ -1,4 +1,5 @@
 import type { Currency, DealType, PriceTerms, PropertyType } from '@bongah/shared-types';
+import { normalizeAfghanMobile } from '@bongah/validation';
 import { PROVINCES, provinceNameLabel } from '../provinces';
 import { addressFrom } from '../address';
 import { currencyName, formatNumber } from '../format';
@@ -12,8 +13,14 @@ import { emptyDraft, NO_PIN, type DraftRow, type PinnedDefaults } from './types'
 export interface ParseOptions {
   /** Fill what the text does not say (province, district, deal, currency). */
   defaults?: PinnedDefaults;
-  /** Cut phone numbers out of the description (default true): contact goes through the app. */
+  /**
+   * Tidy the description (default false): cut phone numbers and channel/link footers out of it. Off, the description is
+   * the whole pasted text, every number and note in it, so nothing the owner wrote is lost; the first number is still
+   * read into the phone column either way.
+   */
   stripPhones?: boolean;
+  /** Treat the whole paste as ONE listing, however many paragraphs it has (default false: it is cut into listings). */
+  single?: boolean;
 }
 
 // ───────────── Words → numbers ─────────────
@@ -85,7 +92,7 @@ export function detectType(flat: string): PropertyType | null {
 
 const DEAL_PATTERNS: [DealType, RegExp][] = [
   ['RENT', new RegExp(whole('کرایه|کرایی|کرایې|کرایه‌ای|اجاره|اجاره ای|اجاره‌ای|کرایه ای|کرائی'), 'u')],
-  ['MORTGAGE_GROWI', new RegExp(whole('گروی|گرو|گیروی|گیرو|رهن|رهنی|ګروی|ګرو'), 'u')],
+  ['MORTGAGE_GROWI', new RegExp(whole('گروی|گرو|گیروی|گیرو|گیرویی|گرویی|گیروئی|گروئی|گرو داده|گیرو داده|رهن|رهنی|ګروی|ګرو'), 'u')],
   ['SALE', new RegExp(whole('فروش|فروشی|به فروش|بفروش|برای فروش|می‌فروشم|میفروشم|میفروشیم|پلور|پلورنه|پلورنې'), 'u')],
 ];
 
@@ -127,11 +134,34 @@ const PER_UNIT_AFTER = /^\s*(?:افغانی|افغانۍ|دالر|دلار|ډا�
 const NOT_PRICE_AFTER = /^\s*(متر|م2|م²|m2|m²|مترمربع|خوابه|اتاق|حمام|تشناب|توالت|منزل|طبقه|سال|کوچه|واحد|باب|جریب|بسوه|فیصد|%|نفر|کیلو|سانتی|ساله|روز|ماه|عدد|دانه|متری|خوب|خونه|خونې|پوړ|کوڅه|کاله|ورځ|میاشت|سلنه)/iu;
 const NOT_PRICE_BEFORE = /(کد|کود|ایدی|آی دی|id|ناحیه|کوچه|کوڅه|سرک|پلاک|شماره|واحد|طبقه|پوړ|بلاک|بلوک|قطعه|ساحه|فاز|ماه|سال|میاشت|مساحت|متراژ|زیربنا|ابعاد)\s*[:：]?\s*$/u;
 
-const PHONE_RE = /(?<![\d])(?:\+93|0093|93|0)[\s-]?7\d(?:[\s-]?\d){7}(?![\d])/g;
+const PHONE_RE = /(?<![\d])\(?(?:\+93|0093|93|0)\)?[\s-]?7\d(?:[\s-]?\d){7}(?![\d])/g;
+/** «تماس: 798286200»: nine digits without the 0 or +93, accepted only right after a word that says it is a phone number. */
+const CONTACT_WORD = 'شماره|تماس|تلفن|تلیفون|موبایل|واتساپ|واتس اپ|وتساپ|whatsapp|contact|call|اړیکه';
+const BARE_PHONE_RE = new RegExp(`(?<![${WORD}])(?:${CONTACT_WORD})[^\\d\\n]{0,12}(7\\d(?:[\\s-]?\\d){7})(?![\\d])`, 'giu');
 
-/** Where phone numbers sit in a (digit-normalized) text. */
+/** Where phone numbers sit in a (digit-normalized) text, in order. */
 function phoneSpans(flat: string): [number, number][] {
-  return [...flat.matchAll(PHONE_RE)].map((m) => [m.index!, m.index! + m[0].length]);
+  const spans: [number, number][] = [...flat.matchAll(PHONE_RE)].map((m) => [m.index!, m.index! + m[0].length]);
+  for (const m of flat.matchAll(BARE_PHONE_RE)) {
+    const end = m.index! + m[0].length;
+    const span: [number, number] = [end - m[1]!.length, end];
+    if (!spans.some(([a, b]) => span[0] < b && span[1] > a)) spans.push(span);
+  }
+  return spans.sort((x, y) => x[0] - y[0]);
+}
+
+/**
+ * The phone numbers a text carries, each as +93XXXXXXXXX (any way of writing it: 0798286200, +93 798 286 200,
+ * ۰۷۹۸۲۸۶۲۰۰, 0093-798-286-200), in the order written, without repeats.
+ */
+export function findPhones(text: string): string[] {
+  const ascii = asciiSameLength(text);
+  const found: string[] = [];
+  for (const [a, b] of phoneSpans(ascii)) {
+    const phone = normalizeAfghanMobile(ascii.slice(a, b));
+    if (phone && !found.includes(phone)) found.push(phone);
+  }
+  return found;
 }
 
 export interface PriceResult {
@@ -193,9 +223,34 @@ export function findPrice(flat: string): PriceResult | null {
   return { value: best.value, currency: best.currency, unit: best.unit, candidates: new Set(found.map((f) => f.value)).size, assumedKarur: best.assumedKarur };
 }
 
+/** What the price is said to be: «قابل معامله نیست», «مقطوع», «بې چانې»: not to be bargained over. Checked first, because it often contains the words of the other kind. */
+const FIXED_TERMS = new RegExp(
+  [
+    whole('مقطوع|مقطوعه|قطعی بیه|نهایی بیه|بدون چانه|بدون معامله|بدون مذاکره|بدون کم و کسر|بی چانه|بې چانې|بې له چانې|چانه نشته|معامله نشته'),
+    whole('قیمت (?:نهایی|قطعی|ثابت|مقطوع)|نرخ (?:نهایی|قطعی|ثابت)|بیه (?:قطعی|نهایی)'),
+    // «چانه ندارد», «معامله ندارد», «کم نمی شود», «کم و کسر ندارد»
+    whole('(?:چانه|معامله|مذاکره|بحث|کم و کسر|تخفیف)\\s+(?:ندارد|ندارند|نمی ?خورد|نمی ?شود|نیست|نشته)'),
+    // «قابل معامله نیست», «قابل چانه نمی‌باشد», «د معاملې وړ نه دی»
+    whole('قابل (?:معامله|بحث|مذاکره|چانه|گفتگو|توافق|تخفیف)(?: [^\\s]+){0,2}? (?:نیست|نمی ?باشد|نمی ?شود|نه)'),
+    whole('د (?:معاملې|توافق|جوړجاړي) وړ نه'),
+  ].join('|'),
+  'u',
+);
+/** «جور آمد», «قابل معامله», «توافقی», «چانه دارد»: the price is open to talk. */
+const NEGOTIABLE_TERMS = new RegExp(
+  [
+    whole('جور ?آمد|جور ?امد|جور (?:است|می ?شود|میشه)|جور آمدنی'),
+    whole('قابل (?:معامله|بحث|مذاکره|چانه|گفتگو|توافق|تخفیف)'),
+    whole('توافقی|توافقی است|قابل توافق|قیمت توافقی|مذاکره (?:می ?شود|دارد)|بحث دارد'),
+    whole('(?:چانه|معامله|کم و کسر|تخفیف) (?:دارد|دارند|می ?خورد|می ?شود|هم دارد)|چانه ?زنی|چانه زدن'),
+    whole('د معاملې وړ|د توافق وړ|د جوړجاړي وړ|چانه لري|معامله لري|په توافق'),
+  ].join('|'),
+  'u',
+);
+
 export function detectPriceTerms(flat: string): PriceTerms | null {
-  if (new RegExp(whole('جورآمد|جور آمد|قابل معامله|قابل بحث|قابل مذاکره|قابل چانه|د معاملې وړ|د توافق وړ|د جوړجاړي وړ'), 'u').test(flat)) return 'NEGOTIABLE';
-  if (new RegExp(whole('مقطوع|قیمت نهایی|قیمت قطعی|بدون کم و کسر|بدون چانه|قطعی بیه|نهایی بیه|بې چانې|بې له چانې'), 'u').test(flat)) return 'FIXED';
+  if (FIXED_TERMS.test(flat)) return 'FIXED';
+  if (NEGOTIABLE_TERMS.test(flat)) return 'NEGOTIABLE';
   return null;
 }
 
@@ -256,6 +311,26 @@ function countBefore(flat: string, nouns: string): number | null {
 export const findBedrooms = (flat: string) => countBefore(flat, 'اتاق خواب|اتاق ها|اتاقها|اتاقه|اتاق|کمره|خوابه|خواب|خوب خونې|خوبو|خونې|خونو|خونه');
 export const findBathrooms = (flat: string) => countBefore(flat, 'حمام ها|حمامها|حمام|حمامونه|حمامو|تشناب|تشناب ها|توالت|دستشویی|بیت الخلا|غسلخانه');
 
+// ───────────── Floors ─────────────
+
+/** What a house with this many floors is called: «دو طبقه», «دوطبقه», «۲ طبقه», «سه منزله», «دو پوړیزه», «یک‌طبقه», «تک طبقه». */
+const FLOORS_RE = new RegExp(
+  `(?<![${WORD}])(?<n>\\d{1,2}|${WORD_NUMBER}|تک)\\s*(?:طبقه(?:\\s?ای)?|منزله|پوړیزه|پوړیز|پوړه|پوړ)(?![${WORD}])`,
+  'u',
+);
+/** Only these have storeys of their own: an apartment's «طبقه» is its place in the building, a plot has none. */
+const FLOOR_TYPES: readonly (PropertyType | '')[] = ['', 'HOUSE_HAWILI', 'VILLA', 'SHOP', 'OFFICE', 'GARDEN', 'OTHER'];
+
+/** How many storeys the text says the property has («خانه نوساز دوطبقه» → 2), or null. */
+export function findFloors(flat: string, type: PropertyType | '' = ''): number | null {
+  if (!FLOOR_TYPES.includes(type)) return null;
+  const m = FLOORS_RE.exec(flat);
+  if (!m) return null;
+  const word = m.groups!.n!;
+  const n = word === 'تک' ? 1 : numberFrom(word);
+  return n !== null && Number.isInteger(n) && n >= 1 && n <= 20 ? n : null;
+}
+
 // ───────────── Place ─────────────
 
 const PROVINCE_ALIASES: Record<string, string> = {
@@ -295,6 +370,8 @@ export function findProvince(flat: string): string | null {
 }
 
 const PERSIAN_DIGIT = '۰۱۲۳۴۵۶۷۸۹';
+/** Units only Afghani prices are written in. */
+const AFGHANI_UNITS = new Set(['لک', 'لکه', 'لکھ', 'کرور']);
 const toPersianDigits = (s: string) => s.replace(/\d/g, (d) => PERSIAN_DIGIT[Number(d)]!);
 
 export function findDistrict(flat: string): string | null {
@@ -331,6 +408,50 @@ export function findAddress(flat: string): string | null {
   return text.length >= 3 ? cutAt(text, 300) : null;
 }
 
+const STREET_WORD = 'سرک|سړک|کوچه|کوڅه|جاده|خیابان|چهارراهی|چهار راهی|گذر|لین';
+/** «کوچه ۶ متری»: how wide the lane is, not where the house is. */
+const LANE_WIDTH = /^\s*\d+(?:\.\d+)?\s*(?:متر|متری|م)(?![\p{L}])/u;
+/** Where a street line stops: a sentence end, or the start of something that is not part of an address. */
+const STREET_END = new RegExp(
+  `\\s*(?:[.!؛;|•]|(?<![${WORD}])(?:${CONTACT_WORD}|قیمت|بها|مبلغ|مساحت|متراژ|آدرس|ادرس|کد|دارای|برای|است|می‌?باشد|میباشد)(?![${WORD}])).*$`,
+  'iu',
+);
+const MONEY_OR_AREA = new RegExp(`(?<![${WORD}.,])\\d[\\d,.]*\\s*(?:لک|لکه|هزار|میلیون|ملیون|کرور|دالر|دلار|افغانی|متر|متری|\\$|usd)(?![${WORD}])`, 'iu');
+
+/**
+ * The street part of an address the text gives without a label: «سرک آسیا کلوخی، بهارستان ۱۲» out of
+ * «هرات سرک آسیا کلوخی، بهارستان ۱۲ شماره تماس ...». It starts at the street word and runs through the comma-separated
+ * pieces after it («، بهارستان ۱۲») until the line, a phone number, a price or a word that starts something else ends it.
+ * Digits come back as Persian digits.
+ */
+export function findStreet(flat: string): string | null {
+  const re = new RegExp(`(?<![${WORD}])(?:${STREET_WORD})(?![${WORD}])`, 'gu');
+  for (const m of flat.matchAll(re)) {
+    const rest = flat.slice(m.index! + m[0].length);
+    if (LANE_WIDTH.test(rest)) continue;
+    let line = flat.slice(m.index!, m.index! + m[0].length + (rest.indexOf('\n') < 0 ? rest.length : rest.indexOf('\n')));
+    for (const [a] of phoneSpans(line)) {
+      line = line.slice(0, a);
+      break;
+    }
+    const money = MONEY_OR_AREA.exec(line);
+    if (money) line = line.slice(0, money.index);
+    line = line.replace(STREET_END, '');
+    // Keep the pieces up to one that names the property itself («، خانه دو طبقه») rather than a place.
+    const pieces: string[] = [];
+    for (const piece of line.split(/[,،]/)) {
+      const text = stripDecoration(piece);
+      if (!text) continue;
+      if (pieces.length > 0 && (detectType(text) !== null || detectDeal(text) !== null)) break;
+      pieces.push(text);
+      if (pieces.length >= 4) break;
+    }
+    const street = pieces.join('، ');
+    if (street.length >= 4 && /\p{L}/u.test(street.replace(new RegExp(STREET_WORD, 'gu'), ''))) return toPersianDigits(cutAt(street, 200));
+  }
+  return null;
+}
+
 // ───────────── Pieces of the text ─────────────
 
 const IMAGE_RE = /https?:\/\/[^\s)>\]"']+\.(?:jpe?g|png|webp)(?:\?[^\s)>\]"']*)?/giu;
@@ -341,32 +462,46 @@ function asciiSameLength(text: string): string {
   return text.replace(/[۰-۹]/g, (c) => String(PERSIAN_DIGIT.indexOf(c))).replace(/[٠-٩]/g, (c) => String('٠١٢٣٤٥٦٧٨٩'.indexOf(c)));
 }
 
+/** «شماره تماس:», «واتساپ -», «📞» in front of a number: it goes with the number. */
+const LABEL_BEFORE_PHONE = new RegExp(`(?:(?<![${WORD}])(?:${CONTACT_WORD})(?![${WORD}])[^\\p{L}\\p{N}]*(?:و[^\\p{L}\\p{N}]*)?)+$`, 'iu');
+
 export function stripPhoneNumbers(text: string): { text: string; removed: number } {
-  const ascii = asciiSameLength(text);
-  const spans = phoneSpans(ascii);
-  if (spans.length === 0) return { text, removed: 0 };
-  let out = '';
-  let last = 0;
-  for (const [a, b] of spans) {
-    out += text.slice(last, a);
-    last = b;
+  let removed = 0;
+  const lines: string[] = [];
+  for (const line of text.split('\n')) {
+    const ascii = asciiSameLength(line);
+    const spans = phoneSpans(ascii);
+    let current = line;
+    if (spans.length > 0) {
+      removed += spans.length;
+      current = '';
+      let last = 0;
+      for (const [a, b] of spans) {
+        const label = LABEL_BEFORE_PHONE.exec(ascii.slice(last, a));
+        current += line.slice(last, label ? last + label.index : a);
+        last = b;
+      }
+      current += line.slice(last);
+    }
+    const tidy = current.replace(/[ \t]+/g, ' ').replace(/\s+([،,.:：])/g, '$1').trim();
+    // A line with nothing but a label or a symbol left (the 📞 in front of a number) is dropped, but only a line that held
+    // a number: an empty line between two paragraphs stays.
+    if (spans.length > 0 && !/[\p{L}\p{N}]/u.test(tidy)) continue;
+    if (CONTACT_LABEL_LINE.test(tidy)) continue;
+    lines.push(tidy);
   }
-  out += text.slice(last);
-  const lines = out
-    .split('\n')
-    .map((l) => l.replace(/[ \t]+/g, ' ').replace(/\s+([،,.:：])/g, '$1').trim())
-    .filter((l) => !CONTACT_LABEL_LINE.test(l));
-  return { text: lines.join('\n').replace(/\n{3,}/g, '\n\n').trim(), removed: spans.length };
+  if (removed === 0) return { text, removed: 0 };
+  return { text: lines.join('\n').replace(/\n{3,}/g, '\n\n').trim(), removed };
 }
 
 /** Lines that give one fact under a label — «قیمت فروش: ...», «آدرس: ...», «نوع ملک: خانه» — and so are never a listing's start or title. */
-const STRONG_LABEL = new RegExp(`^(?:قیمت|بها|بیه|مبلغ|نرخ|آدرس|ادرس|نشانی|پته|مساحت|متراژ|رقبه|تماس|تلفن|تلیفون|شماره تماس|موبایل|واتساپ|واتس اپ|اړیکه|توضیحات|تشریحات|مشخصات|امکانات|جزئیات)(?![${WORD}])`, 'iu');
-const WEAK_LABEL = new RegExp(`^(?:موقعیت|محل|نوعیت|نوع|کد|کود|آی دی|ایدی|id|تعداد|اتاق|حمام|طبقه|منزل|سند|نوع سند|وضعیت|پرداخت|سال ساخت|زیربنا|جهت|نما|اندازه|ساحه)(?:\\s+[${WORD}]+){0,2}\\s*[:：=]`, 'iu');
+const STRONG_LABEL = new RegExp(`^(?:قیمت|بها|بیه|مبلغ|نرخ|آدرس|ادرس|نشانی|پته|مساحت|متراژ|رقبه|تماس|تلفن|تلیفون|شماره تماس|موبایل|واتساپ|واتس اپ|اړیکه|توضیحات|تشریحات|مشخصات|امکانات|جزئیات|شرایط معامله)(?![${WORD}])`, 'iu');
+const WEAK_LABEL = new RegExp(`^(?:موقعیت|محل|نوعیت|نوع|کد|کود|آی دی|ایدی|id|تعداد|اتاق|حمام|طبقه|منزل|سند|نوع سند|وضعیت|پرداخت|سال ساخت|زیربنا|جهت|نما|اندازه|ساحه|نوت|نوټ|نکته|نکات|ملاحظه|ملاحظات|یادداشت|توجه|تذکر|هشدار|شرایط|شرط|شروط|معلومات|قابل توجه)(?:\\s+[${WORD}]+){0,2}\\s*[:：=]`, 'iu');
 export const isDetailLine = (flatLine: string) => STRONG_LABEL.test(flatLine) || WEAK_LABEL.test(flatLine);
 
 /** «کد: 245», «VIP», «#فوری», «شماره آگهی ۱۲»: the tag line above a post, not the post. */
 const HEADER_LINE = new RegExp(
-  `^(?:(?:کد|کود|ایدی|آی دی|id)(?![${WORD}])|(?:شماره|نمبر)\\s*(?:آگهی|ملک|اعلان)|(?:vip|ویژه|فوری|جدید|new|لاین)$|#[^\\s]+(?:\\s+#[^\\s]+)*$)`,
+  `^(?:(?:کد|کود|ایدی|آی دی|id)(?![${WORD}])|(?:شماره|نمبر)\\s*(?:آگهی|ملک|اعلان)|(?:vip|ویژه|فوری|جدید|new|لاین|توجه(?:\\s+توجه)*|آگهی|اعلان|اطلاعیه|مهم|فرصت طلایی)$|#[^\\s]+(?:\\s+#[^\\s]+)*$)`,
   'iu',
 );
 const isHeaderLine = (flatLine: string) => HEADER_LINE.test(flatLine.trim());
@@ -374,6 +509,47 @@ const isHeaderLine = (flatLine: string) => HEADER_LINE.test(flatLine.trim());
 /** Channel and link footers: «@channel», «t.me/…», «instagram.com/…», «wa.me/…» and any other web link that is not a photo. */
 const PROMO_LINK = /(?:t\.me\/|telegram\.me\/|wa\.me\/|instagram\.com|facebook\.com|youtube\.com|tiktok\.com|@[A-Za-z0-9_]{4,}|https?:\/\/(?![^\s]+\.(?:jpe?g|png|webp)(?:[?\s]|$)))/iu;
 const PROMO_WORDS = /(?:کانال|چنل|channel|join|جوین|دنبال کنید|ما را|صفحه ما|فالو|follow|املاک|بنگاه|مشاور|معاملات ملکی|خرید و فروش|خریدوفروش|آدرس دفتر|گروپ|گروه ما)/iu;
+
+/**
+ * The advertisement's own number, written by the channel or the system that made the post — «📌 کد آگهی: #2005»,
+ * «کد: 245 | VIP», «شماره آگهی ۱۲»: a line that is nothing but that label, a short code and perhaps a tag. It says
+ * nothing about the property, so it is not part of the description.
+ */
+const AD_LABEL = '(?:(?:کد|کود|ایدی|آی[\\s\u200c]?دی|id)(?:[\\s\u200c]*(?:آگهی|اگهی|ملک|اعلان|پست))?|(?:شماره|نمبر)[\\s\u200c]*(?:آگهی|اگهی|ملک|اعلان|پست))';
+const AD_DIGIT = '0-9\\u06F0-\\u06F9\\u0660-\\u0669';
+/** A short code that has at least one digit in it: «2005», «#2005», «A-12»; a plain word is not a code. */
+const AD_CODE_TOKEN = `#?(?=[A-Za-z_/\\-]*[${AD_DIGIT}])[A-Za-z${AD_DIGIT}_/\\-]{1,14}`;
+const AD_TAG = '(?:vip|ویژه|فوری|جدید|new|مهم|لاین)';
+const AD_SEPARATOR = '[\\s|\\-–—•·,،/:：=]';
+const AD_CODE_LINE = new RegExp(
+  `^(?=[^\\n]*[${AD_DIGIT}])[^\\p{L}\\p{N}]*${AD_LABEL}[\\s:：=#\\-–—]*(?:${AD_CODE_TOKEN}|${AD_TAG})(?:${AD_SEPARATOR}*(?:${AD_CODE_TOKEN}|${AD_TAG})){0,3}[^\\p{L}\\p{N}]*$`,
+  'iu',
+);
+/** The same, at the start of a line that goes on with the property: «کد آگهی: 2005 | خانه دو طبقه ...». */
+const AD_CODE_PREFIX = new RegExp(
+  `^[^\\p{L}\\p{N}]*${AD_LABEL}[\\s:：=#\\-–—]*${AD_CODE_TOKEN}(?:${AD_SEPARATOR}*${AD_TAG})*[\\s]*[|\\-–—•·،,][\\s|\\-–—•·،,]*(?=[\\p{L}\\p{N}])`,
+  'iu',
+);
+
+export function stripAdCodes(text: string): { text: string; removed: number } {
+  let removed = 0;
+  const lines: string[] = [];
+  for (const line of text.split('\n')) {
+    if (AD_CODE_LINE.test(line)) {
+      removed += 1;
+      continue;
+    }
+    const prefix = AD_CODE_PREFIX.exec(line);
+    if (prefix) {
+      removed += 1;
+      lines.push(line.slice(prefix[0].length).trim());
+      continue;
+    }
+    lines.push(line);
+  }
+  if (removed === 0) return { text, removed: 0 };
+  return { text: lines.join('\n').replace(/\n{3,}/g, '\n\n').trim(), removed };
+}
 
 function titleLine(raw: string): string | null {
   for (const rawLine of raw.split('\n')) {
@@ -397,13 +573,14 @@ function titleLine(raw: string): string | null {
  * language explicitly when this runs while rendering, where the browser-wide one is not available (the server).
  */
 export function composeTitle(
-  f: { type?: PropertyType | ''; deal?: DealType | ''; bedrooms?: number | null; area?: number | null; district?: string; province?: string },
+  f: { type?: PropertyType | ''; deal?: DealType | ''; bedrooms?: number | null; floors?: number | null; area?: number | null; district?: string; province?: string },
   language: Language = activeLanguage(),
 ): string {
   const t = (key: Parameters<typeof translate>[1], params?: Record<string, string | number>) => translate(language, key, params);
   const labels = labelsFor(language);
   const parts: string[] = [];
   parts.push(f.type ? (labels.type[f.type].split(' / ')[0] ?? labels.type[f.type]) : t('title.property'));
+  if (f.floors && f.floors > 1) parts.push(t('title.floors', { n: formatNumber(f.floors) }));
   if (f.bedrooms && f.type && hasRoomsFor(f.type)) parts.push(t('title.rooms', { n: formatNumber(f.bedrooms) }));
   if (f.area) parts.push(t('title.area', { n: formatNumber(f.area) }));
   if (f.deal) parts.push(t(f.deal === 'SALE' ? 'title.SALE' : f.deal === 'RENT' ? 'title.RENT' : 'title.MORTGAGE_GROWI'));
@@ -436,7 +613,9 @@ export function parseListing(block: string, options: ParseOptions = {}): DraftRo
   const price = findPrice(flat);
   if (price) {
     row.price = String(price.value);
+    // «لک» and «کرور» are Afghani words: a pinned default of dollars must not turn «۱۰ لک» into dollars.
     if (price.currency) row.currency = price.currency;
+    else if (price.unit && AFGHANI_UNITS.has(price.unit)) row.currency = 'AFGHANI';
     else {
       const guess: Currency = defaults.currency || 'AFGHANI';
       row.currency = guess;
@@ -464,6 +643,14 @@ export function parseListing(block: string, options: ParseOptions = {}): DraftRo
     if (bathrooms !== null) row.bathrooms = String(bathrooms);
   }
 
+  if (!row.type || FLOOR_TYPES.includes(row.type)) {
+    const floors = findFloors(flat, row.type);
+    if (floors !== null) row.floors = String(floors);
+  }
+
+  const phone = findPhones(block)[0];
+  if (phone) row.phone = phone;
+
   const province = findProvince(flat);
   row.province = province ?? defaults.province;
   if (!province && defaults.province) notes.push(tNow('import.note.provincePinned', { province: defaults.province }));
@@ -474,8 +661,12 @@ export function parseListing(block: string, options: ParseOptions = {}): DraftRo
   if (neighborhood) row.neighborhood = neighborhood;
 
   const written = findAddress(flat);
+  const street = written ? null : findStreet(flat);
   if (written) row.address = written;
-  else {
+  else if (street) {
+    // «هرات، سرک آسیا کلوخی، بهارستان ۱۲»: the street as written, behind the province (and district) it is in.
+    row.address = addressFrom({ province: row.province, district: row.district, neighborhood: row.neighborhood, street });
+  } else {
     row.address = addressFrom({ province: row.province, district: row.district, neighborhood: row.neighborhood, street: '' });
     if (row.address && row.address !== row.province) notes.push(tNow('import.note.addressBuilt'));
   }
@@ -492,28 +683,32 @@ export function parseListing(block: string, options: ParseOptions = {}): DraftRo
     .join('\n')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
-  if (options.stripPhones !== false) {
-    const stripped = stripPhoneNumbers(description);
-    description = stripped.text;
-    if (stripped.removed > 0) notes.push(tNow('import.note.phoneStripped'));
-  }
-  // Channel/link footers («@agency», «t.me/…») are advertising for somewhere else; they do not belong in the listing.
-  const kept = description.split('\n').filter((l) => !PROMO_LINK.test(flatten(l)));
-  if (kept.length !== description.split('\n').length && kept.some((l) => l.trim())) {
-    description = kept.join('\n').replace(/\n{3,}/g, '\n\n').trim();
-    notes.push(tNow('import.note.promoStripped'));
+  // The advertisement's own number («📌 کد آگهی: #2005») is never part of the description; the rest is kept as pasted.
+  description = stripAdCodes(description).text;
+  const pasted = description;
+  if (options.stripPhones === true) {
+    // Asked for (the switch above the text): numbers and channel footers («@agency», «t.me/…», advertising for somewhere
+    // else) come out. By default nothing does: the description is everything that was pasted.
+    description = stripPhoneNumbers(description).text;
+    const kept = description.split('\n').filter((l) => !PROMO_LINK.test(flatten(l)));
+    if (kept.length !== description.split('\n').length && kept.some((l) => l.trim())) {
+      description = kept.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+    }
   }
 
   const title = titleLine(description) ?? composeTitle({
     type: row.type,
     deal: row.deal_type,
     bedrooms: row.bedrooms ? Number(row.bedrooms) : null,
+    floors: row.floors ? Number(row.floors) : null,
     area: row.area_sqm ? Number(row.area_sqm) : null,
     district: row.district,
     province: row.province,
   });
   row.title = title;
   row.description = cutAt(description || title, 5000);
+  // A listing holds at most 5000 characters of description: say so rather than cut the end off in silence.
+  if ((description || title).length > 5000 && pasted.length > 5000) notes.push(tNow('import.note.descriptionCut'));
   row.notes = notes;
   return row;
 }
@@ -544,7 +739,8 @@ type Kind = 'listing' | 'continuation' | 'header' | 'promo';
 /**
  * What a block of the paste is. A post often arrives in pieces (a tag line, the description, a «قیمت فروش: …» paragraph,
  * a contact paragraph, a channel footer); only the piece that opens like a listing starts a new one.
- *  - promo: advertising for the agent or channel with nothing about a property: dropped.
+ *  - promo: advertising for the agent or channel with nothing about a property: kept with the listing before it (it may
+ *    hold the office's address or number; taking it out is the owner's choice, the switch above the text).
  *  - header: «کد: 245 VIP»: kept and put in front of the listing that follows.
  *  - continuation: belongs to the listing before it.
  *  - listing: starts a new one.
@@ -566,9 +762,10 @@ function classify(block: string, separated: boolean, previous: BlockFacts | null
 }
 
 /** Cuts a paste into one text per listing. */
-export function splitListings(raw: string): string[] {
+export function splitListings(raw: string, options: { single?: boolean } = {}): string[] {
   const text = raw.replace(/\r\n?/g, '\n').trim();
   if (!text) return [];
+  if (options.single) return [text];
 
   const lines = text.split('\n');
   const separated = lines.some(isSeparatorLine);
@@ -588,20 +785,28 @@ export function splitListings(raw: string): string[] {
   }
 
   const merged: string[] = [];
-  let held = ''; // a tag line waiting for its listing
+  let held = ''; // a tag line (or a greeting) waiting for its listing
   for (const piece of pieces) {
     const previous = merged.length ? factsOf(merged[merged.length - 1]!) : null;
     const kind = classify(piece, separated, previous);
-    if (kind === 'promo') continue;
+    if (kind === 'promo') {
+      // Nothing is thrown away: a footer belongs to the listing above it, or opens the first one.
+      if (merged.length) merged[merged.length - 1] += `\n${piece}`;
+      else held = held ? `${held}\n${piece}` : piece;
+      continue;
+    }
     if (kind === 'header') {
       held = held ? `${held}\n${piece}` : piece;
       continue;
     }
     if (kind === 'listing' || merged.length === 0) {
-      // A first piece that names nothing (a greeting) is not a listing.
+      // A first piece that names nothing (a greeting) is not a listing: it waits and joins the first real one.
       if (kind === 'continuation') {
         const f = factsOf(piece);
-        if (!f.type && !f.deal && !f.price && !f.area) continue;
+        if (!f.type && !f.deal && !f.price && !f.area) {
+          held = held ? `${held}\n${piece}` : piece;
+          continue;
+        }
       }
       merged.push(held ? `${held}\n${piece}` : piece);
       held = '';
@@ -610,6 +815,9 @@ export function splitListings(raw: string): string[] {
       held = '';
     }
   }
+
+  // A tag or footer left over at the end still belongs to the last listing.
+  if (held && merged.length) merged[merged.length - 1] += `\n${held}`;
 
   // No blank lines at all: one listing per line when each line carries its own type/deal and price.
   return merged.flatMap((block) => {
@@ -632,5 +840,5 @@ export function splitListings(raw: string): string[] {
 }
 
 export function parseText(raw: string, options: ParseOptions = {}): DraftRow[] {
-  return splitListings(raw).map((block) => parseListing(block, options));
+  return splitListings(raw, { single: options.single }).map((block) => parseListing(block, options));
 }

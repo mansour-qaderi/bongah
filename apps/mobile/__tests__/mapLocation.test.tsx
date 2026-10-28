@@ -918,7 +918,7 @@ describe('PropertyMap', () => {
   });
 
   it('flies to a new view when the camera changes, but not on the first draw', async () => {
-    const { __flyTo } = jest.requireMock('@maplibre/maplibre-react-native');
+    const { __flyTo } = jest.requireMock('../src/map/native');
     __flyTo.mockClear();
     const props = { ...baseProps, properties: [] };
     const tree = await render(
@@ -935,7 +935,7 @@ describe('PropertyMap', () => {
     );
   });
 
-  it('draws no credit, button or label on the map itself (the credit is in the Account tab)', async () => {
+  it('draws no credit text, no logo and no credit button on the map', async () => {
     const tree = await render(
       <PropertyMap
         {...baseProps}
@@ -951,7 +951,8 @@ describe('PropertyMap', () => {
           n.props.testID === 'map-credit-text',
       ),
     ).toHaveLength(0);
-    // And MapLibre's own attribution control is switched off too.
+    // The SDK's own logo and credit button are off.
+    expect(mapParts(tree.root, 'Map')[0].props.logo).toBe(false);
     expect(mapParts(tree.root, 'Map')[0].props.attribution).toBe(false);
   });
 });
@@ -1096,7 +1097,7 @@ describe('AddPropertyScreen: the form moves the map', () => {
   const routes = { 'POST /properties': { status: 201, body: listing() } };
   const SEARCH = 'https://nominatim.openstreetmap.org/search';
   const flyTo = () =>
-    jest.requireMock('@maplibre/maplibre-react-native').__flyTo as jest.Mock;
+    jest.requireMock('../src/map/native').__flyTo as jest.Mock;
   const searches = () =>
     fetchMock.mock.calls.filter(([url]) => String(url).startsWith(SEARCH));
   /**

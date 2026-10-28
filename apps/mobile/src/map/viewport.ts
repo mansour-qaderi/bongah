@@ -26,7 +26,7 @@ export const AREA_MARGIN = 0.3;
 export const MAX_OVERFETCH = 12;
 export const MAX_OVERFETCH_COMPLETE = 64;
 
-/** MapLibre's world is 512 dp wide at zoom 0 (the 256 px tiles are drawn at twice their size). */
+/** The map's world (Mapbox's) is 512 dp wide at zoom 0 (the 256 px tiles are drawn at twice their size). */
 const WORLD_DP = 512;
 /** The API accepts at most 6-8 decimals; whole-degree fractions of two are cut to this. */
 const DECIMALS = 6;

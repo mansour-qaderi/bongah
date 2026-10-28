@@ -8,6 +8,7 @@ import { Header } from './header';
 import { Sidebar } from './sidebar';
 import { AgencyGate } from './agency-gate';
 import { NameGuard } from './name-guard';
+import { ManualPaymentDialog } from '@/components/subscription/manual-payment-dialog';
 import { PaymentWatcher } from './payment-watcher';
 
 /**
@@ -45,6 +46,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         </div>
       </div>
       <PaymentWatcher />
+      <ManualPaymentDialog />
       <NameGuard />
     </TooltipProvider>
   );

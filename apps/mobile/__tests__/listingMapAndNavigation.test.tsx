@@ -1,9 +1,10 @@
 import React from 'react';
-import { Modal, StyleSheet } from 'react-native';
+import { Linking, Modal, StyleSheet } from 'react-native';
 import ReactTestRenderer from 'react-test-renderer';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { initI18n } from '../src/i18n';
 import prs from '../src/i18n/locales/prs.json';
+import ActionMenuSheet from '../src/components/ActionMenuSheet';
 import { dealColors } from '../src/theme';
 import { setAuthToken } from '../src/api/client';
 import {
@@ -42,8 +43,8 @@ import AddPropertyScreen, {
 import PropertyDetailsScreen from '../src/screens/property/PropertyDetailsScreen';
 import { SUGGEST_DELAY_MS } from '../src/components/PlaceSearchField';
 
-const maplibre = () =>
-  jest.requireMock('@maplibre/maplibre-react-native') as {
+const nativeMap = () =>
+  jest.requireMock('../src/map/native') as {
     __flyTo: jest.Mock;
     __location: { grant: boolean; position: unknown; requests: number };
     __emitLocation: (position: unknown) => void;
@@ -161,7 +162,7 @@ beforeEach(() => {
   (globalThis as unknown as { fetch: unknown }).fetch = fetchMock;
   mockAuth = { status: 'signedIn', user };
   setAuthToken('token');
-  const m = maplibre();
+  const m = nativeMap();
   m.__flyTo.mockClear();
   m.__location.grant = true;
   m.__location.position = undefined;
@@ -194,12 +195,12 @@ const corners = (side: number): [number, number][] => {
 
 describe('the listing form opens on the phone', () => {
   it('asks for location as it opens and flies to where the phone is', async () => {
-    maplibre().__location.position = fixAt(ZARANJ);
+    nativeMap().__location.position = fixAt(ZARANJ);
     answer({});
     const tree = await render(screen(AddPropertyScreen));
     await settle();
-    expect(maplibre().__location.requests).toBe(1);
-    expect(maplibre().__flyTo).toHaveBeenCalledWith(
+    expect(nativeMap().__location.requests).toBe(1);
+    expect(nativeMap().__flyTo).toHaveBeenCalledWith(
       expect.objectContaining({ center: [61.86, 30.96], zoom: MY_POSITION_ZOOM }),
     );
     // The blue dot, not the property's pin: the pin is the person's to place.
@@ -208,7 +209,7 @@ describe('the listing form opens on the phone', () => {
   });
 
   it('fills the province and the address in from the phone\'s position on first open, and places no pin', async () => {
-    maplibre().__location.position = fixAt(ZARANJ);
+    nativeMap().__location.position = fixAt(ZARANJ);
     answer({
       'GET /geo/reverse': () => ({
         body: { provider: 'google', title: 'x', address: 'x', lat: 30.96, lng: 61.86, province: 'نیمروز', district: 'زرنج', neighborhood: 'ناحیه ۵', street: '' },
@@ -228,7 +229,7 @@ describe('the listing form opens on the phone', () => {
   });
 
   it('does not fill anything in when the phone is outside the country or refuses', async () => {
-    maplibre().__location.grant = false;
+    nativeMap().__location.grant = false;
     answer({});
     const tree = await render(screen(AddPropertyScreen));
     await settle();
@@ -237,11 +238,11 @@ describe('the listing form opens on the phone', () => {
   });
 
   it('keeps working, quietly, when location is refused', async () => {
-    maplibre().__location.grant = false;
+    nativeMap().__location.grant = false;
     answer({});
     const tree = await render(screen(AddPropertyScreen));
     await settle();
-    expect(maplibre().__flyTo).not.toHaveBeenCalled();
+    expect(nativeMap().__flyTo).not.toHaveBeenCalled();
     // No explanation card for the automatic look; only the "my location" button explains.
     expect(allText(tree.root)).not.toContain(prs.home.permissionLater);
     await pressId(tree.root, 'location-editor-locate');
@@ -288,14 +289,14 @@ describe('one place field with suggestions', () => {
     expect(allText(tree.root)).toContain('کافه براسان');
     expect(allText(tree.root)).toContain('شفاخانه ولایتی نیمروز');
 
-    maplibre().__flyTo.mockClear();
+    nativeMap().__flyTo.mockClear();
     await pressId(tree.root, 'place-search-option-0');
     await settle();
 
     const details = callsTo(fetchMock).find(c => c.path === '/geo/places/google/g-cafe')!;
     // The pick and the search are one billing session.
     expect(details.query.session).toBe(search.query.session);
-    expect(maplibre().__flyTo).toHaveBeenCalledWith(expect.objectContaining({ center: [61.8634, 30.9612], zoom: 17 }));
+    expect(nativeMap().__flyTo).toHaveBeenCalledWith(expect.objectContaining({ center: [61.8634, 30.9612], zoom: 17 }));
     expect(inputLabelled(tree.root, prs.add.place).props.value).toBe('کافه براسان، زرنج، نیمروز');
     const text = allText(tree.root);
     // The province is certain (the pick said so) and is in the address line, so its own row stays out of the way.
@@ -320,10 +321,10 @@ describe('one place field with suggestions', () => {
     await wait(SUGGEST_DELAY_MS + 50);
     await settle();
     expect(allText(tree.root)).toContain('شفاخانه ملکی');
-    maplibre().__flyTo.mockClear();
+    nativeMap().__flyTo.mockClear();
     await pressId(tree.root, 'place-search-option-0');
     await settle();
-    expect(maplibre().__flyTo).toHaveBeenCalledWith(expect.objectContaining({ center: [61.862, 30.958] }));
+    expect(nativeMap().__flyTo).toHaveBeenCalledWith(expect.objectContaining({ center: [61.862, 30.958] }));
     expect(allText(tree.root)).not.toContain('ولایت: نیمروز');
   });
 
@@ -350,6 +351,18 @@ describe('fullscreen map and drawing the plot', () => {
     }),
   };
   const fullMap = 'location-picker-map-full';
+
+  it('has a 3D button on the form\'s map, in the small map and the fullscreen one', async () => {
+    const tilt = (jest.requireMock('../src/map/native') as { __tilt: jest.Mock }).__tilt;
+    tilt.mockClear();
+    const tree = await render(screen(AddPropertyScreen));
+    await settle();
+    await pressId(tree.root, 'location-editor-3d');
+    expect(tilt).toHaveBeenLastCalledWith(expect.objectContaining({ pitch: 55 }));
+    await pressId(tree.root, 'location-editor-fullscreen');
+    await settle();
+    expect(byTestId(tree.root, 'location-editor-full-3d')).toBeDefined();
+  });
 
   it('opens and closes fullscreen, keeping the pin placed in it', async () => {
     answer(reverse);
@@ -537,13 +550,44 @@ describe('navigation to the property', () => {
     expect(pin!.props.anchor).toBe('bottom');
   });
 
+  it('lets the agent send the exact place: the share button opens the sheet with the message for this pin and listing', async () => {
+    answer({ [`GET /properties/${ID}`]: () => ({ body: pinned }), [`POST /properties/${ID}/view`]: () => ({ status: 204 }) });
+    const tree = await render(screen(PropertyDetailsScreen, route));
+    await settle();
+    expect(tree.root.findAll(n => n.type === ActionMenuSheet && n.props.visible === true)).toHaveLength(0);
+    await pressId(tree.root, 'details-map-share');
+    const sheet = tree.root.findAll(n => n.type === ActionMenuSheet && n.props.visible === true);
+    expect(sheet).toHaveLength(1);
+    expect((sheet[0].props.actions as { label: string }[]).map(a => a.label)).toContain(prs.shareLocation.whatsapp);
+    const whatsapp = (sheet[0].props.actions as { label: string; onPress: () => void }[])[0];
+    const openURL = jest.spyOn(Linking, 'openURL').mockResolvedValue(true as never);
+    whatsapp.onPress();
+    const url = decodeURIComponent(String(openURL.mock.calls.at(-1)![0]));
+    expect(url).toContain('30.970000, 61.870000');
+    expect(url).toContain(`https://bongah.app/listing/${ID}`);
+    expect(url).toContain(pinned.title);
+    openURL.mockRestore();
+  });
+
+  it('has a 3D button on the location map that leans the picture back over the buildings', async () => {
+    answer({ [`GET /properties/${ID}`]: () => ({ body: pinned }), [`POST /properties/${ID}/view`]: () => ({ status: 204 }) });
+    const tilt = (jest.requireMock('../src/map/native') as { __tilt: jest.Mock }).__tilt;
+    tilt.mockClear();
+    const tree = await render(screen(PropertyDetailsScreen, route));
+    await settle();
+    await pressId(tree.root, 'details-map-3d');
+    expect(tilt).toHaveBeenLastCalledWith(expect.objectContaining({ pitch: 55 }));
+  });
+
   it('shows no directions without an exact pin: no fullscreen button, no route', async () => {
     answer({ [`GET /properties/${ID}`]: () => ({ body: listing() }) });
-    maplibre().__location.position = fixAt(ZARANJ);
+    nativeMap().__location.position = fixAt(ZARANJ);
     const tree = await render(screen(PropertyDetailsScreen, route));
     await settle();
     expect(allText(tree.root)).not.toContain(prs.route.button);
     expect(tree.root.findAll(n => n.props.testID === 'details-map-fullscreen')).toHaveLength(0);
+    // Nor can the exact place be sent: there is none to send.
+    expect(tree.root.findAll(n => n.props.testID === 'details-map-share')).toHaveLength(0);
     expect(callsTo(fetchMock).some(c => c.path === '/geo/route')).toBe(false);
   });
 
@@ -557,7 +601,7 @@ describe('navigation to the property', () => {
       [`GET /properties/${ID}`]: () => ({ body: pinned }),
       'GET /geo/route': () => ({ body: { provider: 'google', distance_m: 1400, duration_s: 240, coordinates: line } }),
     });
-    maplibre().__location.position = fixAt(ZARANJ);
+    nativeMap().__location.position = fixAt(ZARANJ);
     const tree = await render(screen(PropertyDetailsScreen, route));
     await settle();
     await pressId(tree.root, 'details-map-fullscreen');
@@ -569,7 +613,7 @@ describe('navigation to the property', () => {
 
     // Driving at 12.5 m/s (45 km/h), a little along the route.
     await act(async () => {
-      maplibre().__emitLocation(fixAt({ latitude: 30.962, longitude: 61.862 }, { speed: 12.5 }));
+      nativeMap().__emitLocation(fixAt({ latitude: 30.962, longitude: 61.862 }, { speed: 12.5 }));
     });
     await settle();
     const hud = (id: string) => allText(tree.root.findAll(n => n.props.testID === id)[0]);
@@ -583,7 +627,7 @@ describe('navigation to the property', () => {
       [`GET /properties/${ID}`]: () => ({ body: pinned }),
       'GET /geo/route': () => ({ body: { provider: 'google', distance_m: 20, duration_s: 10, coordinates: [[61.8699, 30.9699], [61.87, 30.97]] } }),
     });
-    maplibre().__location.position = fixAt({ latitude: 30.9699, longitude: 61.8699 });
+    nativeMap().__location.position = fixAt({ latitude: 30.9699, longitude: 61.8699 });
     const tree = await render(screen(PropertyDetailsScreen, route));
     await settle();
     await pressId(tree.root, 'details-map-fullscreen');
@@ -596,17 +640,17 @@ describe('navigation to the property', () => {
       [`GET /properties/${ID}`]: () => ({ body: pinned }),
       'GET /geo/route': () => ({ body: { provider: 'google', distance_m: 1, duration_s: 1, coordinates: [] } }),
     });
-    maplibre().__location.grant = false; // the person refuses the location permission
+    nativeMap().__location.grant = false; // the person refuses the location permission
     const tree = await render(screen(PropertyDetailsScreen, route));
     await settle();
     await pressId(tree.root, 'details-map-fullscreen');
     await settle(6);
-    expect(maplibre().__location.requests).toBeGreaterThan(0);
+    expect(nativeMap().__location.requests).toBeGreaterThan(0);
     expect(callsTo(fetchMock).some(c => c.path === '/geo/route')).toBe(false);
     expect(tree.root.findAll(n => n.props.testID === 'navigation-close')).toHaveLength(0);
     // The card that explains and leads to the settings is there instead.
     expect(tree.root.findAll(n => n.props.testID === 'location-permission').length).toBeGreaterThan(0);
-    maplibre().__location.grant = true;
+    nativeMap().__location.grant = true;
   });
 
   it('does not draw a route for a phone that is outside Afghanistan', async () => {
@@ -614,7 +658,7 @@ describe('navigation to the property', () => {
       [`GET /properties/${ID}`]: () => ({ body: pinned }),
       'GET /geo/route': () => ({ body: { provider: 'google', distance_m: 1, duration_s: 1, coordinates: [] } }),
     });
-    maplibre().__location.position = fixAt({ latitude: 51.5, longitude: -0.12 });
+    nativeMap().__location.position = fixAt({ latitude: 51.5, longitude: -0.12 });
     const tree = await render(screen(PropertyDetailsScreen, route));
     await settle();
     await pressId(tree.root, 'details-map-fullscreen');
@@ -636,7 +680,7 @@ describe('navigation to the property', () => {
         { [`GET /properties/${ID}`]: () => ({ body: pinned }), 'GET /geo/route': () => roadReply, ...extra },
         outside,
       );
-      maplibre().__location.position = fixAt(ZARANJ);
+      nativeMap().__location.position = fixAt(ZARANJ);
       const tree = await render(screen(PropertyDetailsScreen, route));
       await settle();
       await pressId(tree.root, 'details-map-fullscreen');
@@ -667,7 +711,7 @@ describe('navigation to the property', () => {
           body: { provider: 'google', distance_m: 1300, duration_s: 200, coordinates: [[ZARANJ.longitude, ZARANJ.latitude], [61.87, 30.97]] },
         }),
       });
-      maplibre().__location.position = fixAt(ZARANJ);
+      nativeMap().__location.position = fixAt(ZARANJ);
       const tree = await render(screen(PropertyDetailsScreen, route));
       await settle();
       await pressId(tree.root, 'details-map-fullscreen');
@@ -694,7 +738,7 @@ describe('navigation to the property', () => {
       const later = jest.spyOn(Date, 'now').mockReturnValue(Date.now() + 60_000);
       try {
         await act(async () => {
-          maplibre().__emitLocation(fixAt({ latitude: 30.9615, longitude: 61.8665 }));
+          nativeMap().__emitLocation(fixAt({ latitude: 30.9615, longitude: 61.8665 }));
         });
         await settle(6);
       } finally {
@@ -714,7 +758,7 @@ describe('navigation to the property', () => {
         // 40 m jumps around the spot it was first asked from: off the 60 m line is not reached, and it has not moved 50 m.
         for (const dLat of [0.0003, -0.0003, 0.0002]) {
           await act(async () => {
-            maplibre().__emitLocation(fixAt({ latitude: ZARANJ.latitude + dLat, longitude: ZARANJ.longitude }));
+            nativeMap().__emitLocation(fixAt({ latitude: ZARANJ.latitude + dLat, longitude: ZARANJ.longitude }));
           });
         }
         await settle(4);
@@ -732,7 +776,7 @@ describe('navigation to the property', () => {
           body: { provider: 'google', distance_m: 3000, duration_s: 400, coordinates: [[61.8693, 30.9693], [61.88, 30.99], [61.87, 30.97]] },
         }),
       });
-      maplibre().__location.position = fixAt({ latitude: 30.9693, longitude: 61.8693 });
+      nativeMap().__location.position = fixAt({ latitude: 30.9693, longitude: 61.8693 });
       const tree = await render(screen(PropertyDetailsScreen, route));
       await settle();
       await pressId(tree.root, 'details-map-fullscreen');
@@ -772,7 +816,7 @@ describe('navigation to the property', () => {
 
     it('draws the route on the small map by itself when the phone may be located, and the big map opens with it worked out: line, distance and arrival time', async () => {
       withRoute();
-      maplibre().__location.position = fixAt(ZARANJ);
+      nativeMap().__location.position = fixAt(ZARANJ);
       const tree = await render(screen(PropertyDetailsScreen, route));
       await settle(6);
       // On the page, before anything is pressed: the road, the phone's own spot and a line with the distance and time.
@@ -799,18 +843,18 @@ describe('navigation to the property', () => {
 
     it('draws no route on the small map, and never shows a permission prompt by itself, when the phone was never allowed', async () => {
       withRoute();
-      maplibre().__location.grant = false;
+      nativeMap().__location.grant = false;
       const tree = await render(screen(PropertyDetailsScreen, route));
       await settle(6);
       expect(callsTo(fetchMock).some(c => c.path === '/geo/route')).toBe(false);
       expect(tree.root.findAll(n => n.props.testID === 'location-permission')).toHaveLength(0);
       expect(tree.root.findAll(n => n.props.testID === 'details-route-summary')).toHaveLength(0);
-      maplibre().__location.grant = true;
+      nativeMap().__location.grant = true;
     });
 
     it('does not draw a route from nowhere: with the location refused it explains instead', async () => {
       withRoute();
-      maplibre().__location.grant = false;
+      nativeMap().__location.grant = false;
       const tree = await render(screen(PropertyDetailsScreen, route));
       await settle();
       await pressId(tree.root, 'details-map-fullscreen');
@@ -818,7 +862,7 @@ describe('navigation to the property', () => {
       expect(callsTo(fetchMock).some(c => c.path === '/geo/route')).toBe(false);
       expect(tree.root.findAll(n => n.props.testID === 'navigation-close')).toHaveLength(0);
       expect(tree.root.findAll(n => n.props.testID === 'location-permission').length).toBeGreaterThan(0);
-      maplibre().__location.grant = true;
+      nativeMap().__location.grant = true;
     });
 
     it('is not offered for a listing that has no exact pin', async () => {
@@ -831,21 +875,21 @@ describe('navigation to the property', () => {
 
   it('draws a dashed straight line and says so when no route can be had, and stops listening when closed', async () => {
     answer({ [`GET /properties/${ID}`]: () => ({ body: pinned }) }, { 'router.project-osrm.org': () => 'down' });
-    maplibre().__location.position = fixAt(ZARANJ);
+    nativeMap().__location.position = fixAt(ZARANJ);
     const tree = await render(screen(PropertyDetailsScreen, route));
     await settle();
     await pressId(tree.root, 'details-map-fullscreen');
     await settle(6);
     expect(allText(tree.root)).toContain(prs.route.straight);
     // Two listeners: the page's own small map and the route screen's.
-    expect(maplibre().__locationListeners.size).toBe(2);
+    expect(nativeMap().__locationListeners.size).toBe(2);
     await pressId(tree.root, 'navigation-close');
     await settle();
-    expect(maplibre().__locationListeners.size).toBe(1);
+    expect(nativeMap().__locationListeners.size).toBe(1);
     await act(async () => {
       tree.unmount();
     });
     mounted.splice(mounted.indexOf(tree), 1);
-    expect(maplibre().__locationListeners.size).toBe(0);
+    expect(nativeMap().__locationListeners.size).toBe(0);
   });
 });

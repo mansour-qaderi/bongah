@@ -16,6 +16,7 @@ import { Card, CardHeader } from '@/components/ui/card';
 import { EmptyState, ErrorState } from '@/components/ui/empty-state';
 import { TableRowsSkeleton } from '@/components/ui/skeleton';
 import { StatusActions, useStatusChange } from '@/components/listings/status-toggle';
+import { PriceTermsTag } from '@/components/listings/price-terms-tag';
 
 const KEY = 'properties/mine?status=ACTIVE&sort=newest&limit=8';
 
@@ -73,7 +74,10 @@ export function RecentListings() {
                     <span>{formatRelative(p.created_at)}</span>
                   </div>
                 </div>
-                <div className="tabular w-36 text-sm font-semibold text-ink-2">{formatMoney(p.price, p.currency)}</div>
+                <div className="flex w-36 flex-col items-start gap-0.5">
+                  <span className="tabular text-sm font-semibold text-ink-2">{formatMoney(p.price, p.currency)}</span>
+                  <PriceTermsTag terms={p.price_terms} />
+                </div>
                 <div className="tabular flex w-14 items-center gap-1 text-xs text-muted" title={t('dash.recent.views')}>
                   <Eye aria-hidden className="h-3.5 w-3.5" />
                   {formatNumber(p.view_count ?? 0)}

@@ -32,10 +32,13 @@ jest.mock('react-native-keychain', () => ({
   resetGenericPassword: jest.fn(async () => true),
 }));
 
-// MapLibre is native code. The stand-ins render plain views that keep the props a test needs to
-// inspect (testID, onPress, data), so a test can "tap the map" by calling the map's onPress.
+// The Mapbox SDK is native code, and src/map/native.tsx is the only file that talks to it, so that file is what the
+// tests replace. The stand-ins render plain views that keep the props a test needs to inspect (testID, onPress,
+// data), so a test can "tap the map" by calling the map's onPress. (The adapter itself is tested in
+// nativeAdapter.test.tsx, against a stand-in for the SDK.)
 const mockFlyTo = jest.fn();
-jest.mock('@maplibre/maplibre-react-native', () => {
+const mockTilt = jest.fn();
+jest.mock('./src/map/native', () => {
   const React = require('react');
   const { View } = require('react-native');
   const passthrough = name => {
@@ -47,6 +50,7 @@ jest.mock('@maplibre/maplibre-react-native', () => {
   const Camera = React.forwardRef((props, ref) => {
     React.useImperativeHandle(ref, () => ({
       flyTo: mockFlyTo,
+      tilt: mockTilt,
     }));
     return React.createElement(View, { ...props, mockName: 'Camera' });
   });
@@ -82,11 +86,21 @@ jest.mock('@maplibre/maplibre-react-native', () => {
     ViewAnnotation: passthrough('ViewAnnotation'),
     LocationManager,
     __flyTo: mockFlyTo,
+    __tilt: mockTilt,
     __location: location,
     __locationListeners: listeners,
     __emitLocation: position => listeners.forEach(listener => listener(position)),
   };
 });
+
+// Every test sees the same Mapbox setup, whatever .env the developer has: a token exists (so the street map is the
+// Mapbox style, not the no-token fallback) and the label-adjusted style is never downloaded.
+process.env.MAPBOX_ACCESS_TOKEN = 'pk.jest-test-token';
+jest.mock('./src/map/streetStyle', () => ({
+  ...jest.requireActual('./src/map/streetStyle'),
+  useStreetStyle: jest.fn(() => ({ status: 'unavailable' })),
+  useSatelliteStyle: jest.fn(() => ({ status: 'unavailable' })),
+}));
 
 jest.mock(
   'react-native-safe-area-context',

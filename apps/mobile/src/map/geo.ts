@@ -1,13 +1,13 @@
 import { AFGHANISTAN_BOUNDS, type Property } from '@bongah/shared-types';
 import type { Province } from '../constants/provinces';
 
-/** A point as the app and the API think of it. (MapLibre wants [longitude, latitude]; see toLngLat.) */
+/** A point as the app and the API think of it. (The map wants [longitude, latitude]; see toLngLat.) */
 export interface Coordinate {
   latitude: number;
   longitude: number;
 }
 
-/** [longitude, latitude]: MapLibre's order, the opposite of how people say it. */
+/** [longitude, latitude]: the map's order, the opposite of how people say it. */
 export type LngLat = [longitude: number, latitude: number];
 
 /** Where a map is looking. */

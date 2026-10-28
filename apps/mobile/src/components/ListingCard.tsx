@@ -12,7 +12,7 @@ import Badge, { badgeTones, DealBadge } from './Badge';
 import CircleIconButton from './CircleIconButton';
 import Icon, { type IconName } from './Icon';
 import { LISTING_THUMB } from './layoutSizes';
-import Price from './Price';
+import PriceLine from './PriceLine';
 import PropertyFacts, { propertyPlace } from './PropertyFacts';
 
 /**
@@ -125,12 +125,7 @@ export default function ListingCard({
             <AppText variant="label" numberOfLines={2}>
               {property.title}
             </AppText>
-            <Price
-              amount={property.price}
-              currency={property.currency}
-              variant="title"
-              color={colors.primary}
-            />
+            <PriceLine property={property} />
             {place ? (
               <View style={styles.place}>
                 <Icon
@@ -183,7 +178,6 @@ export default function ListingCard({
       <PropertyFacts
         property={property}
         withType
-        withPriceTerms
         layout="grid"
         divider={false}
       />

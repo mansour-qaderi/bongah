@@ -13,6 +13,7 @@ import type { PaginationQuery } from '@bongah/validation';
 import {
   Prisma,
   Role,
+  TransactionMethod,
   TransactionPurpose,
   TransactionStatus,
   type Transaction,
@@ -73,9 +74,11 @@ export class HesabpayService {
       description: target.description,
     });
 
+    const manual = this.settings.mode === 'manual';
     const payment = await this.prisma.transaction.create({
       data: {
         id: transactionId,
+        method: manual ? TransactionMethod.MANUAL : TransactionMethod.GATEWAY,
         userId,
         amount: target.amount,
         currency: this.settings.currency,
@@ -107,6 +110,11 @@ export class HesabpayService {
       currency: this.settings.currency,
       created_at: payment.createdAt.toISOString(),
       payment_url: session.paymentUrl,
+      method: manual ? 'MANUAL' : 'GATEWAY',
+      // Manual: nowhere to be sent, so say where to send the money instead.
+      manual: manual ? this.settings.manual : null,
+      receipt_uploaded: false,
+      reference: null,
     };
   }
 
@@ -206,6 +214,12 @@ export class HesabpayService {
     // Someone else's payment looks exactly like a missing one.
     const payment = await this.prisma.transaction.findFirst({ where: { id, userId } });
     if (!payment) throw new NotFoundException('Payment not found.');
+    return this.toStatus(payment);
+  }
+
+  /** A payment as the app's polling and the receipt-upload answer show it. */
+  toStatus(payment: Transaction): PaymentStatusDto {
+    const manual = payment.method === TransactionMethod.MANUAL;
     return {
       id: payment.id,
       purpose: payment.purpose,
@@ -213,6 +227,12 @@ export class HesabpayService {
       amount: payment.amount.toNumber(),
       currency: this.settings.currency,
       created_at: payment.createdAt.toISOString(),
+      method: payment.method,
+      // A customer who comes back to an unpaid manual payment still needs to see where to send the money.
+      manual: manual && payment.status === TransactionStatus.PENDING ? this.settings.manual : null,
+      receipt_uploaded: payment.proofImageId !== null,
+      reference: payment.paymentReference,
+      review_note: payment.reviewNote,
     };
   }
 
@@ -258,10 +278,16 @@ export class HesabpayService {
 
   /**
    * Marks a PENDING payment SUCCESS and delivers what it bought, atomically. The one place that does so: a verified
-   * webhook and the test checkout both end here, so a test purchase exercises exactly the production delivery.
+   * webhook, the test checkout and an admin's approval of a manual payment all end here, so every one of them
+   * exercises exactly the production delivery.
+   * `alsoInTransaction` runs inside the same database transaction, only for the caller that wins (an admin's
+   * decision and its audit line commit with the delivery or not at all).
    * Returns false when another caller had already settled it.
    */
-  private async settleSuccess(payment: Transaction): Promise<boolean> {
+  async settleSuccess(
+    payment: Transaction,
+    alsoInTransaction?: (db: Prisma.TransactionClient, now: Date) => Promise<void>,
+  ): Promise<boolean> {
     const delivered = await this.prisma.$transaction(async (db) => {
       // One statement flips the status AND issues the receipt (the database's CHECK constraint allows
       // a receipt only on a successful payment), and only the delivery that wins the PENDING -> SUCCESS race
@@ -273,6 +299,7 @@ export class HesabpayService {
          WHERE id = ${payment.id}::uuid AND status = 'PENDING'`;
       if (claimed !== 1) return false; // another delivery of the same webhook won the race
       await fulfil(db, payment, this.settings.featuredAdDays, now, this.promotion);
+      await alsoInTransaction?.(db, now);
       return true;
     });
     if (delivered) this.logger.log(`Payment ${payment.id} (${payment.purpose}) fulfilled`);

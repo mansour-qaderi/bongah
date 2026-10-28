@@ -102,13 +102,13 @@ export class AgenciesController {
   }
 
   /**
-   * Publishes up to 50 listings in one request. Needs the agency perks (active subscription). Always
+   * Publishes up to 50 listings in one request. Needs an active subscription or a running free trial. Always
    * answers 200 with one result per row: check `failed`, not the status code.
    */
   @Post('me/properties/bulk')
   @HttpCode(HttpStatus.OK)
   @UseGuards(JwtAuthGuard, PerksGuard, ThrottlerGuard)
-  @RequiresPerks()
+  @RequiresPerks({ orTrial: true })
   @Throttle({ default: { limit: 6, ttl: 60_000 } })
   bulkCreate(
     @CurrentUser() user: AuthenticatedUser,
@@ -120,7 +120,7 @@ export class AgenciesController {
   /** Edits up to 50 listings in one request (price, status, anything PATCH /properties/:id accepts). One result per row. */
   @Patch('me/properties/bulk')
   @UseGuards(JwtAuthGuard, PerksGuard, ThrottlerGuard)
-  @RequiresPerks()
+  @RequiresPerks({ orTrial: true })
   @Throttle({ default: { limit: 6, ttl: 60_000 } })
   bulkUpdate(
     @CurrentUser() user: AuthenticatedUser,

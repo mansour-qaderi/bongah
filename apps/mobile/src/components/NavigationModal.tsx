@@ -14,7 +14,7 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
-import { GeoJSONSource, Layer, Marker } from '@maplibre/maplibre-react-native';
+import { GeoJSONSource, Layer, Marker } from '../map/native';
 import { useTranslation } from 'react-i18next';
 import type { DealType, PropertyType } from '@bongah/shared-types';
 import BaseMap from '../map/BaseMap';

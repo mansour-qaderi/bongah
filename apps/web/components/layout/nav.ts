@@ -1,4 +1,4 @@
-import { BarChart3, FileSpreadsheet, LayoutDashboard, List, Map as MapIcon, Wallet, type LucideIcon } from 'lucide-react';
+import { BarChart3, FileSpreadsheet, LayoutDashboard, List, Map as MapIcon, MessageSquare, ShieldCheck, Wallet, type LucideIcon } from 'lucide-react';
 import type { MessageKey } from '@/i18n/translate';
 
 export interface NavItem {
@@ -9,6 +9,8 @@ export interface NavItem {
   /** The link is lit for any path that starts with this (default: the href itself). */
   match?: string;
   exact?: boolean;
+  /** Only an admin account sees the link (the API refuses everyone else regardless). */
+  adminOnly?: boolean;
 }
 
 export const NAV_ITEMS: NavItem[] = [
@@ -16,7 +18,9 @@ export const NAV_ITEMS: NavItem[] = [
   { href: '/dashboard', labelKey: 'nav.overview', icon: LayoutDashboard, exact: true },
   { href: '/dashboard/listings', labelKey: 'nav.listings', icon: List, exact: true },
   { href: '/dashboard/listings/quick-add', labelKey: 'nav.quickAdd', icon: FileSpreadsheet },
+  { href: '/dashboard/chat', labelKey: 'nav.chat', icon: MessageSquare },
   { href: '/dashboard/subscription', labelKey: 'nav.subscription', icon: Wallet },
+  { href: '/dashboard/admin/payments', labelKey: 'nav.adminPayments', icon: ShieldCheck, adminOnly: true },
 ];
 
 export function isActive(item: NavItem, pathname: string): boolean {

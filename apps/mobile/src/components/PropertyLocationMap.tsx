@@ -2,7 +2,7 @@ import React, { useMemo, useState } from 'react';
 import type { DealType, PlotBoundary, PropertyType } from '@bongah/shared-types';
 import { StyleSheet, View, type LayoutChangeEvent } from 'react-native';
 import { useTranslation } from 'react-i18next';
-import { GeoJSONSource, Layer, Marker } from '@maplibre/maplibre-react-native';
+import { GeoJSONSource, Layer, Marker } from '../map/native';
 import BaseMap from '../map/BaseMap';
 import {
   cameraAt,
@@ -45,6 +45,7 @@ export default function PropertyLocationMap({
   route,
   onFullscreen,
   fullscreenBusy = false,
+  onShare,
 }: {
   at: Coordinate;
   /** How far in to look; the pin's usual close view when left out. */
@@ -60,9 +61,13 @@ export default function PropertyLocationMap({
   onFullscreen?: () => void;
   /** The press is being answered (the phone is being located): the button shows a spinner. */
   fullscreenBusy?: boolean;
+  /** Shows the «share the location» button; called when it is pressed. */
+  onShare?: () => void;
 }) {
   const { t } = useTranslation();
   const [width, setWidth] = useState(FALLBACK_WIDTH);
+  // The 3D view: the picture leans back and the buildings around the pin stand up (the picture itself stays still).
+  const [tilted, setTilted] = useState(false);
   const outline = useMemo<GeoJSON.FeatureCollection | null>(() => {
     const rings = readBoundary(boundary);
     return rings
@@ -113,6 +118,7 @@ export default function PropertyLocationMap({
         camera={camera}
         interactive={false}
         androidView="texture"
+        tilted={tilted}
         testID="details-map"
       >
         {outline ? (
@@ -181,8 +187,8 @@ export default function PropertyLocationMap({
           </AppText>
         </View>
       ) : null}
-      {onFullscreen ? (
-        <View style={styles.corner} pointerEvents="box-none">
+      <View style={styles.corner} pointerEvents="box-none">
+        {onFullscreen ? (
           <CircleIconButton
             testID="details-map-fullscreen"
             icon="expand"
@@ -190,8 +196,24 @@ export default function PropertyLocationMap({
             loading={fullscreenBusy}
             onPress={onFullscreen}
           />
-        </View>
-      ) : null}
+        ) : null}
+        <CircleIconButton
+          testID="details-map-3d"
+          icon="cube"
+          label={t('map.view3d')}
+          selected={tilted}
+          tone={tilted ? 'brand' : 'neutral'}
+          onPress={() => setTilted(on => !on)}
+        />
+        {onShare ? (
+          <CircleIconButton
+            testID="details-map-share"
+            icon="share"
+            label={t('shareLocation.button')}
+            onPress={onShare}
+          />
+        ) : null}
+      </View>
     </View>
   );
 }
@@ -211,6 +233,7 @@ const styles = StyleSheet.create({
     right: spacing.sm,
     flexDirection: 'row',
     alignItems: 'flex-start',
+    gap: spacing.sm,
   },
   summary: {
     position: 'absolute',

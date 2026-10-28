@@ -20,10 +20,8 @@ export function TopUps({ pricing, featuredCredits }: { pricing: Pricing; feature
     setBusy(size);
     try {
       const outcome = await startPayment({ purpose: 'FEATURED_CREDITS', bundle_size: size as 1 | 3 | 5 | 10 | 20 });
-      if (outcome === 'completed') {
-        await announcePaid('FEATURED_CREDITS');
-        setBusy(null);
-      }
+      if (outcome === 'completed') await announcePaid('FEATURED_CREDITS');
+      if (outcome !== 'redirected') setBusy(null);
     } catch (e) {
       toast.error(errorMessage(e));
       setBusy(null);

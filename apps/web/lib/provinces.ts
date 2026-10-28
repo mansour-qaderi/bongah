@@ -58,3 +58,21 @@ export const provinceLabel = (province: Province, language: Language): string =>
 /** The same, for a stored province name (a draft's text): unknown names are shown as they are. */
 export const provinceNameLabel = (name: string, language: Language): string =>
   language === 'ps' ? (PROVINCES.find((p) => p.name === name)?.name_ps ?? name) : name;
+
+/** The province whose capital is closest to a point: what to call a place when no geocoder can be asked. Approximate near borders. */
+export function nearestProvince(lat: number, lng: number): Province {
+  // Longitude degrees shrink with latitude; this is plenty accurate for ranking 34 places.
+  const scale = Math.cos((lat * Math.PI) / 180);
+  let best = PROVINCES[0]!;
+  let bestDistance = Infinity;
+  for (const p of PROVINCES) {
+    const dLat = p.lat - lat;
+    const dLng = (p.lng - lng) * scale;
+    const distance = dLat * dLat + dLng * dLng;
+    if (distance < bestDistance) {
+      best = p;
+      bestDistance = distance;
+    }
+  }
+  return best;
+}

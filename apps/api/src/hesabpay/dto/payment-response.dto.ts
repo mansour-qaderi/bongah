@@ -1,7 +1,7 @@
-import type { FeaturedCreditUsed, PaymentInitiated, Pricing, Transaction } from '@bongah/shared-types';
+import type { FeaturedCreditUsed, PaymentInitiated, PaymentStatus, Pricing } from '@bongah/shared-types';
 
 export type PaymentInitiatedDto = PaymentInitiated;
-export type PaymentStatusDto = Transaction;
+export type PaymentStatusDto = PaymentStatus;
 export type PricingDto = Pricing;
 export type FeaturedCreditUsedDto = FeaturedCreditUsed;
 

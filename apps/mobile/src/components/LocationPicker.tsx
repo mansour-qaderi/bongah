@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
-import { ViewAnnotation } from '@maplibre/maplibre-react-native';
+import { ViewAnnotation } from '../map/native';
 import BaseMap from '../map/BaseMap';
 import {
   fromLngLat,

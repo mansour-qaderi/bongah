@@ -10,7 +10,7 @@ import {
   StyleSheet,
 } from 'react-native';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { LocationManager } from '@maplibre/maplibre-react-native';
+import { LocationManager } from '../src/map/native';
 import { initI18n } from '../src/i18n';
 import prs from '../src/i18n/locales/prs.json';
 import { formatNumber } from '../src/i18n/format';
@@ -27,6 +27,7 @@ import {
 import { mockNavigation } from '../test-utils/navMock';
 import FilterSheet from '../src/components/FilterSheet';
 import { MARKER_TAP_GRACE_MS } from '../src/components/PropertyMap';
+import { MAP_STYLE_URL, SATELLITE_STYLE_URL } from '../src/config';
 import { LOCATE_TIMEOUT_MS } from '../src/map/location';
 import { USER_PULSE_MS } from '../src/map/markers';
 import { colors, dealColors } from '../src/theme';
@@ -51,7 +52,7 @@ jest.mock('../src/navigation/useRequireAuth', () => ({
 // Imported after the mocks so the screens pick them up.
 import HomeScreen from '../src/screens/home/HomeScreen';
 
-const maplibre = jest.requireMock('@maplibre/maplibre-react-native') as {
+const nativeMap = jest.requireMock('../src/map/native') as {
   __flyTo: jest.Mock;
   __location: {
     grant: boolean;
@@ -267,7 +268,7 @@ const moveMap = (
 /** Where the map opened: the camera it was first drawn with. */
 const opening = (root: ReactTestRenderer.ReactTestInstance) =>
   mapParts(root, 'Camera')[0]?.props.initialViewState;
-const lastFly = () => maplibre.__flyTo.mock.calls.at(-1)?.[0];
+const lastFly = () => nativeMap.__flyTo.mock.calls.at(-1)?.[0];
 
 const openUrl = jest.fn(async (_url: string): Promise<void> => undefined);
 
@@ -276,10 +277,10 @@ beforeAll(async () => {
 });
 beforeEach(() => {
   fetchMock.mockReset();
-  maplibre.__flyTo.mockClear();
+  nativeMap.__flyTo.mockClear();
   mockNavigation.navigate.mockClear();
   openUrl.mockClear();
-  Object.assign(maplibre.__location, {
+  Object.assign(nativeMap.__location, {
     grant: true,
     position: undefined,
     requests: 0,
@@ -670,7 +671,7 @@ describe('Home map: the listing card', () => {
   });
 
   it('has a «مسیریابی» button in the card that opens the route screen once the phone has a position', async () => {
-    maplibre.__location.position = kabulFix;
+    nativeMap.__location.position = kabulFix;
     serve([listing()]);
     const tree = await render(home());
     await settle();
@@ -790,6 +791,9 @@ describe('Home map: clusters', () => {
     expect(text).toContain('آپارتمان سه‌خوابه');
     expect(text).toContain('خانه حویلی');
     expect(text).not.toContain('زمین هرات'); // only what is in that spot
+    // Each row is a small card: the deal as its tag, and where the listing is.
+    expect(text).toContain(prs.dealType.SALE);
+    expect(text).toContain('شهر نو');
 
     await act(async () => {
       pressableWith(sheet, 'خانه حویلی').props.onPress();
@@ -816,6 +820,24 @@ describe('Home map: clusters', () => {
     expect(text).toContain('آپارتمان سه‌خوابه');
     expect(text).toContain('دفتر املاک نور');
     expect(text).toContain(prs.home.agencyVerified);
+  });
+
+  it('says «جورآمد» / «مقطوع» beside the price of a listing in the list, and nothing for one that says neither', async () => {
+    serve(
+      [
+        listing({ id: 'n1', title: 'خانه جورآمد', lat: 34.55, lng: 69.2, price_terms: 'NEGOTIABLE' }),
+        listing({ id: 'f1', title: 'خانه مقطوع', lat: 34.55, lng: 69.2, price_terms: 'FIXED' }),
+        listing({ id: 'x1', title: 'خانه بدون قید', lat: 34.55, lng: 69.2, price_terms: null }),
+      ],
+    );
+    const tree = await render(home());
+    await settle();
+    const cluster = markers(tree.root).find(m => String(m.props.id).startsWith('cluster:'))!;
+    await act(async () => cluster.props.onPress());
+    const text = allText(byTestId(tree.root, 'cluster-list')[0]);
+    expect(text).toContain(prs.priceTerms.NEGOTIABLE);
+    expect(text).toContain(prs.priceTerms.FIXED);
+    expect(text.split(prs.priceTerms.NEGOTIABLE)).toHaveLength(2); // once, not for the other two
   });
 
   it('closes the list without choosing', async () => {
@@ -891,23 +913,23 @@ describe('Home map: where I am', () => {
     permissionCard(root).length > 0;
 
   it('asks for the position as the app opens, then opens the map right on me: a blue dot, no card, no flight across the country', async () => {
-    maplibre.__location.position = kabul;
+    nativeMap.__location.position = kabul;
     serve([]);
     const tree = await render(home());
     await settle();
-    expect(maplibre.__location.requests).toBe(1);
+    expect(nativeMap.__location.requests).toBe(1);
     expect(markerIds(tree.root)).toEqual(['me']);
     expect(opening(tree.root)).toMatchObject({
       center: [69.1723, 34.5281],
       zoom: 17,
     });
     // It was never drawn on the country first, so there is nothing to fly from.
-    expect(maplibre.__flyTo).not.toHaveBeenCalled();
+    expect(nativeMap.__flyTo).not.toHaveBeenCalled();
     expect(shown(tree.root)).toBe(false);
   });
 
   it('opens a card when location is refused: why it is needed, a button to the phone settings, and "not now"', async () => {
-    maplibre.__location.grant = false;
+    nativeMap.__location.grant = false;
     serve([]);
     const tree = await render(home());
     await settle();
@@ -918,7 +940,7 @@ describe('Home map: where I am', () => {
     expect(text).toContain(prs.home.permissionPrivacy);
     expect(markerIds(tree.root)).toEqual([]);
     // The map is still usable underneath: it stays on the country, and goes nowhere.
-    expect(maplibre.__flyTo).not.toHaveBeenCalled();
+    expect(nativeMap.__flyTo).not.toHaveBeenCalled();
 
     const openSettings = jest
       .spyOn(Linking, 'openSettings')
@@ -929,7 +951,7 @@ describe('Home map: where I am', () => {
   });
 
   it('lets the card be dismissed with "not now", and the map carries on', async () => {
-    maplibre.__location.grant = false;
+    nativeMap.__location.grant = false;
     serve([listing()]);
     const tree = await render(home());
     await settle();
@@ -982,26 +1004,26 @@ describe('Home map: where I am', () => {
       heard.push(listener);
       return { remove: jest.fn() };
     }) as never);
-    maplibre.__location.grant = false;
+    nativeMap.__location.grant = false;
     serve([]);
     const tree = await render(home());
     await settle();
-    expect(maplibre.__location.requests).toBe(1);
+    expect(nativeMap.__location.requests).toBe(1);
 
     // Coming back to the app for any other reason does not ask.
     await act(async () => appStateChanged('active'));
     await settle();
-    expect(maplibre.__location.requests).toBe(1);
+    expect(nativeMap.__location.requests).toBe(1);
 
     jest.spyOn(Linking, 'openSettings').mockResolvedValue(undefined);
     await press(tree.root, prs.account.openSettings);
-    maplibre.__location.grant = true;
-    maplibre.__location.position = kabul;
+    nativeMap.__location.grant = true;
+    nativeMap.__location.position = kabul;
     await act(async () => appStateChanged('background'));
-    expect(maplibre.__location.requests).toBe(1);
+    expect(nativeMap.__location.requests).toBe(1);
     await act(async () => appStateChanged('active'));
     await settle();
-    expect(maplibre.__location.requests).toBe(2);
+    expect(nativeMap.__location.requests).toBe(2);
     expect(markerIds(tree.root)).toEqual(['me']);
     expect(lastFly()).toMatchObject({ zoom: 17 });
   });
@@ -1013,20 +1035,20 @@ describe('Home map: where I am', () => {
     await press(tree.root, prs.home.permissionLater);
     expect(markerIds(tree.root)).toEqual([]);
 
-    maplibre.__location.position = kabul;
+    nativeMap.__location.position = kabul;
     await tapLabel(tree.root, prs.home.locate);
     await settle();
-    expect(maplibre.__location.requests).toBe(2);
+    expect(nativeMap.__location.requests).toBe(2);
     expect(markerIds(tree.root)).toEqual(['me']);
-    const before = maplibre.__flyTo.mock.calls.length;
+    const before = nativeMap.__flyTo.mock.calls.length;
     expect(before).toBe(1);
     await tapLabel(tree.root, prs.home.locate); // same numbers, a new trip
     await settle();
-    expect(maplibre.__flyTo.mock.calls.length).toBe(before + 1);
+    expect(nativeMap.__flyTo.mock.calls.length).toBe(before + 1);
   });
 
   it('keeps the map where it is, and says nothing about it, for someone outside Afghanistan', async () => {
-    maplibre.__location.position = {
+    nativeMap.__location.position = {
       ...kabul,
       coords: { ...kabul.coords, latitude: 51.5, longitude: -0.12 },
     };
@@ -1037,7 +1059,7 @@ describe('Home map: where I am', () => {
     expect(allText(tree.root)).not.toContain('بیرون از افغانستان');
     expect(shown(tree.root)).toBe(false); // nothing is wrong, so no permission card
     expect(markerIds(tree.root)).toEqual([]);
-    expect(maplibre.__flyTo).not.toHaveBeenCalled();
+    expect(nativeMap.__flyTo).not.toHaveBeenCalled();
   });
 
   it('draws no map until the first fix is in (a waiting card instead), so it can never show the country first', async () => {
@@ -1059,7 +1081,7 @@ describe('Home map: where I am', () => {
       zoom: 17,
     });
     expect(markerIds(tree.root)).toEqual(['me']);
-    expect(maplibre.__flyTo).not.toHaveBeenCalled();
+    expect(nativeMap.__flyTo).not.toHaveBeenCalled();
   });
 
   it('does not yank the map back to me after I chose a province while the first fix was slow', async () => {
@@ -1080,7 +1102,7 @@ describe('Home map: where I am', () => {
     await settle();
     expect(markerIds(tree.root)).toEqual(['me']); // the dot still appears
     expect(opening(tree.root)).toMatchObject({ zoom: 9 }); // but the map opens on Herat, not on the phone
-    expect(maplibre.__flyTo).not.toHaveBeenCalled();
+    expect(nativeMap.__flyTo).not.toHaveBeenCalled();
   });
 });
 
@@ -1104,7 +1126,7 @@ describe('Home map: moving around', () => {
   });
 
   it('asks only for the area on screen, 50 at a time, and never for a province or "has location"', async () => {
-    maplibre.__location.position = kabulFix;
+    nativeMap.__location.position = kabulFix;
     serve([listing()]);
     await render(home());
     await settle();
@@ -1125,7 +1147,7 @@ describe('Home map: moving around', () => {
   });
 
   it('fetches the new place when the map is moved far, and nothing for a small nudge', async () => {
-    maplibre.__location.position = kabulFix;
+    nativeMap.__location.position = kabulFix;
     serve([listing()]);
     const tree = await render(home());
     await settle();
@@ -1183,7 +1205,7 @@ describe('Home map: moving around', () => {
       }
       return jsonResponse(200, page([listing()]));
     });
-    maplibre.__location.position = kabulFix;
+    nativeMap.__location.position = kabulFix;
     const tree = await render(home());
     await settle();
     expect(pinIds(tree.root)).toEqual(['property:p1']);
@@ -1255,10 +1277,10 @@ describe('Home map: moving around', () => {
     expect(propertyCalls().every(c => c.query.province === undefined)).toBe(
       true,
     );
-    const flights = maplibre.__flyTo.mock.calls.length;
+    const flights = nativeMap.__flyTo.mock.calls.length;
     await apply({});
     await settle();
-    expect(maplibre.__flyTo.mock.calls.length).toBe(flights);
+    expect(nativeMap.__flyTo.mock.calls.length).toBe(flights);
   });
 
   it('has no second profile button: the Account tab is the one way to the profile', async () => {
@@ -1893,7 +1915,7 @@ describe('Home map: plot boundaries', () => {
   });
 
   it('skips a broken outline and still draws the good ones', async () => {
-    maplibre.__location.position = kabulFix;
+    nativeMap.__location.position = kabulFix;
     serve([
       withPlot(),
       listing({
@@ -2089,6 +2111,24 @@ describe('Home map: overlay controls', () => {
     expect(nav.navigate).toHaveBeenCalledWith('Saved');
   });
 
+  it('has a 3D button that leans the map back over the buildings and, pressed again, lays it flat', async () => {
+    serve([listing()]);
+    const tilt = (jest.requireMock('../src/map/native') as { __tilt: jest.Mock }).__tilt;
+    tilt.mockClear();
+    const tree = await render(home());
+    await settle();
+    const button = () =>
+      tree.root.find(n => n.props.testID === 'map-3d' && typeof n.props.onPress === 'function');
+    expect(tilt).not.toHaveBeenCalled();
+    await act(async () => button().props.onPress());
+    expect(tilt).toHaveBeenLastCalledWith(expect.objectContaining({ pitch: 55, duration: 900 }));
+    expect(tilt.mock.calls.at(-1)![0].zoom).toBeGreaterThanOrEqual(16);
+    expect(button().props.active).toBe(true);
+    await act(async () => button().props.onPress());
+    expect(tilt).toHaveBeenLastCalledWith({ pitch: 0, duration: 700 });
+    expect(button().props.active).toBe(false);
+  });
+
   it('leaves exactly two controls at the foot of the map: "my location", and the list / map pill', async () => {
     serve([listing()]);
     const tree = await render(home());
@@ -2267,29 +2307,88 @@ describe('Home map: what is in view', () => {
 });
 
 describe('Home map: street and satellite', () => {
+  const mapOf = (root: ReactTestRenderer.ReactTestInstance) =>
+    mapParts(root, 'Map').find(n => n.props.testID === 'property-map')!;
+  /** The street and satellite maps are style addresses (Mapbox's own); the plain-tile fallback is a style object. */
   const styleOfMap = (root: ReactTestRenderer.ReactTestInstance) =>
-    mapParts(root, 'Map').find(n => n.props.testID === 'property-map')!.props
-      .mapStyle as { sources: Record<string, unknown> };
+    mapOf(root).props.mapStyle as string | { sources: Record<string, unknown> };
+  const sourcesOf = (root: ReactTestRenderer.ReactTestInstance) => {
+    const style = styleOfMap(root);
+    return typeof style === 'string' ? style : Object.keys(style.sources);
+  };
 
-  beforeEach(() => {
-    jest.requireActual('../src/map/mapStyleStore').resetMapStyleForTests();
+  beforeEach(async () => {
+    const store = jest.requireActual('../src/map/mapStyleStore');
+    store.resetMapStyleForTests();
+    // The choice is kept on the phone, so a test that ended on the satellite map would start the next one on it.
+    await store.setMapStyle('street');
   });
 
   it('switches to the satellite photographs and back, and says what a press does', async () => {
     serve([listing()]);
     const tree = await render(home());
     await settle();
-    expect(Object.keys(styleOfMap(tree.root).sources)).toEqual(['basemap']);
+    expect(sourcesOf(tree.root)).toBe(MAP_STYLE_URL);
 
     await tapLabel(tree.root, prs.map.styleSatellite);
     await settle();
-    expect(Object.keys(styleOfMap(tree.root).sources)).toEqual(['imagery', 'labels']);
+    expect(sourcesOf(tree.root)).toBe(SATELLITE_STYLE_URL);
+    expect(SATELLITE_STYLE_URL).toBe('mapbox://styles/mapbox/satellite-streets-v12');
     expect(labelled(tree.root, prs.map.styleStreet)).toBe(true);
     expect(labelled(tree.root, prs.map.styleSatellite)).toBe(false);
 
     await tapLabel(tree.root, prs.map.styleStreet);
     await settle();
-    expect(Object.keys(styleOfMap(tree.root).sources)).toEqual(['basemap']);
+    expect(sourcesOf(tree.root)).toBe(MAP_STYLE_URL);
+  });
+
+  it('falls back to plain raster tiles when the street style cannot be loaded, and that says nothing about the satellite style', async () => {
+    serve([listing()]);
+    const tree = await render(home());
+    await settle();
+    expect(sourcesOf(tree.root)).toBe(MAP_STYLE_URL);
+
+    await act(async () => {
+      mapOf(tree.root).props.onDidFailLoadingMap({ nativeEvent: null });
+    });
+    expect(sourcesOf(tree.root)).toEqual(['basemap']);
+
+    // The street map failing says nothing about the satellite one: it is a style of its own, and gets its own try.
+    await tapLabel(tree.root, prs.map.styleSatellite);
+    await settle();
+    expect(sourcesOf(tree.root)).toBe(SATELLITE_STYLE_URL);
+  });
+
+  it('puts the bright street map (streets-v12) in the place of a satellite style that cannot be loaded, not a blank dark canvas', async () => {
+    serve([listing()]);
+    const tree = await render(home());
+    await settle();
+    await tapLabel(tree.root, prs.map.styleSatellite);
+    await settle();
+    expect(sourcesOf(tree.root)).toBe(SATELLITE_STYLE_URL);
+    expect(labelled(tree.root, prs.map.styleStreet)).toBe(true); // the button offers the way back
+
+    await act(async () => {
+      mapOf(tree.root).props.onDidFailLoadingMap({ nativeEvent: null });
+    });
+    await settle();
+    expect(sourcesOf(tree.root)).toBe(MAP_STYLE_URL);
+    expect(MAP_STYLE_URL).toBe('mapbox://styles/mapbox/streets-v12');
+    // The button offers the satellite again: it shows what is on screen.
+    expect(labelled(tree.root, prs.map.styleSatellite)).toBe(true);
+  });
+});
+
+describe('Home map: the price terms in the popup', () => {
+  it('puts «جورآمد» beside the price on the card that opens over the map, once (not again among the facts)', async () => {
+    serve([listing({ price_terms: 'NEGOTIABLE' })]);
+    const tree = await render(home());
+    await settle();
+    await tapMarker(tree.root, 'property:p1');
+    await settle();
+    const text = allText(byTestId(tree.root, 'property-preview')[0]);
+    expect(text.split(prs.priceTerms.NEGOTIABLE)).toHaveLength(2);
+    expect(text.indexOf(prs.priceTerms.NEGOTIABLE)).toBeGreaterThan(text.indexOf('؋') >= 0 ? text.indexOf('؋') : -1);
   });
 });
 
@@ -2332,7 +2431,7 @@ describe('Home map: it starts where the phone is', () => {
   });
 
   it('then asks for the street the phone is on, not for Kabul or the country', async () => {
-    maplibre.__location.position = kabulFix;
+    nativeMap.__location.position = kabulFix;
     serve([listing()]);
     const tree = await render(home());
     await settle();
@@ -2348,7 +2447,7 @@ describe('Home map: it starts where the phone is', () => {
   });
 
   it('starts where the phone is in Mazar too, with no Kabul in it', async () => {
-    maplibre.__location.position = {
+    nativeMap.__location.position = {
       ...kabulFix,
       coords: { ...kabulFix.coords, latitude: 36.7, longitude: 67.1 },
     };
@@ -2362,13 +2461,13 @@ describe('Home map: it starts where the phone is', () => {
   });
 
   it('shows the country, and asks for it, when the phone says no', async () => {
-    maplibre.__location.grant = false;
+    nativeMap.__location.grant = false;
     serve([listing()]);
     await render(home());
     await settle();
     expect(propertyCalls()).toHaveLength(1);
     expect(widthOf(propertyCalls()[0].query)).toBeGreaterThan(10);
-    expect(maplibre.__flyTo).not.toHaveBeenCalled();
+    expect(nativeMap.__flyTo).not.toHaveBeenCalled();
   });
 
   it('does not wait for ever on a location question nobody answers: after its time limit the country is shown', async () => {
@@ -2409,14 +2508,14 @@ describe('Home map: my live position', () => {
   const emit = (position: unknown) =>
     act(async () => {
       (
-        jest.requireMock('@maplibre/maplibre-react-native') as {
+        jest.requireMock('../src/map/native') as {
           __emitLocation: (p: unknown) => void;
         }
       ).__emitLocation(position);
     });
   const listeners = () =>
     (
-      jest.requireMock('@maplibre/maplibre-react-native') as {
+      jest.requireMock('../src/map/native') as {
         __locationListeners: Set<unknown>;
       }
     ).__locationListeners;
@@ -2429,7 +2528,7 @@ describe('Home map: my live position', () => {
   it('draws the phone as a blue locator icon inside a ring that pulses, with the native driver', async () => {
     const timing = jest.spyOn(Animated, 'timing');
     jest.spyOn(AccessibilityInfo, 'isReduceMotionEnabled').mockResolvedValue(false);
-    maplibre.__location.position = kabulFix;
+    nativeMap.__location.position = kabulFix;
     serve([]);
     const tree = await render(home());
     await settle();
@@ -2445,7 +2544,7 @@ describe('Home map: my live position', () => {
   it('keeps the ring still for someone who has asked their phone for less motion', async () => {
     const timing = jest.spyOn(Animated, 'timing');
     jest.spyOn(AccessibilityInfo, 'isReduceMotionEnabled').mockResolvedValue(true);
-    maplibre.__location.position = kabulFix;
+    nativeMap.__location.position = kabulFix;
     serve([]);
     const tree = await render(home());
     await settle();
@@ -2455,7 +2554,7 @@ describe('Home map: my live position', () => {
   });
 
   it('follows the phone as it moves, and says nothing for a position outside Afghanistan', async () => {
-    maplibre.__location.position = kabulFix;
+    nativeMap.__location.position = kabulFix;
     serve([]);
     const tree = await render(home());
     await settle();
@@ -2470,7 +2569,7 @@ describe('Home map: my live position', () => {
   });
 
   it('stops listening to the GPS while another tab is in front, and starts again on coming back', async () => {
-    maplibre.__location.position = kabulFix;
+    nativeMap.__location.position = kabulFix;
     serve([]);
     const nav = navigation();
     const handlers: Record<string, () => void> = {};
@@ -2488,10 +2587,47 @@ describe('Home map: my live position', () => {
   });
 
   it('does not listen at all when location was refused', async () => {
-    maplibre.__location.grant = false;
+    nativeMap.__location.grant = false;
     serve([]);
     await render(home());
     await settle();
     expect(listeners().size).toBe(0);
+  });
+});
+
+describe('Home map: area name bar', () => {
+  const nominatim = (address: Record<string, string>) => {
+    mockApi(fetchMock, {
+      'GET /properties': { body: page([]) },
+      'GET /agencies/map': { body: [] },
+    });
+    const api = fetchMock.getMockImplementation()!;
+    fetchMock.mockImplementation(async (url: string, init?: RequestInit) =>
+      url.startsWith('https://nominatim.openstreetmap.org/reverse')
+        ? { ok: true, status: 200, json: async () => ({ address }) }
+        : api(url, init),
+    );
+  };
+  const waitFor = async (ms: number) =>
+    act(async () => {
+      await new Promise<void>(resolve => setTimeout(() => resolve(), ms));
+    });
+  const bar = (root: ReactTestRenderer.ReactTestInstance) =>
+    root.findAll(n => n.props.testID === 'map-area' && typeof n.type !== 'string')[0];
+
+  it('names the province while zoomed out, and the neighbourhood once zoomed in on it', async () => {
+    nominatim({ state: 'Kabul Province', city_district: 'ناحیه ۴', suburb: 'وزیر اکبرخان' });
+    const tree = await render(home());
+    await settle();
+    await moveMap(tree.root, 7, [60, 29, 75, 38]);
+    expect(allText(bar(tree.root))).toBeTruthy(); // the nearest province, with no lookup
+    expect(callsTo(fetchMock).filter(c => c.path === '/reverse')).toHaveLength(0);
+
+    await moveMap(tree.root, 16, [69.17, 34.52, 69.18, 34.53]);
+    await waitFor(1_500);
+    await settle();
+    expect(allText(bar(tree.root))).toContain('وزیر اکبرخان');
+    expect(allText(bar(tree.root))).toContain('ناحیه ۴');
+    expect(bar(tree.root).props.accessibilityLabel).toContain(prs.map.areaAria);
   });
 });

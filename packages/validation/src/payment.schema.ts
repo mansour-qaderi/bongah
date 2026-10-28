@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { FEATURED_BUNDLE_SIZES, SUBSCRIPTION_PACKAGES } from '@bongah/shared-types';
+import { toAsciiDigits } from './common';
 
 /**
  * POST /hesabpay/payments. There is deliberately no `amount` or `currency`: what something
@@ -36,6 +37,24 @@ export const initiatePaymentSchema = z.discriminatedUnion('purpose', [
   }),
 ]);
 export type InitiatePaymentInput = z.output<typeof initiatePaymentSchema>;
+
+/**
+ * POST /hesabpay/payments/:id/reference: the transaction id printed on the HesabPay / bank receipt. Letters, digits and
+ * the few separators such ids contain; Persian digits are accepted and stored as 0-9.
+ */
+export const submitPaymentReferenceSchema = z.strictObject({
+  reference: z
+    .string()
+    .transform((value) => toAsciiDigits(value).replace(/\s+/g, ' ').trim())
+    .pipe(
+      z
+        .string()
+        .min(4, 'The reference is too short.')
+        .max(64, 'The reference is too long.')
+        .regex(/^[A-Za-z0-9](?:[A-Za-z0-9 ._/-]*[A-Za-z0-9])?$/, 'Use only the letters and digits printed on the receipt.'),
+    ),
+});
+export type SubmitPaymentReferenceInput = z.output<typeof submitPaymentReferenceSchema>;
 
 /** POST /hesabpay/featured-credits/use: spend one featured-listing credit on one of my listings. */
 export const useFeaturedCreditSchema = z.strictObject({

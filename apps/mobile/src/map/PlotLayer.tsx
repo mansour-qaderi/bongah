@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { GeoJSONSource, Layer } from '@maplibre/maplibre-react-native';
+import { GeoJSONSource, Layer } from './native';
 import { colors } from '../theme';
 import { plotFeatures, type Plot } from './plots';
 

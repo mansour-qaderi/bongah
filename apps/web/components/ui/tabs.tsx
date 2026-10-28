@@ -4,7 +4,13 @@ import * as TabsPrimitive from '@radix-ui/react-tabs';
 import type { ReactNode } from 'react';
 import { cn } from '@/lib/cn';
 
-export const Tabs = TabsPrimitive.Root;
+/**
+ * Radix tabs default to `dir="ltr"` whatever the page says, which put the first tab on the left of a right-to-left
+ * panel («همه» last). The panel is always RTL, so the tabs say so: the first tab is the rightmost.
+ */
+export function Tabs(props: React.ComponentProps<typeof TabsPrimitive.Root>) {
+  return <TabsPrimitive.Root dir="rtl" {...props} />;
+}
 
 export function TabsList({ children, className }: { children: ReactNode; className?: string }) {
   return (

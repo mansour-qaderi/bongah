@@ -1,11 +1,9 @@
 import React from 'react';
-import { Linking } from 'react-native';
 import ReactTestRenderer from 'react-test-renderer';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { initI18n } from '../src/i18n';
 import { formatNumber } from '../src/i18n/format';
 import prs from '../src/i18n/locales/prs.json';
-import { MAP_ATTRIBUTION_URL } from '../src/config';
 import {
   allText,
   callsTo,
@@ -101,9 +99,8 @@ describe('AccountScreen dashboard', () => {
     expect(text).toContain(prs.account.morningMessages);
     expect(text).toContain(prs.account.language);
     expect(text).toContain(prs.account.inviteLadder);
-    // The phone is a number: Persian digits, never Western ones, outside the map credit.
-    const withoutCredit = text.split(prs.home.mapCredits)[0];
-    expect(withoutCredit).not.toMatch(/[0-9]/);
+    // The phone is a number: Persian digits, never Western ones.
+    expect(text).not.toMatch(/[0-9]/);
   });
 
   it('has a way to the plans, "ارتقای حساب و خرید اشتراک", for everyone who signs in', async () => {
@@ -197,12 +194,9 @@ describe('AccountScreen dashboard', () => {
     expect(nav.navigate).toHaveBeenCalledWith('Auth');
   });
 
-  it('opens the OpenStreetMap credit', async () => {
-    const open = jest.spyOn(Linking, 'openURL').mockResolvedValue(undefined);
+  it('shows no map credit or Mapbox / OpenStreetMap line (they were removed on request)', async () => {
     const { tree } = await mount();
-    await press(tree.root, prs.home.mapCredits);
-    expect(open).toHaveBeenCalledWith(MAP_ATTRIBUTION_URL);
-    open.mockRestore();
+    expect(allText(tree.root)).not.toMatch(/Mapbox|OpenStreetMap|Maxar|©/);
   });
 });
 

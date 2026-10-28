@@ -7,7 +7,7 @@ import { labelsFor, labelsNow } from '../labels';
 import { activeLanguage, tNow } from '@/i18n/active';
 import { translate } from '@/i18n/translate';
 import type { Language } from '@/i18n/config';
-import { detectDeal, detectType, findArea, findPrice, findProvince } from './parse-text';
+import { detectDeal, detectPriceTerms, detectType, findArea, findPrice, findProvince } from './parse-text';
 import { composeTitle } from './parse-text';
 import { flatten } from './text-utils';
 import { emptyDraft, NO_PIN, type DraftRow, type PinnedDefaults } from './types';
@@ -159,6 +159,9 @@ export function normalizeCurrency(cell: string): Currency | null {
 
 export function normalizeTerms(cell: string): PriceTerms | null {
   const flat = flatten(cell).toLowerCase();
+  // A sentence («قابل معامله نیست», «چانه ندارد») is read the way a pasted post is: its negation counts.
+  const said = detectPriceTerms(flat);
+  if (said) return said;
   if (/مقطوع|ثابت|قطعی|fixed|final/u.test(flat)) return 'FIXED';
   if (/جورآمد|جور آمد|قابل|توافق|معاملې وړ|negotiable|open/u.test(flat)) return 'NEGOTIABLE';
   return null;

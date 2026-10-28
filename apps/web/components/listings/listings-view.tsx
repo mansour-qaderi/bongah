@@ -6,7 +6,7 @@ import { useCallback, useMemo, useState } from 'react';
 import useSWR from 'swr';
 import { flexRender, getCoreRowModel, useReactTable, type ColumnDef } from '@tanstack/react-table';
 import { toast } from 'sonner';
-import { ArrowDown, ArrowUp, Eye, FilePlus2, Frame, MapPin, MoreHorizontal, SearchX, Star } from 'lucide-react';
+import { ArrowDown, ArrowUp, Eye, FilePlus2, Frame, MapPin, MoreHorizontal, Pencil, SearchX, Star, Trash2 } from 'lucide-react';
 import { moneyAmount } from '@bongah/validation';
 import type { Paginated, Property, PropertyStatus } from '@bongah/shared-types';
 import { errorMessage, fetcher } from '@/lib/api';
@@ -29,6 +29,7 @@ import {
 import { DEFAULT_TAB, PAGE_SIZE, STATUS_TABS, useListingQuery, type StatusTab } from '@/hooks/use-listing-query';
 import { SYNC_INTERVAL_MS } from '@/hooks/use-api';
 import { cn } from '@/lib/cn';
+import { deleteListing, useDeletedListings } from '@/lib/deleted-listings';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -39,9 +40,11 @@ import { Checkbox } from '@/components/ui/field';
 import { TableRowsSkeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { BulkBar } from './bulk-bar';
+import { EditListingDialog } from './edit-listing-dialog';
 import { FeaturedDialog } from './featured-dialog';
 import { ListingFilters } from './filters';
 import { InlineEdit } from './inline-edit';
+import { PriceTermsTag } from './price-terms-tag';
 import { ProgressDialog, type RunState } from './progress-dialog';
 import { StatusActions, StatusBadge, useStatusChange } from './status-toggle';
 
@@ -77,8 +80,13 @@ export function ListingsView() {
   const [confirm, setConfirm] = useState<null | 'archive'>(null);
   const [run, setRun] = useState<RunState | null>(null);
   const [rowFeatured, setRowFeatured] = useState<Property | null>(null);
+  const [editing, setEditing] = useState<Property | null>(null);
+  const [deleting, setDeleting] = useState<Property | null>(null);
+  const [deletingBusy, setDeletingBusy] = useState(false);
+  const deleted = useDeletedListings();
 
-  const rows = data?.data ?? [];
+  // A listing deleted in this browser stays out of the table (the server only archives it; see lib/deleted-listings).
+  const rows = useMemo(() => (data?.data ?? []).filter((p) => !deleted.includes(p.id)), [data, deleted]);
   const total = data?.meta.total ?? 0;
   const pageAllSelected = rows.length > 0 && rows.every((r) => selected.has(r.id));
   const pageSomeSelected = rows.some((r) => selected.has(r.id));
@@ -217,7 +225,12 @@ export function ListingsView() {
               inputMode="decimal"
               ltr
               inputClassName="w-36"
-              display={<span className="tabular whitespace-nowrap text-sm font-semibold text-ink-2">{formatMoney(p.price, p.currency)}</span>}
+              display={
+                <span className="flex flex-col items-start gap-0.5">
+                  <span className="tabular whitespace-nowrap text-sm font-semibold text-ink-2">{formatMoney(p.price, p.currency)}</span>
+                  <PriceTermsTag terms={p.price_terms} />
+                </span>
+              }
               validate={(d) => {
                 const n = parseLooseNumber(d);
                 if (n === null || n <= 0) return t('list.col.priceNumber');
@@ -266,6 +279,9 @@ export function ListingsView() {
                 </Button>
               </DropdownTrigger>
               <DropdownContent align="start">
+                <DropdownItem icon={<Pencil className="h-4 w-4" />} onSelect={() => setEditing(p)}>
+                  {t('list.menu.edit')}
+                </DropdownItem>
                 <DropdownItem icon={<MapPin className="h-4 w-4" />} onSelect={() => router.push(`/dashboard/map?focus=${p.id}`)}>
                   {t('list.menu.map')}
                 </DropdownItem>
@@ -277,8 +293,11 @@ export function ListingsView() {
                   {t('list.menu.featured')}
                 </DropdownItem>
                 <DropdownSeparator />
-                <DropdownItem danger disabled={p.status === 'ARCHIVED'} onSelect={() => void change(p, 'ARCHIVED')}>
+                <DropdownItem disabled={p.status === 'ARCHIVED'} onSelect={() => void change(p, 'ARCHIVED')}>
                   {t('list.menu.archive')}
+                </DropdownItem>
+                <DropdownItem danger icon={<Trash2 className="h-4 w-4" />} onSelect={() => setDeleting(p)}>
+                  {t('list.menu.delete')}
                 </DropdownItem>
               </DropdownContent>
             </DropdownRoot>
@@ -458,6 +477,35 @@ export function ListingsView() {
         }}
       />
       <ProgressDialog run={run} onClose={() => setRun(null)} />
+      <EditListingDialog listing={editing} onClose={() => setEditing(null)} />
+      <ConfirmDialog
+        open={deleting !== null}
+        onOpenChange={(open) => !open && !deletingBusy && setDeleting(null)}
+        title={t('list.delete.title')}
+        description={deleting ? t('list.delete.text', { title: deleting.title }) : ''}
+        confirmLabel={t('common.delete')}
+        loading={deletingBusy}
+        onConfirm={() => {
+          const target = deleting;
+          if (!target) return;
+          setDeletingBusy(true);
+          deleteListing(target.id)
+            .then(async () => {
+              setSelected((prev) => {
+                const next = new Map(prev);
+                next.delete(target.id);
+                return next;
+              });
+              toast.success(tNow('list.delete.done'));
+              await refreshListingData();
+            })
+            .catch((e) => toast.error(errorMessage(e)))
+            .finally(() => {
+              setDeletingBusy(false);
+              setDeleting(null);
+            });
+        }}
+      />
     </div>
   );
 }

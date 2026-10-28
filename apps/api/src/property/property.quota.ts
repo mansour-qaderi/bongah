@@ -1,4 +1,5 @@
 import { SUBSCRIPTION_PLAN_BENEFITS, type ListingQuota } from '@bongah/shared-types';
+import { isTrialRunning } from '../agencies/trial.js';
 import { Role, SubscriptionStatus, type Prisma } from '../generated/prisma/client.js';
 import { FREE_LISTINGS_PER_MONTH } from './property.constants.js';
 import { kabulMonthStart, nextKabulMonthStart } from './property.time.js';
@@ -8,7 +9,7 @@ export interface QuotaUser {
   role: Role;
   welcomeListingCredits: number;
   bonusListingCredits: number;
-  agency: { id: string } | null;
+  agency: { id: string; trialEndsAt?: Date | null; trialListingsUsed?: number } | null;
 }
 
 /**
@@ -21,6 +22,8 @@ export async function readListingQuota(
   userId: string,
   user: QuotaUser,
   now: Date,
+  /** What an agency's free trial allows (AGENCY_TRIAL_LISTINGS). Only the wallet reads it; without it a trial is not counted. */
+  trialListings = 0,
 ): Promise<ListingQuota> {
   if (user.role === Role.ADMIN) return { limit: null, used: 0, extra: 0, resets_at: null };
   if (user.role === Role.USER) {
@@ -45,8 +48,20 @@ export async function readListingQuota(
         select: { packageType: true, listingsUsed: true, endDate: true },
       })
     : null;
-  // Without a running plan an office cannot publish at all, so its bonus listings are not on offer either.
-  if (!running) return { limit: 0, used: 0, extra: 0, resets_at: null };
+  if (!running) {
+    // No plan, but the free trial may be paying for listings: its allowance is what the office can still publish.
+    // (Bonus listings are not on offer: they are spent by a plan, and the trial has none.)
+    if (user.agency && trialListings > 0 && isTrialRunning(user.agency.trialEndsAt ?? null, now)) {
+      return {
+        limit: trialListings,
+        used: Math.min(user.agency.trialListingsUsed ?? 0, trialListings),
+        extra: 0,
+        resets_at: user.agency.trialEndsAt!.toISOString(),
+      };
+    }
+    // Otherwise an office without a running plan cannot publish at all.
+    return { limit: 0, used: 0, extra: 0, resets_at: null };
+  }
   const limit = SUBSCRIPTION_PLAN_BENEFITS[running.packageType].listings;
   return {
     limit,

@@ -54,6 +54,9 @@ export function errorMessage(
       });
     case 'LISTING_QUOTA_NOT_EXHAUSTED':
       return t('ladder.notExhausted');
+    case 'TRIAL_LISTING_LIMIT_REACHED':
+      // The agency's free-trial listings are used up (the trial itself may still be running).
+      return t('add.trialLimitReached');
     case 'SUBSCRIPTION_REQUIRED':
       return t('add.subscriptionRequired');
     case 'AGENCY_PROFILE_REQUIRED':
@@ -72,6 +75,8 @@ export function errorMessage(
       return t('chat.listingClosed');
     case 'CHAT_RATE_LIMITED':
       return t('chat.slowDown');
+    case 'REFERENCE_ALREADY_USED':
+      return t('manualPay.refUsed');
     case 'IMAGE_TOO_LARGE':
       return t('chat.imageTooLarge');
     case 'UNSUPPORTED_IMAGE_TYPE':

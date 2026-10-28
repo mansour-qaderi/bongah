@@ -26,10 +26,9 @@ export function PlanCards({ pricing, wallet }: { pricing: Pricing; wallet: Walle
     setBusy(plan);
     try {
       const outcome = await startPayment({ purpose: 'SUBSCRIPTION', package_type: plan });
-      if (outcome === 'completed') {
-        await announcePaid('SUBSCRIPTION');
-        setBusy(null);
-      }
+      // 'redirected' leaves the page; 'manual' opens the pay-by-hand dialog over it, so the button is free again.
+      if (outcome === 'completed') await announcePaid('SUBSCRIPTION');
+      if (outcome !== 'redirected') setBusy(null);
     } catch (e) {
       toast.error(errorMessage(e));
       setBusy(null);

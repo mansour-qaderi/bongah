@@ -19,14 +19,35 @@ pnpm --filter @bongah/mobile android  # or: ios (macOS only; run `bundle exec po
 - **API address** — `src/config.ts`. The Android emulator reaches your computer at `10.0.2.2`,
   the iOS simulator at `localhost`. On a physical phone set `DEV_API_HOST` to your computer's LAN
   address. Release builds use `PRODUCTION_API_URL` (must be HTTPS).
-- **Maps** — OpenStreetMap tiles drawn by [MapLibre Native](https://maplibre.org/) (`@maplibre/maplibre-react-native`).
-  There is **no Google Maps key, no Mapbox token and no account** to set up. MapLibre needs React
-  Native's new architecture (on by default in 0.87) and a native rebuild: `pnpm install`, then
-  `bundle exec pod install` in `ios/`, then run the app again.
-- **Map tiles** — `MAP_TILE_URL` in `src/config.ts` (default: the public OpenStreetMap server). OSM's
-  [tile usage policy](https://operations.osmfoundation.org/policies/tiles/) allows light use only, so
-  before a public launch point it at a paid or self-hosted raster tile service (MapTiler, Stadia,
-  your own server). Keep `MAP_ATTRIBUTION` matching whichever provider you use; the app draws it on every map.
+- **Maps** — Mapbox Streets (vector tiles, OpenStreetMap data) drawn by the Mapbox Maps SDK through
+  [`@rnmapbox/maps`](https://github.com/rnmapbox/maps). The whole app talks to the SDK through one file,
+  `src/map/native.tsx`; everything else is written against its small interface.
+  - **Token** — put `MAPBOX_ACCESS_TOKEN=pk.…` in `apps/mobile/.env` (or in the environment of the process that starts
+    Metro). `babel.config.js` puts it into the bundle when the app is built, so after changing it restart Metro with
+    `pnpm start --reset-cache`. It must be a **public** token (`pk.`); never a secret one (`sk.`), because it ships
+    inside the app. Use a token **of its own for the app**, not the website's (that one is limited to the website's
+    addresses, which a phone does not send). Keep `.env` out of git. Without a token the app still runs: the street
+    map falls back to plain OpenStreetMap tiles.
+  - **Native setup (once)** — `@rnmapbox/maps` 10.3 needs React Native's new architecture (already on:
+    `newArchEnabled=true`) and no secret download token. Android: in `android/build.gradle` add
+    `maven { url 'https://api.mapbox.com/downloads/v2/releases/maven' }` to `allprojects { repositories { … } }`.
+    iOS: in `ios/Podfile` call `$RNMapboxMaps.pre_install(installer)` in a `pre_install` hook and
+    `$RNMapboxMaps.post_install(installer)` inside `post_install`, then `bundle exec pod install`. Then
+    `pnpm install` and rebuild the app (a JS reload is not enough: native code changed).
+- **Map style** — `MAP_STYLE_URL` in `src/config.ts` (Mapbox Streets v12). Mapbox writes place names in English first
+  and does not offer Persian, so `src/map/streetStyle.ts` downloads the style once per run of the app and puts the
+  local name (`name`, Dari / Pashto script where OpenStreetMap has it) before the English one on every label — the
+  same rule as the website. If that download fails the map uses Mapbox's own style (English labels); if Mapbox cannot be
+  used at all (no token, token refused, service down) it draws plain OpenStreetMap raster tiles
+  (`MAP_FALLBACK_TILE_URL`, meant for light use) until it is drawn again.
+  Mapbox's terms require its logo and credit button on every map, so the map shows them (bottom left); the full
+  credits, with the satellite imagery's, are also in the Account tab.
+- **Billing** — Mapbox bills the mobile Maps SDKs by monthly active users (a person counts once in a billing period they
+  view a map; tile requests made through the SDK are covered by that). Check the current free tier and price at
+  mapbox.com/pricing before launch and set a spending alert in the Mapbox account.
+- **Area name on the map** — the pill under the top controls names the place the map's middle is over
+  («neighbourhood، district، province»). Zoomed out it is the nearest province (no network); zoomed in it asks the
+  same place lookup as the listing form, after the map has rested, at most once every 2 s, remembered per ~1 km.
 - With the mock SMS gateway the API returns `dev_otp`, and the OTP screen shows it (debug builds only).
 
 ## Checks
@@ -63,7 +84,7 @@ src/
     AuthContext.tsx          sign in/out, session restore, role refresh (GET /users/me)
   storage/kv.ts              preferences (language) in AsyncStorage v3
   constants/provinces.ts     34 provinces: Dari/Pashto names, centres, quick-pick cities
-  map/                       MapLibre/OSM: style.ts (tile style), geo.ts (camera, [lng,lat] helpers), BaseMap, PinMarker
+  map/                       Mapbox: native.tsx (the only file that touches the SDK), style.ts + streetStyle.ts (styles, local-name labels), geo.ts (camera, [lng,lat] helpers), BaseMap, PinMarker
   navigation/
     RootNavigator.tsx        stack: Tabs, PropertyDetails, AddProperty, SetLocation, Checkout, Referral, Chat, Templates, Auth (modal)
     MainTabs.tsx             Home · Dashboard (agency accounts only) · Messages (unread badge) · My listings · Account
@@ -208,7 +229,7 @@ throttled; guests use the OpenStreetMap services. Photon, Nominatim and OSRM are
 own or pay for one before a public launch (`PHOTON_URL`, `GEOCODER_*`, `OSRM_ROUTE_URL` in `src/config.ts`).
 
 **Directions** (`PropertyDetailsScreen`, «مسیریابی به ملک», listings with an exact pin only): `NavigationModal` follows
-the phone (`useLiveLocation`, MapLibre's location module), draws the route and shows a HUD with the distance left
+the phone (`useLiveLocation`, the Mapbox SDK's location module), draws the route and shows a HUD with the distance left
 («۴٫۲ کیلومتر»), arrival time («۸ دقیقه») and live speed («۴۵ km/h», the GPS's own speed, or distance over time).
 Leaving the route by more than the GPS error asks for a new one, at most every 20 s. Within 30 m it says «به ملک
 رسیدید». Location is only read while it is open. The screen may dim during a long drive (no keep-awake module).

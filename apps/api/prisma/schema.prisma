@@ -137,6 +137,15 @@ enum TransactionStatus {
   @@map("transaction_status")
 }
 
+/// How a payment is settled. GATEWAY: HesabPay's webhook confirms it. MANUAL: the customer sent the money by hand
+/// (HesabPay app or card-to-card), uploaded the receipt, and an admin confirms it.
+enum TransactionMethod {
+  GATEWAY
+  MANUAL
+
+  @@map("transaction_method")
+}
+
 /// How a map location token came to exist. REFERRAL and ADMIN_GRANT have no endpoint yet; the
 /// grant helper in src/map-location/map-location.tokens.ts is what a referral module will call.
 enum MapLocationTokenSource {
@@ -348,6 +357,8 @@ model User {
   agency            Agency?
   properties        Property[]
   transactions      Transaction[]
+  /// Manual payments this admin decided on (approved, force-activated or refused).
+  reviewedPayments  Transaction[] @relation("PaymentReviewer")
   mapLocationTokens MapLocationToken[]
   /// Rewards this user received.
   rewards           Reward[]           @relation("RewardRecipient")
@@ -409,6 +420,10 @@ model Agency {
   reviewedById String?  @map("reviewed_by_id") @db.Uuid
   /// Why the documents were refused; set exactly when REJECTED. Shown to the agency so it can fix and resubmit.
   rejectionReason String? @map("rejection_reason")
+  /// The free period a new agency starts with: until this moment it can publish without a subscription, up to the
+  /// trial listing limit (trial_listings_used counts them). Null = no trial (the operator switched trials off).
+  trialEndsAt        DateTime? @map("trial_ends_at") @db.Timestamptz(3)
+  trialListingsUsed  Int       @default(0) @map("trial_listings_used")
   createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
 
@@ -553,10 +568,31 @@ model Transaction {
   receiptNumber String?  @unique @map("receipt_number")
   paidAt        DateTime? @map("paid_at") @db.Timestamptz(3)
 
+  /// MANUAL payments are confirmed by an admin, who looks at the receipt picture the customer uploaded. The
+  /// picture's bytes live in the private payment-receipt store under `proofImageId`; the three proof columns are
+  /// all set or all null (CHECK constraint in the migration).
+  method           TransactionMethod @default(GATEWAY)
+  proofImageId     String?           @map("proof_image_id") @db.Uuid
+  proofContentType String?           @map("proof_content_type")
+  proofByteSize    Int?              @map("proof_byte_size")
+  proofUploadedAt  DateTime?         @map("proof_uploaded_at") @db.Timestamptz(3)
+  /// The admin who decided, and when. `reviewNote` is the reason for a refusal or a forced activation.
+  reviewedById     String?           @map("reviewed_by_id") @db.Uuid
+  reviewedAt       DateTime?         @map("reviewed_at") @db.Timestamptz(3)
+  reviewNote       String?           @map("review_note")
+  /// Activated without a receipt picture, on the admin's word. Only ever true on a SUCCESS payment (CHECK).
+  forceActivated   Boolean           @default(false) @map("force_activated")
+  /// MANUAL: the transaction id the customer read off their HesabPay / bank receipt, typed in as an alternative (or in
+  /// addition) to the picture. The admin checks it against the account's own history. Both columns are set together
+  /// (CHECK constraint), and one reference can belong to only one live payment (partial unique index in the migration).
+  paymentReference     String?  @map("payment_reference")
+  referenceSubmittedAt DateTime? @map("reference_submitted_at") @db.Timestamptz(3)
+
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   user         User          @relation(fields: [userId], references: [id], onDelete: Restrict)
+  reviewedBy   User?         @relation("PaymentReviewer", fields: [reviewedById], references: [id], onDelete: Restrict)
   agency       Agency?       @relation(fields: [agencyId], references: [id], onDelete: Restrict)
   property     Property?     @relation(fields: [propertyId], references: [id], onDelete: Restrict)
   subscription Subscription?
@@ -569,6 +605,7 @@ model Transaction {
   @@index([agencyId])
   @@index([propertyId])
   @@index([status, createdAt]) // the admin transaction log
+  @@index([method, status, createdAt]) // the admin's queue of manual payments to look at
   @@map("transactions")
 }
 

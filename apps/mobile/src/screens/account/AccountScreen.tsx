@@ -2,7 +2,6 @@ import React, { useState } from 'react';
 import {
   Alert,
   I18nManager,
-  Linking,
   Pressable,
   StyleSheet,
   View,
@@ -24,8 +23,6 @@ import FeedbackSheet from '../../components/FeedbackSheet';
 import Icon, { type IconName } from '../../components/Icon';
 import { ScrollScreen } from '../../components/Screen';
 import { APP_VERSION } from '../../appInfo';
-import { MAP_ATTRIBUTION, MAP_ATTRIBUTION_URL } from '../../config';
-import { SATELLITE_ATTRIBUTION } from '../../map/style';
 import { LANGUAGE_META, changeLanguage } from '../../i18n';
 import { formatPhone, toPersianDigits } from '../../i18n/format';
 import { useFormat } from '../../i18n/useFormat';
@@ -377,17 +374,6 @@ export default function AccountScreen({ navigation }: Props) {
         />
       ) : null}
 
-      {/* The credit OpenStreetMap's licence asks for, in plain sight but off the map itself. */}
-      <Pressable
-        accessibilityRole="link"
-        accessibilityLabel={t('home.mapCredits')}
-        onPress={() => Linking.openURL(MAP_ATTRIBUTION_URL).catch(() => {})}
-        style={styles.credit}
-      >
-        <AppText variant="caption" color={colors.textMuted} latinDigits>
-          {t('home.mapCredits')}: {MAP_ATTRIBUTION} · {SATELLITE_ATTRIBUTION}
-        </AppText>
-      </Pressable>
       <AppText
         variant="caption"
         color={colors.textMuted}
@@ -492,5 +478,4 @@ const styles = StyleSheet.create({
   divider: { height: 1, backgroundColor: colors.border },
   pressed: { opacity: 0.85 },
   version: { alignSelf: 'center', paddingBottom: spacing.sm },
-  credit: { alignSelf: 'center', paddingVertical: spacing.lg },
 });

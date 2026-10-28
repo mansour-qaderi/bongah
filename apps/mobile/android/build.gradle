@@ -21,5 +21,7 @@ allprojects {
     repositories {
         google()
         mavenCentral()
+        // The Mapbox Maps SDK (used through @rnmapbox/maps). Mapbox no longer asks for a download token here.
+        maven { url 'https://api.mapbox.com/downloads/v2/releases/maven' }
     }
 }

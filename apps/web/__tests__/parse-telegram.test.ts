@@ -58,7 +58,7 @@ describe('prices as Dari agents write them', () => {
 });
 
 describe('one post in pieces stays one listing', () => {
-  it('keeps the tag line, the fact paragraphs, the price and the contact together and drops the channel footer', () => {
+  it('keeps the tag line, the fact paragraphs, the price and the contact together, and keeps the footer in the description', () => {
     expect(splitListings(POST_A)).toHaveLength(1);
     const [row] = parseText(POST_A);
     expect(row).toMatchObject({
@@ -71,11 +71,21 @@ describe('one post in pieces stays one listing', () => {
       bathrooms: '2',
       province: 'کابل',
     });
-    expect(row!.description).not.toContain('0799');
-    expect(row!.description).not.toContain('@namuna_amlak');
-    expect(row!.description).toContain('کد: 245');
+    // Everything pasted stays in the description: the number and the channel line too.
+    expect(row!.description).toContain('۰۷۹۹۱۲۳۴۵۶');
+    expect(row!.description).toContain('@namuna_amlak');
+    expect(row!.description).not.toContain('کد: 245'); // the post's own number is not part of the description
+    expect(row!.description).toContain('فروش خانه دوطبقه');
     expect(row!.title).toContain('خانه دوطبقه');
     expect(checkDraft(row!).ok).toBe(true);
+  });
+
+  it('drops the number and the channel footer only when the tidy switch is on', () => {
+    const [row] = parseText(POST_A, { stripPhones: true });
+    expect(row!.description).not.toContain('۰۷۹۹۱۲۳۴۵۶');
+    expect(row!.description).not.toContain('@namuna_amlak');
+    expect(row!.description).not.toContain('کد: 245'); // the post's own number is not part of the description
+    expect(row!.description).toContain('فروش خانه دوطبقه');
   });
 
   it('reads the type from «خانه دوطبقه» and keeps the floors out of the price', () => {

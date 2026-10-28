@@ -1,5 +1,5 @@
 import React, { useCallback, useMemo, useRef, useState } from 'react';
-import { Marker } from '@maplibre/maplibre-react-native';
+import { Marker } from '../map/native';
 import type { AgencyMapPin, Property } from '@bongah/shared-types';
 import BaseMap, { type MapViewChange } from '../map/BaseMap';
 import {
@@ -46,6 +46,8 @@ interface Props {
   onViewChange?: (view: MapViewChange) => void;
   /** Empty map was tapped: not a marker, not a cluster and not inside a plot. */
   onPressMap?: () => void;
+  /** The 3D view (buildings as blocks), switched by the screen's 3D button. */
+  tilted?: boolean;
 }
 
 /**
@@ -84,6 +86,7 @@ export default function PropertyMap({
   onOpenCluster,
   onViewChange,
   onPressMap,
+  tilted = false,
 }: Props) {
   const [view, setView] = useState<MapView>({
     zoom: zoomStep(camera.zoom),
@@ -142,6 +145,7 @@ export default function PropertyMap({
   return (
     <BaseMap
       camera={camera}
+      tilted={tilted}
       testID="property-map"
       onPress={onPress}
       onViewChange={next => {

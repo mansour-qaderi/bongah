@@ -29,6 +29,7 @@ import NavigationModal from '../../components/NavigationModal';
 import Price from '../../components/Price';
 import PropertyFacts, { propertyPlace } from '../../components/PropertyFacts';
 import PropertyLocationMap from '../../components/PropertyLocationMap';
+import ShareLocationSheet from '../../components/ShareLocationSheet';
 import { Screen } from '../../components/Screen';
 import MapLoader from '../../components/MapLoader';
 import { Reveal, useReveal } from '../../components/Reveal';
@@ -111,6 +112,8 @@ function PropertyBody({
   const { width } = useWindowDimensions();
   const share = useShareListing();
   const [navigating, setNavigating] = useState(false);
+  // «اشتراک موقعیت ملک»: the sheet that sends the exact place to a client.
+  const [sharingLocation, setSharingLocation] = useState(false);
   // «مسیریابی» is the fullscreen button on the map card: it finds the phone first (permission, a phone abroad, a switched-off
   // GPS are all answered there), then opens the big map with the route, the distance, the time and the speed.
   const nav = useNavigationStart(() => setNavigating(true));
@@ -323,6 +326,7 @@ function PropertyBody({
                 route={inline.route}
                 onFullscreen={nav.start}
                 fullscreenBusy={nav.finding}
+                onShare={() => setSharingLocation(true)}
               />
             </>
           ) : where.status === 'approximate' ? (
@@ -405,6 +409,19 @@ function PropertyBody({
         onOpenSettings={nav.openSettings}
         onClose={nav.closeProblem}
       />
+      {where.status === 'pinned' ? (
+        <ShareLocationSheet
+          visible={sharingLocation}
+          onClose={() => setSharingLocation(false)}
+          place={{
+            latitude: where.coordinate.latitude,
+            longitude: where.coordinate.longitude,
+            title: property.title,
+            address: [place, addressLine].filter(Boolean).join('، '),
+            listingId: property.id,
+          }}
+        />
+      ) : null}
       {where.status === 'pinned' ? (
         <NavigationModal
           visible={navigating}

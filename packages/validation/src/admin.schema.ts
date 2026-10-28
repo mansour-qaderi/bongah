@@ -3,6 +3,7 @@ import {
   BANNER_PLACEMENTS,
   PRICING_KEYS,
   PROPERTY_STATUSES,
+  TRANSACTION_METHODS,
   TRANSACTION_PURPOSES,
   TRANSACTION_STATUSES,
 } from '@bongah/shared-types';
@@ -36,6 +37,9 @@ export const adminTransactionsQuerySchema = z
     ...paginationShape,
     status: z.enum(TRANSACTION_STATUSES).optional(),
     purpose: z.enum(TRANSACTION_PURPOSES).optional(),
+    method: z.enum(TRANSACTION_METHODS).optional(),
+    /** true: only payments that wait for a person to look at them (pending, and paid by hand). */
+    awaiting_review: booleanQuery.optional(),
     /** A receipt number, a HesabPay id, or part of the payer's phone number. */
     q: searchQuery,
     /** Kabul calendar dates, inclusive. */
@@ -47,6 +51,15 @@ export const adminTransactionsQuerySchema = z
     path: ['from'],
   });
 export type AdminTransactionsQuery = z.output<typeof adminTransactionsQuerySchema>;
+
+/**
+ * POST /admin/transactions/:id/force-activate and /reject. The reason is kept in the audit log and (for a refusal)
+ * shown to the customer, so it has to say something.
+ */
+export const adminPaymentDecisionSchema = z.strictObject({
+  reason: cleanText(3, 300),
+});
+export type AdminPaymentDecisionInput = z.output<typeof adminPaymentDecisionSchema>;
 
 /** GET /admin/audit-log */
 export const adminAuditQuerySchema = z.strictObject({

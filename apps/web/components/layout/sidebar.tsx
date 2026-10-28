@@ -8,6 +8,7 @@ import { Tip } from '@/components/ui/tooltip';
 import { AccountMenu } from './account-menu';
 import { isActive, NAV_ITEMS } from './nav';
 import { useT } from '@/i18n/provider';
+import { useMe } from '@/hooks/use-api';
 
 /**
  * The right-hand navigation. Expanded it is 256px wide; collapsed it is a 72px rail of icons with tooltips. Below the
@@ -22,6 +23,8 @@ import { useT } from '@/i18n/provider';
 export function Sidebar({ collapsed, mobileOpen, onNavigate }: { collapsed: boolean; mobileOpen: boolean; onNavigate: () => void }) {
   const pathname = usePathname();
   const t = useT();
+  const { data: me } = useMe();
+  const items = NAV_ITEMS.filter((item) => !item.adminOnly || me?.role === 'ADMIN');
 
   return (
     <>
@@ -41,7 +44,7 @@ export function Sidebar({ collapsed, mobileOpen, onNavigate }: { collapsed: bool
         </div>
 
         <nav className="scrollbar-thin min-h-0 flex-1 space-y-1 overflow-y-auto overflow-x-hidden p-3">
-          {NAV_ITEMS.map((item) => {
+          {items.map((item) => {
             const active = isActive(item, pathname);
             const Icon = item.icon;
             const label = t(item.labelKey);

@@ -18,6 +18,8 @@ export interface PendingPayment {
   id: string;
   purpose: TransactionPurpose;
   startedAt: number;
+  /** Paid by hand: waiting for an admin, not for the gateway (the watcher says so in its words). */
+  manual?: boolean;
 }
 
 /** Drops what is too old or malformed. */
@@ -37,7 +39,7 @@ export function readPending(now = Date.now()): PendingPayment[] {
   return livePending(readStored<unknown>(PENDING_PAYMENTS_KEY), now);
 }
 
-export function rememberPayment(payment: { id: string; purpose: TransactionPurpose }, now = Date.now()) {
+export function rememberPayment(payment: { id: string; purpose: TransactionPurpose; manual?: boolean }, now = Date.now()) {
   const rest = readPending(now).filter((p) => p.id !== payment.id);
   writeStored(PENDING_PAYMENTS_KEY, [...rest, { ...payment, startedAt: now }].slice(-MAX_KEPT));
 }

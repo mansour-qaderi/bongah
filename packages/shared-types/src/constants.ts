@@ -139,6 +139,11 @@ export const LADDER_SPEND_COST: Record<LadderSpendPurpose, number> = {
   FEATURED_FRAME: LADDERS_PER_FRAME,
 };
 export const TRANSACTION_STATUSES = ['PENDING', 'SUCCESS', 'FAILED'] as const;
+/**
+ * How a payment is settled. GATEWAY: HesabPay confirms it with a webhook. MANUAL: the customer sends the money
+ * themselves (HesabPay app or card-to-card) and uploads the receipt, and an admin confirms it by hand.
+ */
+export const TRANSACTION_METHODS = ['GATEWAY', 'MANUAL'] as const;
 
 // ───────────── Admin panel, moderation and agency tools ─────────────
 
@@ -194,6 +199,7 @@ export type TransactionPurpose = (typeof TRANSACTION_PURPOSES)[number];
 export type RewardType = (typeof REWARD_TYPES)[number];
 export type RewardReason = (typeof REWARD_REASONS)[number];
 export type TransactionStatus = (typeof TRANSACTION_STATUSES)[number];
+export type TransactionMethod = (typeof TRANSACTION_METHODS)[number];
 export type AgencyVerificationStatus = (typeof AGENCY_VERIFICATION_STATUSES)[number];
 export type AbuseTargetType = (typeof ABUSE_TARGET_TYPES)[number];
 export type AbuseReason = (typeof ABUSE_REASONS)[number];

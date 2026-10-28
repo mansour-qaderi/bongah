@@ -37,8 +37,9 @@ describe('no Google Maps dependency', () => {
     );
     const all = { ...pkg.dependencies, ...pkg.devDependencies };
     expect(Object.keys(all)).not.toContain('react-native-maps');
+    // The map is Mapbox's (@rnmapbox/maps), on purpose: what stays out is Google's SDKs.
     expect(
-      Object.keys(all).filter(name => /google|gms|mapbox/i.test(name)),
+      Object.keys(all).filter(name => /google|gms/i.test(name)),
     ).toEqual([]);
   });
 

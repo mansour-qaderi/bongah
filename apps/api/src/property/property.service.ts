@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ForbiddenException,
+  Inject,
   Injectable,
   Logger,
   NotFoundException,
@@ -9,6 +10,8 @@ import {
 import { SUBSCRIPTION_PLAN_BENEFITS } from '@bongah/shared-types';
 import { normalizePlaceName, type MyListingSort } from '@bongah/validation';
 import { findActiveSubscription } from '../agencies/subscription.js';
+import { AGENCY_TRIAL_SETTINGS, type AgencyTrialSettings } from '../agencies/trial.config.js';
+import { takeTrialListing, whyNoTrialListing } from '../agencies/trial.js';
 import { DealType, Prisma, PropertyStatus, Role } from '../generated/prisma/client.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import type { CreatePropertyDto } from './dto/create-property.dto.js';
@@ -89,7 +92,10 @@ function myListingsWhere(userId: string, query: MyListingsDto, now: Date): Prism
 export class PropertyService {
   private readonly logger = new Logger(PropertyService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Inject(AGENCY_TRIAL_SETTINGS) private readonly trial: AgencyTrialSettings,
+  ) {}
 
   /** Public search: active listings only, and never those of a banned account. */
   async list(query: ListPropertiesDto): Promise<PropertyPageDto> {
@@ -184,6 +190,8 @@ export class PropertyService {
    *            listings (SUBSCRIPTION_PLAN_BENEFITS: 8 for a month, 18 for three, 30 for six, 60 for a year), counted on
    *            the subscription row. Once those are used, a gift listing credit (launch gifts) pays for the listing;
    *            with none left the listing is refused.
+   *  - AGENCY without a running plan: the free trial (AGENCY_TRIAL_DAYS / AGENCY_TRIAL_LISTINGS) pays, until its days
+   *            or its listings run out; then 403 SUBSCRIPTION_REQUIRED.
    *  - ADMIN:  unrestricted.
    * An exact map pin (lat/lng) is free for everyone and optional. Without one the written place
    * (district, neighbourhood, address) is required; with one it is optional (the schema enforces that),
@@ -239,6 +247,19 @@ export class PropertyService {
           }
           const active = await findActiveSubscription(tx, agency.id, now);
           if (!active) {
+            // No plan running: the agency's free trial pays for the listing while it lasts. (The trial ends when its
+            // days or its listings run out, whichever comes first; after that the agency needs a subscription.)
+            if (await takeTrialListing(tx, agency.id, now, this.trial.listings)) {
+              agencyId = agency.id;
+              break;
+            }
+            if ((await whyNoTrialListing(tx, agency.id, now)) === 'TRIAL_LISTING_LIMIT_REACHED') {
+              throw new ForbiddenException({
+                message: 'All the listings of your free trial are used. Subscribe to publish more.',
+                code: 'TRIAL_LISTING_LIMIT_REACHED',
+                limit: this.trial.listings,
+              });
+            }
             throw new ForbiddenException({
               message: 'An active subscription is required to publish listings.',
               code: 'SUBSCRIPTION_REQUIRED',

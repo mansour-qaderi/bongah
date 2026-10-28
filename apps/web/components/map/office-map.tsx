@@ -1,7 +1,7 @@
 'use client';
 
-import 'maplibre-gl/dist/maplibre-gl.css';
-import maplibregl, { type GeoJSONSource, type Map as MapLibreMap, type Marker } from 'maplibre-gl';
+import 'mapbox-gl/dist/mapbox-gl.css';
+import mapboxgl, { type GeoJSONSource, type Map as MapboxMap, type Marker } from 'mapbox-gl';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -16,16 +16,22 @@ import { tNow } from '@/i18n/active';
 import { useLanguage, useT } from '@/i18n/provider';
 import { useLabels } from '@/i18n/use-labels';
 import { refreshListingData, updateListing } from '@/lib/listing-actions';
-import { provinceNameLabel } from '@/lib/provinces';
-import { DEFAULT_CENTER, fallbackSource, mapStyle, TILE_MAX_ZOOM } from '@/lib/map-config';
+import { DEFAULT_CENTER, detailTheme, fallbackStyle, localizeLabels, MAPBOX_TOKEN, mapStyle, TILE_MAX_ZOOM } from '@/lib/map-config';
+import { enhanceDetail } from '@/lib/map-detail';
 import { useDashboard, useMapListings, useOfficePin } from '@/hooks/use-api';
+import { useAreaName, type AreaView } from '@/hooks/use-area-name';
 import { cn } from '@/lib/cn';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { EmptyState, ErrorState } from '@/components/ui/empty-state';
-import { Input } from '@/components/ui/field';
+import { Checkbox, Input } from '@/components/ui/field';
 import { CardListSkeleton, Skeleton } from '@/components/ui/skeleton';
-import { clusterElement, officeElement, pinColor, pinElement } from './pin';
+import { AreaTitle } from './area-title';
+import { clusterElement, meElement, officeElement, pinElement } from './pin';
+import { MapControlStack } from './map-controls';
+import { GpsIcon } from './map-icons';
+import { MapListingCard } from './listing-card';
+import { ShareLocationButton } from './share-location-button';
 
 const SOURCE = 'listings';
 const MAX_MARKERS = 200;
@@ -55,10 +61,14 @@ export function OfficeMap() {
   const { data: officePins } = useOfficePin(dashboard?.agency.id);
 
   const container = useRef<HTMLDivElement>(null);
-  const mapRef = useRef<MapLibreMap | null>(null);
+  const mapRef = useRef<MapboxMap | null>(null);
   const markers = useRef<Map<string, Marker>>(new Map());
   const officeMarker = useRef<Marker | null>(null);
+  const meMarker = useRef<Marker | null>(null);
+  const watchId = useRef<number | null>(null);
   const [ready, setReady] = useState(false);
+  const [mapObject, setMapObject] = useState<MapboxMap | null>(null);
+  const [fullscreen, setFullscreen] = useState(false);
 
   const [overrides, setOverrides] = useState<ReadonlyMap<string, Pos>>(new Map());
   const [selectedId, setSelectedId] = useState<string | null>(params.get('focus'));
@@ -70,6 +80,10 @@ export function OfficeMap() {
   const [panelOpen, setPanelOpen] = useState(false);
   const [capped, setCapped] = useState(false);
   const [limit, setLimit] = useState(60);
+  const [me, setMe] = useState<Pos | null>(null);
+  const [locating, setLocating] = useState(false);
+  const [view, setView] = useState<AreaView | null>(null);
+  const areaName = useAreaName(view, language);
 
   // ── data ──
   const items = useMemo<Item[]>(
@@ -157,45 +171,93 @@ export function OfficeMap() {
   // ── the map itself ──
   useEffect(() => {
     if (!container.current) return;
-    const map = new maplibregl.Map({
+    if (!MAPBOX_TOKEN) {
+      console.error('NEXT_PUBLIC_MAPBOX_TOKEN is not set: the map cannot be drawn.');
+      return;
+    }
+    mapboxgl.accessToken = MAPBOX_TOKEN;
+    const map = new mapboxgl.Map({
       container: container.current,
       style: mapStyle(),
       center: DEFAULT_CENTER,
       zoom: 11,
       maxZoom: TILE_MAX_ZOOM,
-      attributionControl: { compact: true },
+      attributionControl: false,
       dragRotate: false,
       pitchWithRotate: false,
     });
     map.touchZoomRotate.disableRotation();
-    map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-left');
     mapRef.current = map;
+    setMapObject(map);
+    // The map fills whatever box it is in, also when the box changes (fullscreen on and off).
+    const sizeWatcher = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(() => map.resize()) : null;
+    sizeWatcher?.observe(container.current);
 
-    // If the main tile server refuses us (403) or is unreachable, move to the fallback provider once.
-    let tileErrors = 0;
-    let usingFallback = false;
-    map.on('error', (e) => {
-      if (usingFallback || (e as { sourceId?: string }).sourceId !== 'base') return;
-      tileErrors += 1;
-      if (tileErrors < 3) return;
-      usingFallback = true;
-      if (!map.getSource('base')) return;
-      map.removeLayer('base');
-      map.removeSource('base');
-      map.addSource('base', fallbackSource());
-      map.addLayer({ id: 'base', type: 'raster', source: 'base' }, map.getLayer('listings-clusters') ? 'listings-clusters' : undefined);
-    });
-
-    map.on('load', () => {
+    // The (invisible) layers that feed the markers. Safe to call again: a style swapped in later starts without them.
+    const addListingLayers = () => {
+      if (map.getSource(SOURCE)) return;
       map.addSource(SOURCE, { type: 'geojson', data: { type: 'FeatureCollection', features: [] }, cluster: true, clusterRadius: 48, clusterMaxZoom: 16 });
       // Nothing is drawn by these layers (the markers are HTML); a source only loads its tiles while a layer uses it.
       map.addLayer({ id: 'listings-clusters', type: 'circle', source: SOURCE, filter: ['has', 'point_count'], paint: { 'circle-radius': 1, 'circle-opacity': 0 } });
       map.addLayer({ id: 'listings-points', type: 'circle', source: SOURCE, filter: ['!', ['has', 'point_count']], paint: { 'circle-radius': 1, 'circle-opacity': 0 } });
       setReady(true);
+    };
+
+    // If the main style cannot be loaded (Mapbox down, the token refused), or its tiles keep failing, the whole style is
+    // swapped for plain raster tiles, once. (Not setTiles on a failed source: that breaks the raster renderer.)
+    let styleLoaded = false;
+    let tileErrors = 0;
+    let usingFallback = false;
+    map.once('style.load', () => {
+      styleLoaded = true;
+    });
+    // Place names in their own language first (Persian / Pashto script), English only where the map has no local name.
+    map.on('style.load', () => {
+      if (!usingFallback) {
+        localizeLabels(map);
+        // Building footprints and street / neighbourhood names from earlier zooms, and buildings as blocks when tilted (3D button).
+        enhanceDetail(map, { theme: detailTheme() });
+      }
+    });
+    const fallBack = () => {
+      if (usingFallback) return;
+      usingFallback = true;
+      setReady(false); // the listing layers go with the old style, and come back (and are filled again) with the new one
+      map.once('style.load', addListingLayers);
+      map.setStyle(fallbackStyle());
+    };
+    map.on('error', (e) => {
+      if (usingFallback) return;
+      const sourceId = (e as { sourceId?: string }).sourceId;
+      // Before the style is up, any error is the style itself (its address, or a refusal): there is nothing to wait for.
+      if (!styleLoaded) {
+        fallBack();
+        return;
+      }
+      // After: only tiles count (a missing font range or icon is not a reason to give up the map).
+      if (!sourceId || sourceId === SOURCE) return;
+      tileErrors += 1;
+      if (tileErrors >= 3) fallBack();
+    });
+
+    map.on('load', () => {
+      addListingLayers();
     });
 
     const sync = () => syncMarkers(map);
     map.on('moveend', sync);
+    // The name bar follows the middle of what can be seen (the map minus the list beside it), once the map comes to rest.
+    const report = () => {
+      const box = container.current;
+      if (!box) return;
+      const w = box.clientWidth;
+      const panel = w >= 640 ? 352 : 0;
+      const rtl = getComputedStyle(box).direction === 'rtl';
+      const at = map.unproject([rtl ? (w - panel) / 2 : panel + (w - panel) / 2, box.clientHeight / 2]);
+      setView({ lat: at.lat, lng: at.lng, zoom: map.getZoom() });
+    };
+    map.on('moveend', report);
+    map.on('load', report);
     map.on('sourcedata', (e) => {
       if (e.sourceId === SOURCE && e.isSourceLoaded) sync();
     });
@@ -214,18 +276,25 @@ export function OfficeMap() {
       markerStore.forEach((m) => m.remove());
       markerStore.clear();
       officeMarker.current?.remove();
+      meMarker.current?.remove();
+      meMarker.current = null;
+      if (watchId.current !== null) navigator.geolocation.clearWatch(watchId.current);
+      watchId.current = null;
+      sizeWatcher?.disconnect();
       map.remove();
       mapRef.current = null;
+      setMapObject(null);
       setReady(false);
     };
   }, []);
 
   /** Draws what the map currently shows as HTML markers: a count for each cluster, a draggable pin for each listing. */
-  function syncMarkers(map: MapLibreMap) {
+  function syncMarkers(map: MapboxMap) {
     if (!map.getSource(SOURCE)) return;
     const bounds = map.getBounds();
     const wanted = new Map<string, { kind: 'cluster'; id: number; count: number; lngLat: [number, number] } | { kind: 'pin'; id: string; lngLat: [number, number] }>();
-    for (const f of map.querySourceFeatures(SOURCE)) {
+    // (mapbox-gl types its features without the GeoJSON members they do have.)
+    for (const f of map.querySourceFeatures(SOURCE) as unknown as Array<{ geometry: { type: string; coordinates: unknown }; properties: Record<string, unknown> | null }>) {
       if (f.geometry.type !== 'Point') continue;
       const lngLat = f.geometry.coordinates as [number, number];
       if (!bounds.contains(lngLat)) continue;
@@ -276,12 +345,14 @@ export function OfficeMap() {
         }
         if (markers.current.has(key)) continue;
         const el = clusterElement(w.count);
-        el.addEventListener('click', async () => {
+        el.addEventListener('click', () => {
           const src = map.getSource(SOURCE) as GeoJSONSource;
-          const zoom = await src.getClusterExpansionZoom(w.id);
-          map.easeTo({ center: w.lngLat, zoom: Math.min(zoom + 0.5, TILE_MAX_ZOOM) });
+          src.getClusterExpansionZoom(w.id, (error, zoom) => {
+            if (error || zoom == null) return;
+            map.easeTo({ center: w.lngLat, zoom: Math.min(zoom + 0.5, TILE_MAX_ZOOM) });
+          });
         });
-        markers.current.set(key, new maplibregl.Marker({ element: el }).setLngLat(w.lngLat).addTo(map));
+        markers.current.set(key, new mapboxgl.Marker({ element: el }).setLngLat(w.lngLat).addTo(map));
       } else {
         const item = all.get(w.id);
         if (!item) continue;
@@ -292,7 +363,7 @@ export function OfficeMap() {
           ev.stopPropagation();
           setSelectedId(w.id);
         });
-        const marker = new maplibregl.Marker({ element: el, draggable: true, anchor: 'bottom' }).setLngLat(w.lngLat).addTo(map);
+        const marker = new mapboxgl.Marker({ element: el, draggable: true, anchor: 'bottom' }).setLngLat(w.lngLat).addTo(map);
         marker.on('dragstart', () => {
           el.style.cursor = 'grabbing';
           setSelectedId(w.id);
@@ -355,7 +426,7 @@ export function OfficeMap() {
     // With an office pin the view is centred on it, with the listings near it; far-off ones are one tap away ("show all").
     const pts = home ? all.filter((p) => Math.abs(p.lat! - home.lat) <= NEAR_OFFICE_DEGREES && Math.abs(p.lng! - home.lng) <= NEAR_OFFICE_DEGREES) : all;
     if (pts.length === 0 && !home) return;
-    const b = new maplibregl.LngLatBounds();
+    const b = new mapboxgl.LngLatBounds();
     pts.forEach((p) => b.extend([p.lng!, p.lat!]));
     if (home) b.extend([home.lng, home.lat]);
     map.fitBounds(b, { padding: fitPadding(), maxZoom: home ? 16 : 15, duration: 0 });
@@ -378,8 +449,52 @@ export function OfficeMap() {
     if (!map || !ready) return;
     officeMarker.current?.remove();
     officeMarker.current = null;
-    if (office) officeMarker.current = new maplibregl.Marker({ element: officeElement() }).setLngLat([office.lng, office.lat]).addTo(map);
+    if (office) officeMarker.current = new mapboxgl.Marker({ element: officeElement() }).setLngLat([office.lng, office.lat]).addTo(map);
   }, [office, ready]);
+
+  // "You are here": one blue dot that follows the phone (or the computer) once the person has asked for it.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready || !me) return;
+    if (meMarker.current) meMarker.current.setLngLat([me.lng, me.lat]);
+    else meMarker.current = new mapboxgl.Marker({ element: meElement(tNow('map.you')) }).setLngLat([me.lng, me.lat]).addTo(map);
+  }, [me, ready]);
+
+  /** Flies to where the person is, and keeps the dot following them. Never moves the map outside Afghanistan. */
+  const locateMe = useCallback(() => {
+    if (!('geolocation' in navigator)) {
+      toast.error(tNow('map.locate.unsupported'));
+      return;
+    }
+    setLocating(true);
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        setLocating(false);
+        const here = { lat: position.coords.latitude, lng: position.coords.longitude };
+        if (!inAfghanistan(here.lat, here.lng)) {
+          toast.info(tNow('map.locate.outside'));
+          return;
+        }
+        setMe(here);
+        mapRef.current?.flyTo({ center: [here.lng, here.lat], zoom: Math.max(mapRef.current.getZoom(), 16), padding: fitPadding(), essential: true });
+        if (watchId.current === null) {
+          watchId.current = navigator.geolocation.watchPosition(
+            (p) => {
+              const next = { lat: p.coords.latitude, lng: p.coords.longitude };
+              if (inAfghanistan(next.lat, next.lng)) setMe(next);
+            },
+            () => undefined, // the dot simply stays where it was
+            { enableHighAccuracy: true, maximumAge: 5_000 },
+          );
+        }
+      },
+      (error) => {
+        setLocating(false);
+        toast.error(tNow(error.code === error.PERMISSION_DENIED ? 'map.locate.denied' : 'map.locate.unavailable'));
+      },
+      { enableHighAccuracy: true, timeout: 12_000, maximumAge: 5_000 },
+    );
+  }, []);
 
   // Crosshair cursor while placing a listing.
   useEffect(() => {
@@ -392,6 +507,21 @@ export function OfficeMap() {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [placingId]);
+
+  // Fullscreen: the map takes the whole window, the page behind stays put, Esc comes back (unless a menu or a placing is open).
+  useEffect(() => {
+    if (!fullscreen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !e.defaultPrevented && !live.current.placingId) setFullscreen(false);
+    };
+    window.addEventListener('keydown', onKey);
+    const overflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      document.body.style.overflow = overflow;
+    };
+  }, [fullscreen]);
 
   const flyTo = useCallback((p: Item) => {
     setSelectedId(p.id);
@@ -411,7 +541,7 @@ export function OfficeMap() {
     const map = mapRef.current;
     const pts = placed;
     if (!map || pts.length === 0) return;
-    const b = new maplibregl.LngLatBounds();
+    const b = new mapboxgl.LngLatBounds();
     pts.forEach((p) => b.extend([p.lng!, p.lat!]));
     map.fitBounds(b, { padding: fitPadding(), maxZoom: 15 });
   };
@@ -420,9 +550,14 @@ export function OfficeMap() {
   const total = data?.data.length ?? 0;
 
   return (
-    <div className="relative -mx-4 -my-6 h-[calc(100dvh-4rem)] overflow-hidden sm:-mx-6">
+    <div
+      className={cn(
+        'overflow-hidden',
+        fullscreen ? 'fixed inset-0 z-[60] h-dvh bg-surface' : 'relative -mx-4 -my-6 h-[calc(100dvh-4rem)] sm:-mx-6',
+      )}
+    >
       <div className="absolute inset-0">
-        {/* MapLibre sets its own position on this element, so it only gets a size here. */}
+        {/* Mapbox GL sets its own position on this element, so it only gets a size here. */}
         <div ref={container} className="h-full w-full" aria-label={t('map.aria.map')} />
       </div>
 
@@ -467,10 +602,9 @@ export function OfficeMap() {
                 </button>
               );
             })}
-            <label className="ms-auto flex items-center gap-1.5 text-xs text-ink-2">
-              <input type="checkbox" checked={showSold} onChange={(e) => setShowSold(e.target.checked)} className="h-3.5 w-3.5 accent-[#047857]" />
+            <Checkbox checked={showSold} onChange={setShowSold} label={t('map.showSold')} className="ms-auto text-xs">
               {t('map.showSold')}
-            </label>
+            </Checkbox>
           </div>
           <div role="tablist" className="flex rounded-xl bg-soft p-1">
             {(
@@ -522,27 +656,16 @@ export function OfficeMap() {
               description={tab === 'placed' ? t('map.none.placedText') : t('map.none.unplacedText')}
             />
           ) : (
-            <ul className="divide-y divide-line">
+            <ul className="space-y-2.5 p-3">
               {list.slice(0, limit).map((p) => (
                 <li key={p.id}>
-                  <div
-                    className={cn('flex items-start gap-3 px-3 py-3 transition-colors', selectedId === p.id ? 'bg-primary-tint' : 'hover:bg-soft')}
-                  >
-                    <span aria-hidden className="mt-1.5 h-3 w-3 shrink-0 rounded-full" style={{ background: pinColor(p) }} />
-                    <button onClick={() => (p.placed ? flyTo(p) : setSelectedId(p.id))} className="min-w-0 flex-1 text-start">
-                      <div className="truncate text-[13px] font-semibold text-ink">{p.title}</div>
-                      <div className="mt-0.5 truncate text-xs text-muted">
-                        {labels.type[p.type]} · {p.district || (p.province ? provinceNameLabel(p.province, language) : p.province)}
-                      </div>
-                      <div className="tabular mt-0.5 text-xs font-semibold text-ink-2">{formatMoney(p.price, p.currency)}</div>
-                    </button>
-                    {!p.placed ? (
-                      <Button size="sm" variant="secondary" onClick={() => startPlacing(p)} className="gap-1">
-                        <Crosshair aria-hidden className="h-3.5 w-3.5" />
-                        {t('map.place')}
-                      </Button>
-                    ) : null}
-                  </div>
+                  <MapListingCard
+                    listing={p}
+                    placed={p.placed}
+                    selected={selectedId === p.id}
+                    onSelect={() => (p.placed ? flyTo(p) : setSelectedId(p.id))}
+                    onPlace={() => startPlacing(p)}
+                  />
                 </li>
               ))}
             </ul>
@@ -577,6 +700,29 @@ export function OfficeMap() {
         </Button>
       </div>
 
+      {placingId ? null : <AreaTitle name={areaName} label={t('map.areaAria')} />}
+
+      <MapControlStack
+        map={mapObject}
+        className="absolute end-3 top-[6.5rem] z-[5] sm:top-14"
+        fullscreen={{ active: fullscreen, onToggle: () => setFullscreen((on) => !on) }}
+      />
+
+      <button
+        type="button"
+        data-testid="locate"
+        onClick={locateMe}
+        disabled={locating}
+        aria-label={t('map.locate')}
+        title={t('map.locate')}
+        className={cn(
+          'absolute bottom-8 end-3 z-[5] flex h-11 w-11 items-center justify-center rounded-xl border border-line bg-surface text-primary transition-colors hover:bg-soft disabled:opacity-70',
+          selected && 'max-sm:hidden',
+        )}
+      >
+        <GpsIcon className={cn('h-6 w-6', locating && 'animate-pulse')} />
+      </button>
+
       {placingId ? (
         <div role="status" className="absolute inset-x-0 top-3 z-[6] mx-auto flex w-fit max-w-[90%] items-center gap-3 rounded-xl border border-primary bg-surface px-4 py-2.5 text-[13px] font-semibold text-primary">
           <Crosshair aria-hidden className="h-4 w-4" />
@@ -593,7 +739,13 @@ export function OfficeMap() {
         </div>
       ) : null}
 
-      {!ready || (!data && !error) ? (
+      {!MAPBOX_TOKEN ? (
+        <div role="alert" className="absolute inset-0 z-[4] flex items-center justify-center bg-soft p-6 text-center text-sm font-semibold text-ink-2">
+          {t('map.unavailable')}
+        </div>
+      ) : null}
+
+      {MAPBOX_TOKEN && (!ready || (!data && !error)) ? (
         <div className="pointer-events-none absolute inset-0 z-[4]" aria-hidden>
           <Skeleton className="absolute inset-0 rounded-none opacity-60" />
         </div>
@@ -631,6 +783,12 @@ export function OfficeMap() {
                 {t('map.inList')}
               </Button>
             </Link>
+            {selected.placed ? (
+              <ShareLocationButton
+                place={{ lat: selected.lat!, lng: selected.lng!, title: selected.title, address: selected.address, listingId: selected.id }}
+                menuClassName="z-[90]"
+              />
+            ) : null}
           </div>
         </div>
       ) : null}

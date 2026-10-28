@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { LocationManager } from '@maplibre/maplibre-react-native';
+import { LocationManager } from './native';
 import { locate } from './location';
 import { isInsideAfghanistan, metresBetween, type Coordinate } from './geo';
 
@@ -27,7 +27,7 @@ export const STANDSTILL_MPS = 0.6;
 /** A fix this unsure says nothing useful about speed (it can jump 50 m while the car stands still). */
 const MAX_ACCURACY_FOR_SPEED_M = 40;
 
-/** What the phone reports as a fix, the shape MapLibre's LocationManager hands over. */
+/** What the phone reports as a fix, the shape the Mapbox SDK's location module hands over. */
 export interface RawFix {
   coords: {
     latitude: number;
@@ -93,7 +93,7 @@ export const kmh = (metresPerSecond: number) =>
 
 /**
  * Follows the phone's position while `enabled`: asks for permission once (the prompt appears if it was never
- * answered), then streams fixes from MapLibre's location module (the system's LocationManager on Android, Core
+ * answered), then streams fixes from the map SDK's location module (the system's LocationManager on Android, Core
  * Location on iOS; no Google services). Stops listening when disabled or unmounted.
  */
 export function useLiveLocation(

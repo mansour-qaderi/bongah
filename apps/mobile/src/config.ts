@@ -16,22 +16,54 @@ const PRODUCTION_API_URL = 'https://bongah.onrender.com';
 export const API_BASE_URL = PRODUCTION_API_URL;
 
 /**
- * Base map: OpenStreetMap raster tiles drawn by MapLibre. No account, no API key, no Google.
+ * Base map: Mapbox Streets, vector tiles drawn by the Mapbox Maps SDK (through @rnmapbox/maps). Vector tiles are
+ * drawn at the screen's own pixel density, so they are sharp on every phone with no "@2x" files, and they zoom
+ * smoothly: past the deepest level stored (16) the map keeps drawing the same shapes larger.
  *
- * IMPORTANT: tile.openstreetmap.org is a shared community server. Its usage policy
- * (operations.osmfoundation.org/policies/tiles) allows light use such as development and a small
- * pilot, but NOT a production app's traffic, and it may block an app without warning. Before a
- * public release point MAP_TILE_URL at a tile service you pay for or host yourself (MapTiler,
- * Stadia, Thunderforest, your own server...), keep MAP_ATTRIBUTION accurate for that service, and
- * put any key the service needs inside the URL. Nothing else in the app has to change.
+ * The access token is MAPBOX_ACCESS_TOKEN in apps/mobile/.env (or in the environment of the process that starts
+ * Metro). A React Native app has no environment of its own, so babel.config.js puts the value into the bundle when
+ * it is built; after changing it, restart Metro with `pnpm start --reset-cache`. It must be a PUBLIC token (it starts
+ * with "pk."): it ends up inside the app, where anyone can read it. Never put a secret token ("sk.") here. Give the
+ * mobile app a token of its own, not the website's: the website's is restricted to its web addresses, which a phone
+ * does not send, so it would be refused. Without a token the app still works: the street map falls back to plain
+ * OpenStreetMap tiles (below), and the log says so ("[map] MAPBOX_ACCESS_TOKEN is empty in this build").
+ *
+ * This is a bare React Native app, not an Expo one, so there is no `EXPO_PUBLIC_*` variable: the name is exactly
+ * MAPBOX_ACCESS_TOKEN, and it is listed in INLINED in babel.config.js (a name not listed there is never put in the app).
+ * Every load error the Mapbox SDK reports is written to the log as "[map] load error / load failed (...)" with its
+ * kind, source and the HTTP status it carries, so a refused token (401 / 403) or a dead network can be told apart.
  */
-export const MAP_TILE_URL = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
-/** Highest zoom the tile service serves (OpenStreetMap: 19). */
-export const MAP_TILE_MAX_ZOOM = 19;
-/** Shown on every map. Required by OpenStreetMap's licence (ODbL). */
-export const MAP_ATTRIBUTION = '© OpenStreetMap contributors';
-/** Where the credit leads when it is tapped. */
-export const MAP_ATTRIBUTION_URL = 'https://www.openstreetmap.org/copyright';
+export const MAPBOX_ACCESS_TOKEN: string = (
+  process.env.MAPBOX_ACCESS_TOKEN ?? ''
+).trim();
+/** The street style, as the Mapbox SDK reads it: always Mapbox Streets (`streets-v12`, the bright day style), whatever the phone's own light / dark setting. */
+export const MAP_STYLE_URL = 'mapbox://styles/mapbox/streets-v12';
+/**
+ * The same style over HTTPS. Mapbox Streets writes place names in English first; to put the local (Dari / Pashto)
+ * name first the app downloads this once and rewrites its labels (see map/streetStyle.ts).
+ */
+export const MAP_STYLE_API_URL =
+  'https://api.mapbox.com/styles/v1/mapbox/streets-v12';
+/**
+ * The satellite view: Mapbox Satellite Streets, aerial photographs with the vector street layer drawn over them (road
+ * lines and casings, building outlines, place / street / neighbourhood names), so at high zoom, where a photograph alone
+ * is a blur of roofs, the roads and names still read. Vector on top means the labels are drawn at the screen's own
+ * density, whatever the age or resolution of the photographs under them. Needs the same token as the street map.
+ */
+export const SATELLITE_STYLE_URL = 'mapbox://styles/mapbox/satellite-streets-v12';
+/** The same style over HTTPS, downloaded once so its labels can be put in the local language (map/streetStyle.ts). */
+export const SATELLITE_STYLE_API_URL =
+  'https://api.mapbox.com/styles/v1/mapbox/satellite-streets-v12';
+/**
+ * What the map switches to when Mapbox cannot be used (no token, the token is refused, the service is down): plain
+ * OpenStreetMap raster tiles, which need no key either but may be blocked and are meant for light use. (The satellite
+ * view has no key-free stand-in: without Mapbox it shows this street map.)
+ */
+export const MAP_FALLBACK_TILE_URL = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
+/** Highest zoom the fallback tiles are asked for (OpenStreetMap: 19). */
+export const MAP_FALLBACK_TILE_MAX_ZOOM = 19;
+/** How far in the person can zoom. Vector tiles have no picture to run out of; this is street-block detail and more. */
+export const MAP_TILE_MAX_ZOOM = 20;
 
 /**
  * Turns a spot on the map into a place name (province, district, neighbourhood, street): OpenStreetMap's Nominatim.

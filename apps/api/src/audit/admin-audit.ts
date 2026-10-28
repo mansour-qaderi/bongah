@@ -22,10 +22,13 @@ export const AUDIT_ACTIONS = [
   'QUOTE_CREATED',
   'QUOTE_UPDATED',
   'QUOTE_DELETED',
+  'PAYMENT_APPROVED',
+  'PAYMENT_FORCE_ACTIVATED',
+  'PAYMENT_REJECTED',
 ] as const;
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];
 
-export type AuditTargetType = 'user' | 'agency' | 'property' | 'report' | 'banner' | 'pricing' | 'quote';
+export type AuditTargetType = 'user' | 'agency' | 'property' | 'report' | 'banner' | 'pricing' | 'quote' | 'payment';
 
 export interface AuditEntry {
   /** The admin who did it; null for the command line. */

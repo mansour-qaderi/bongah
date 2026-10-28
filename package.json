@@ -11,11 +11,14 @@
   },
   "scripts": {
     "build:packages": "pnpm --filter \"./packages/*\" run build",
-    "dev:packages": "pnpm --filter \"./packages/*\" --parallel run dev",
-    "dev:api": "pnpm build:packages && pnpm --filter @bongah/api run start:dev",
-    "dev:web": "pnpm build:packages && pnpm --filter @bongah/web run dev",
+    "packages": "pnpm --filter \"./packages/*\" --parallel run dev",
+    "api": "pnpm --filter @bongah/api run start:dev",
+    "web": "pnpm --filter @bongah/web run dev",
     "mobile": "pnpm --filter @bongah/mobile run start",
     "android": "pnpm --filter @bongah/mobile run android",
-    "ios": "pnpm --filter @bongah/mobile run ios"
+    "ios": "pnpm --filter @bongah/mobile run ios",
+    "db:generate": "pnpm --filter @bongah/api run db:generate",
+    "db:migrate": "pnpm --filter @bongah/api run db:migrate",
+    "db:deploy": "pnpm --filter @bongah/api run db:deploy"
   }
 }

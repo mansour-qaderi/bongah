@@ -1,15 +1,13 @@
 import { PermissionsAndroid, Platform } from 'react-native';
-import { LocationManager } from '@maplibre/maplibre-react-native';
+import { LocationManager } from './native';
 import { within } from '../utils/within';
 import { isInsideAfghanistan, type Coordinate } from './geo';
 
 /**
  * Where the phone is, for the "you are here" dot and for centring the map.
  *
- * Uses MapLibre's own location module (no extra dependency). On Android its default engine is the
- * system LocationManager, not Google Play services, which keeps the "no Google" rule of the map.
- * Native setup: iOS needs NSLocationWhenInUseUsageDescription in Info.plist; the Android permissions
- * are already declared by MapLibre's manifest.
+ * Uses the Mapbox SDK's own location module (no extra dependency; see map/native.tsx). Native setup: iOS needs
+ * NSLocationWhenInUseUsageDescription in Info.plist; the Android permissions are declared by the SDK's manifest.
  */
 export type LocateResult =
   | { status: 'ok'; coordinate: Coordinate }

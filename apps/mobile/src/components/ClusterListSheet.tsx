@@ -10,12 +10,15 @@ import {
 import { useTranslation } from 'react-i18next';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { formatNumber } from '../i18n/format';
+import { useFormat } from '../i18n/useFormat';
 import { propertyTypeLabel } from '../i18n/propertyType';
 import type { MapItem } from '../map/items';
 import { comparePriority } from '../map/priority';
 import { propertyEmoji, useSellerLabel } from '../map/markers';
 import { colors, radius, spacing } from '../theme';
 import AppText from './AppText';
+import Badge, { badgeTones, DealBadge } from './Badge';
+import { propertyPlace } from './PropertyFacts';
 import Price from './Price';
 
 interface Props {
@@ -34,6 +37,7 @@ const Separator = () => <View style={styles.separator} />;
 export default function ClusterListSheet({ items, onPick, onClose }: Props) {
   const { t } = useTranslation();
   const sellerOf = useSellerLabel();
+  const format = useFormat();
 
   // Listings first, the paying ones at the top (see comparePriority); then the offices.
   const ordered = React.useMemo(
@@ -99,17 +103,37 @@ export default function ClusterListSheet({ items, onPick, onClose }: Props) {
                   )}
                 </View>
                 <View style={styles.text}>
-                  <Price
-                    amount={item.property.price}
-                    currency={item.property.currency}
-                    variant="label"
-                    color={colors.primaryDark}
-                  />
+                  {/* The deal as the coloured tag every other card uses, next to the price. */}
+                  <View style={styles.priceLine}>
+                    <Price
+                      amount={item.property.price}
+                      currency={item.property.currency}
+                      variant="label"
+                      color={colors.primaryDark}
+                    />
+                    <DealBadge deal={item.property.deal_type} />
+                    {item.property.price_terms ? (
+                      <Badge
+                        label={t(`priceTerms.${item.property.price_terms}`)}
+                        tone={badgeTones.neutral}
+                      />
+                    ) : null}
+                  </View>
                   <AppText variant="caption" numberOfLines={1}>
                     {item.property.title}
                   </AppText>
-                  <AppText variant="caption" color={colors.textMuted}>
-                    {propertyTypeLabel(item.property.type, t)} ·{' '}
+                  <AppText
+                    variant="caption"
+                    color={colors.textMuted}
+                    numberOfLines={1}
+                  >
+                    {[
+                      propertyTypeLabel(item.property.type, t),
+                      propertyPlace(item.property, format.province),
+                    ]
+                      .filter(Boolean)
+                      .join(' · ')}
+                    {' · '}
                     {sellerOf(item.property)}
                   </AppText>
                 </View>
@@ -174,5 +198,10 @@ const styles = StyleSheet.create({
   agencyThumb: { borderRadius: 28 },
   thumbImage: { width: '100%', height: '100%' },
   text: { flex: 1, gap: 2 },
+  priceLine: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
   separator: { height: 1, backgroundColor: colors.border, marginStart: 80 },
 });

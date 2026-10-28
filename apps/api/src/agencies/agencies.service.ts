@@ -1,6 +1,7 @@
 import {
   ConflictException,
   ForbiddenException,
+  Inject,
   Injectable,
   NotFoundException,
   UnauthorizedException,
@@ -18,6 +19,8 @@ import { PrismaService } from '../prisma/prisma.service.js';
 import type { RegisterAgencyDto } from './dto/register-agency.dto.js';
 import type { SetAgencyLocationDto } from './dto/set-agency-location.dto.js';
 import { DAY_MS, findActiveSubscription, summariseSubscription } from './subscription.js';
+import { AGENCY_TRIAL_SETTINGS, type AgencyTrialSettings } from './trial.config.js';
+import { trialEndFor } from './trial.js';
 
 const DASHBOARD_TOP_LISTINGS = 5;
 
@@ -29,7 +32,10 @@ export const OFFICE_MAP_LISTINGS_LIMIT = 2000;
 
 @Injectable()
 export class AgenciesService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Inject(AGENCY_TRIAL_SETTINGS) private readonly trial: AgencyTrialSettings,
+  ) {}
 
   /**
    * Verified agency offices that have placed a pin: what the home map draws. Public.
@@ -74,7 +80,7 @@ export class AgenciesService {
 
   /**
    * Registers the signed-in user's real-estate office and switches the account to the AGENCY role.
-   * The agency starts unverified. Publishing still needs an active subscription.
+   * The agency starts unverified. It can publish during its free trial; after that it needs an active subscription.
    * One agency per user; admins cannot be turned into agencies.
    */
   async register(userId: string, input: RegisterAgencyDto): Promise<Agency> {
@@ -96,6 +102,8 @@ export class AgenciesService {
             licensePhoto: input.license_photo ?? '',
             address: input.address,
             description: input.description ?? null,
+            // The free period starts now (null when the operator switched trials off).
+            trialEndsAt: trialEndFor(new Date(), this.trial),
           },
         });
         await tx.user.update({ where: { id: userId }, data: { role: Role.AGENCY } });

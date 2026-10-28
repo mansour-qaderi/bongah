@@ -205,7 +205,11 @@ export type IconName =
   // The map's satellite switch: a satellite sending a signal
   | 'satellite'
   // Directions to a listing
-  | 'navigate';
+  | 'navigate'
+  // The map's 3D view: a cube seen from a corner
+  | 'cube'
+  // Copy: two sheets, one in front of the other
+  | 'copy';
 
 export const ICON_GRID = 24;
 
@@ -538,6 +542,23 @@ export const ICON_SHAPES: Record<IconName, Shape[]> = {
     bar(5.5, 3.5, 11, 1.6),
     frame(14, 10.5, 7.5, 5, 2.5),
     dot(17.2, 13, 1.8),
+  ],
+  // The 3D view: a cube seen from one corner, its outline and the three edges that meet in the middle.
+  cube: [
+    line(12, 2.5, 20, 7),
+    line(20, 7, 20, 17),
+    line(20, 17, 12, 21.5),
+    line(12, 21.5, 4, 17),
+    line(4, 17, 4, 7),
+    line(4, 7, 12, 2.5),
+    line(4, 7, 12, 12),
+    line(12, 12, 20, 7),
+    line(12, 12, 12, 21.5),
+  ],
+  // Copy: a sheet behind, a sheet in front that covers the back one's corner.
+  copy: [
+    frame(4, 4, 11.5, 11.5, 2.5),
+    { ...frame(8.5, 8.5, 11.5, 11.5, 2.5), fill: 'bg' },
   ],
   // Fullscreen: four corners pointing out.
   expand: [

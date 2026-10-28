@@ -1,10 +1,10 @@
 import { pickRoute, routeFromOsrm, type Route } from '../src/map/routing';
 import { areaOfBounds, inBounds } from '../src/map/viewport';
+import { SATELLITE_STYLE_URL } from '../src/config';
 import {
   SATELLITE_MAP_STYLE,
-  SATELLITE_TILE_MAX_ZOOM,
   BASE_MAP_STYLE,
-  satelliteStyle,
+  FALLBACK_MAP_STYLE,
   styleFor,
 } from '../src/map/style';
 import {
@@ -80,20 +80,16 @@ describe('the base maps', () => {
     expect(SATELLITE_MAP_STYLE).not.toBe(BASE_MAP_STYLE);
   });
 
-  it('draws the photographs with the place names over them', () => {
-    const style = satelliteStyle('https://x/{z}/{y}/{x}', 'https://y/{z}/{y}/{x}', 18);
-    expect(style.layers.map(layer => layer.id)).toEqual(['imagery', 'labels']);
-    expect(style.sources.imagery).toMatchObject({ type: 'raster', maxzoom: 18 });
-    expect(style.sources.labels).toMatchObject({ type: 'raster' });
+  it('draws the satellite map from Mapbox Satellite Streets: the photographs with the roads and names over them', () => {
+    expect(SATELLITE_STYLE_URL).toBe('mapbox://styles/mapbox/satellite-streets-v12');
+    expect(SATELLITE_MAP_STYLE).toBe(SATELLITE_STYLE_URL);
+    // A vector style read by address: the app does not ask a raster server for photographs of its own any more.
+    expect(typeof SATELLITE_MAP_STYLE).toBe('string');
   });
 
-  it('never asks the photographs for a level they do not have: past it the picture is stretched, not replaced by a grey "no data" tile', () => {
-    // Esri answers a missing level with a grey placeholder (a normal 200 reply), so the app must not ask for it.
-    expect(SATELLITE_TILE_MAX_ZOOM).toBeLessThanOrEqual(17);
-    expect(SATELLITE_MAP_STYLE.sources.imagery).toMatchObject({ maxzoom: SATELLITE_TILE_MAX_ZOOM });
-    expect(SATELLITE_MAP_STYLE.sources.labels).toMatchObject({ maxzoom: SATELLITE_TILE_MAX_ZOOM });
-    // The map itself may still be zoomed in beyond it (the close view of a street is zoom 17).
-    expect(SATELLITE_MAP_STYLE.layers.every(layer => layer.minzoom === undefined || layer.minzoom <= SATELLITE_TILE_MAX_ZOOM)).toBe(true);
+  it('puts the plain street tiles in its place only when Mapbox cannot be used', () => {
+    expect(styleFor('satellite')).toBe(SATELLITE_MAP_STYLE);
+    expect(styleFor('satellite', true)).toBe(FALLBACK_MAP_STYLE);
   });
 
   it('remembers the choice on the phone', async () => {

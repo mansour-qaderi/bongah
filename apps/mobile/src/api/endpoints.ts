@@ -39,7 +39,7 @@ import type {
   ReferralSummary,
   RouteResult,
   SendOtpResponse,
-  Transaction,
+  PaymentStatus,
   User,
   VerifyOtpResponse,
   WelcomeQuote,
@@ -353,7 +353,39 @@ export const spendLadders = (input: SpendLaddersInput) =>
   });
 
 export const getPayment = (id: string) =>
-  request<Transaction>('GET', `/hesabpay/payments/${id}`, { auth: true });
+  request<PaymentStatus>('GET', `/hesabpay/payments/${id}`, { auth: true });
+
+/**
+ * Manual mode: sends the transaction id printed on the transfer receipt, instead of (or besides) the picture. An admin
+ * compares it with the account's history and activates the order; nothing is credited by this call.
+ */
+export const submitPaymentReference = (id: string, reference: string) =>
+  request<PaymentStatus>('POST', `/hesabpay/payments/${id}/reference`, {
+    auth: true,
+    body: { reference },
+  });
+
+/**
+ * Manual mode: sends the picture of the transfer receipt for a payment the person made by hand. An admin looks at it
+ * and activates the order; nothing is credited by this call. Sending again replaces the picture.
+ */
+export async function uploadPaymentProof(
+  id: string,
+  uri: string,
+  contentType: string,
+): Promise<PaymentStatus> {
+  let data: Blob;
+  try {
+    data = await (await fetch(uri)).blob();
+  } catch {
+    throw new ApiError('http', 0, { code: 'IMAGE_UNREADABLE' });
+  }
+  return request<PaymentStatus>('POST', `/hesabpay/payments/${id}/proof`, {
+    auth: true,
+    file: { data, contentType },
+    timeoutMs: UPLOAD_TIMEOUT_MS,
+  });
+}
 
 // ───────────── Feedback ─────────────
 

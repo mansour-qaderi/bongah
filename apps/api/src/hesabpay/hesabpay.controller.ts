@@ -22,7 +22,12 @@ import type { AuthenticatedUser } from '../auth/auth.types.js';
 import { CurrentUser } from '../auth/decorators/current-user.decorator.js';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard.js';
 import type { Paginated, PaymentSummary, Receipt } from '@bongah/shared-types';
-import { paginationQuerySchema, type PaginationQuery } from '@bongah/validation';
+import {
+  paginationQuerySchema,
+  submitPaymentReferenceSchema,
+  type PaginationQuery,
+  type SubmitPaymentReferenceInput,
+} from '@bongah/validation';
 import { ZodValidationPipe } from '../common/pipes/zod-validation.pipe.js';
 import {
   initiatePaymentSchema,
@@ -38,7 +43,9 @@ import type {
   WebhookAckDto,
 } from './dto/payment-response.dto.js';
 import { HesabPayGateway } from './gateway/hesabpay-gateway.js';
+import { readBody, tooLarge } from '../common/upload.js';
 import { HesabpayService } from './hesabpay.service.js';
+import { ManualPaymentsService } from './manual-payments.service.js';
 
 @Controller('hesabpay')
 @UseGuards(ThrottlerGuard)
@@ -47,6 +54,7 @@ export class HesabpayController {
 
   constructor(
     private readonly hesabpay: HesabpayService,
+    private readonly manualPayments: ManualPaymentsService,
     private readonly gateway: HesabPayGateway,
   ) {}
 
@@ -99,6 +107,45 @@ export class HesabpayController {
     @Param('id', ParseUUIDPipe) id: string,
   ): Promise<PaymentStatusDto> {
     return this.hesabpay.getPayment(user.id, id);
+  }
+
+  /**
+   * Uploads the picture of the transfer receipt for one of my manual payments (the file itself as the request body,
+   * Content-Type: image/jpeg, image/png or image/webp), replacing an earlier one. An admin looks at it and confirms the payment.
+   */
+  @Post('payments/:id/proof')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(JwtAuthGuard)
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  async uploadProof(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Req() req: Request,
+  ): Promise<PaymentStatusDto> {
+    // Check the type BEFORE touching the body, and turn away an announced oversize file before it is sent: the same
+    // order as the chat pictures (a JSON body is consumed by Express's parser before it gets here).
+    this.manualPayments.assertDeclaredType(req.headers['content-type']);
+    const max = this.manualPayments.maxBytes;
+    const announced = Number(req.headers['content-length']);
+    if (Number.isFinite(announced) && announced > max) throw tooLarge(max);
+    const data = await readBody(req, max);
+    return this.manualPayments.uploadProof(user.id, id, req.headers['content-type'], data);
+  }
+
+  /**
+   * Sends the transaction id printed on the transfer receipt for one of my manual payments, instead of (or besides) the
+   * picture. Sending it again replaces the earlier one while the payment is still waiting.
+   */
+  @Post('payments/:id/reference')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(JwtAuthGuard)
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  submitReference(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body(new ZodValidationPipe(submitPaymentReferenceSchema)) body: SubmitPaymentReferenceInput,
+  ): Promise<PaymentStatusDto> {
+    return this.manualPayments.submitReference(user.id, id, body.reference);
   }
 
   /** The digital receipt of one of my successful payments. */

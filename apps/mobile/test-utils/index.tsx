@@ -113,7 +113,7 @@ export function tapMap(
   testID: string,
   lngLat: [number, number],
 ) {
-  // The MapLibre stand-in itself (not our BaseMap/LocationPicker wrappers, which share the testID
+  // The map stand-in itself (not our BaseMap/LocationPicker wrappers, which share the testID
   // but take an already-decoded coordinate).
   const map = root.findAll(
     node =>
@@ -126,7 +126,7 @@ export function tapMap(
   map.props.onPress({ nativeEvent: { lngLat, point: [0, 0] } });
 }
 
-/** Elements of the (mock) MapLibre component with this name, e.g. 'Marker'. */
+/** Elements of the (mock) map component with this name, e.g. 'Marker'. */
 export const mapParts = (root: ReactTestInstance, name: string) =>
   root.findAll(
     node => node.props.mockName === name && typeof node.type === 'string',

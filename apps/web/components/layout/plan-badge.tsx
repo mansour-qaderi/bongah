@@ -27,6 +27,18 @@ export function PlanBadge() {
       </Link>
     );
   }
+  const trial = wallet?.trial;
+  if (trial?.is_active) {
+    // No plan, but the free period is running: say so (and how long is left) instead of nagging to buy.
+    return (
+      <Link href="/dashboard/subscription" aria-label={t('plan.badge.details')}>
+        <Badge tone="primary" className="gap-1.5 py-1 text-[13px]" data-testid="trial-badge">
+          <WalletIcon aria-hidden className="h-3.5 w-3.5" />
+          {t('plan.badge.trial', { days: formatNumber(trial.remaining_days) })}
+        </Badge>
+      </Link>
+    );
+  }
   return (
     <Link href="/dashboard/subscription" aria-label={t('plan.badge.buy')}>
       <Badge tone="neutral" className="gap-1.5 border-line-strong py-1 text-[13px] hover:border-primary hover:text-primary">

@@ -44,6 +44,8 @@ export function autoDescription(row: DraftRow): string {
   if (rooms && row.type && hasRoomsFor(row.type)) parts.push(tNow('title.rooms', { n: formatNumber(rooms) }));
   const baths = parseLooseNumber(row.bathrooms);
   if (baths && row.type && hasRoomsFor(row.type)) parts.push(tNow('desc.baths', { n: formatNumber(baths) }));
+  const floors = parseLooseNumber(row.floors ?? '');
+  if (floors && floors > 1) parts.push(tNow('desc.floors', { n: formatNumber(floors) }));
   let text = parts.join('، ');
   if (row.address.trim()) text += `، ${row.address.trim()}`;
   const price = parseLooseNumber(row.price);

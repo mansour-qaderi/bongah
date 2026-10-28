@@ -102,7 +102,19 @@ export default function BalanceScreen({ navigation }: Props) {
           />
         }
       >
-        {/* 1. The listings still available to publish. */}
+        {/* 0. An office in its free trial: until when, and how many of its free listings are used. */}
+        {data.trial?.is_active && data.trial.ends_at ? (
+          <Banner kind="promo" message={t('balance.trialTitle')}>
+            <AppText variant="bodySm" color={colors.textSecondary}>
+              {t('balance.trialText', {
+                date: formatSolarDate(data.trial.ends_at, t),
+                used: formatNumber(data.trial.listings_used, 0),
+                limit: formatNumber(data.trial.listings_limit, 0),
+              })}
+            </AppText>
+          </Banner>
+        ) : null}
+                {/* 1. The listings still available to publish. */}
         <View style={styles.card} testID="balance-quota-card">
           <Row icon="listings" label={t('balance.quota')}>
             <AppText variant="heading" testID="balance-quota-value">

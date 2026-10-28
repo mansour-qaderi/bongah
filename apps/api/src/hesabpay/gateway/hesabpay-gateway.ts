@@ -13,8 +13,8 @@ export interface PaymentSessionRequest {
 export interface PaymentSession {
   /** The provider's identifier for this payment; stored as transactions.hesabpay_tx_id. */
   id: string;
-  /** Where the user completes the payment. */
-  paymentUrl: string;
+  /** Where the user completes the payment; null when there is no page to send them to (manual payments). */
+  paymentUrl: string | null;
 }
 
 /** A webhook that has passed signature verification, in provider-independent form. */

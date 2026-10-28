@@ -23,7 +23,13 @@ target 'BongahMobile' do
     :app_path => "#{Pod::Config.instance.installation_root}/.."
   )
 
+  # The Mapbox Maps SDK (used through @rnmapbox/maps) adds its pods and build settings in these two hooks.
+  pre_install do |installer|
+    $RNMapboxMaps.pre_install(installer)
+  end
+
   post_install do |installer|
+    $RNMapboxMaps.post_install(installer)
     react_native_post_install(
       installer,
       config[:reactNativePath],

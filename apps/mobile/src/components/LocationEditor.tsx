@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
-import { Marker, ViewAnnotation } from '@maplibre/maplibre-react-native';
+import { Marker, ViewAnnotation } from '../map/native';
 import { useTranslation } from 'react-i18next';
 import type { DealType, PropertyType } from '@bongah/shared-types';
 import BaseMap, { type MapViewChange } from '../map/BaseMap';
@@ -45,7 +45,7 @@ interface Props {
  * tap the map to put it there, or press it and drag it. The pin is in the colour of the deal (green for a sale, blue
  * for a rent, orange for a mortgage) with the kind of property in its head, and its point is on the spot.
  *
- * Overlaid at the top: the fullscreen toggle, "my location" and the street/satellite switch.
+ * Overlaid at the top: the fullscreen toggle, "my location", the street/satellite switch and the 3D view.
  */
 export default function LocationEditor({
   pin,
@@ -68,6 +68,8 @@ export default function LocationEditor({
   const [reset, setReset] = useState(0);
   const mapStyle = useMapStyle();
   const satellite = mapStyle.kind === 'satellite';
+  // The 3D view: the map leans back and the buildings stand up, to see which one the pin is on.
+  const [tilted, setTilted] = useState(false);
 
   const tap = (point: Coordinate) => {
     if (isInsideAfghanistan(point)) onPin(point);
@@ -80,6 +82,7 @@ export default function LocationEditor({
         camera={camera}
         // Inline in the form (a scrolling sheet) the map must be clipped by it; fullscreen it is the whole screen.
         androidView={fullscreen ? 'surface' : 'texture'}
+        tilted={tilted}
         testID={mapTestID}
         onPress={tap}
         onViewChange={onView}
@@ -135,6 +138,14 @@ export default function LocationEditor({
             selected={satellite}
             label={satellite ? t('map.styleStreet') : t('map.styleSatellite')}
             onPress={mapStyle.toggle}
+          />
+          <CircleIconButton
+            testID={`${testID}-3d`}
+            icon="cube"
+            tone={tilted ? 'brand' : 'neutral'}
+            selected={tilted}
+            label={t('map.view3d')}
+            onPress={() => setTilted(on => !on)}
           />
         </View>
       </View>

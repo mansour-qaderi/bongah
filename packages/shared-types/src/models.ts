@@ -24,6 +24,7 @@ import type {
   Role,
   SubscriptionPackage,
   SubscriptionStatus,
+  TransactionMethod,
   TransactionPurpose,
   TransactionStatus,
 } from "./constants";
@@ -325,9 +326,49 @@ export interface MapLocationStatus {
   tokens_available: number;
 }
 
-/** Returned when a payment is started: send the user to `payment_url` to pay. */
+/** Where the customer sends the money in manual mode: a HesabPay wallet (by phone number) or a bank card. */
+export interface ManualPaymentAccount {
+  kind: 'HESABPAY' | 'CARD';
+  /** The phone number of the HesabPay account, or the card number. Shown as is, to be copied. */
+  number: string;
+  /** The name the account is in: the customer checks it before sending. */
+  holder: string;
+  /** The bank of a card. */
+  bank: string | null;
+}
+
+/** Everything the customer needs to pay by hand. Set by the operator in the API's environment. */
+export interface ManualPaymentInfo {
+  accounts: ManualPaymentAccount[];
+  /** An extra line the operator wants shown with the accounts (opening hours of the review, a support number). */
+  note: string | null;
+}
+
+/**
+ * Returned when a payment is started. With the payment gateway, send the user to `payment_url` to pay. In manual mode
+ * `payment_url` is null: show `manual` (where to send the money), then ask for the receipt.
+ */
 export interface PaymentInitiated extends Transaction {
-  payment_url: string;
+  payment_url: string | null;
+  /** Absent from servers that predate manual payments (treat as GATEWAY). */
+  method?: TransactionMethod;
+  manual?: ManualPaymentInfo | null;
+  receipt_uploaded?: boolean;
+  /** The transaction id the customer typed in (manual payments). */
+  reference?: string | null;
+}
+
+/** GET /hesabpay/payments/:id: the state of one payment (the app polls it after sending the user to pay). */
+export interface PaymentStatus extends Transaction {
+  method?: TransactionMethod;
+  /** MANUAL, still PENDING: where to send the money (so a customer who comes back can still pay). */
+  manual?: ManualPaymentInfo | null;
+  /** The customer has sent a picture of the transfer receipt. */
+  receipt_uploaded?: boolean;
+  /** The transaction id the customer typed in, from their HesabPay / bank receipt. */
+  reference?: string | null;
+  /** Why a manual payment was refused; set exactly when it was. */
+  review_note?: string | null;
 }
 
 /** The JSON body of an API error. `errors` is present for validation failures, `code` for business rules. */
@@ -564,6 +605,13 @@ export interface PaymentSummary extends Transaction {
   /** Contact credits bought, or days of featured badge bought. */
   quantity: number | null;
   property_title: string | null;
+  method?: TransactionMethod;
+  /** MANUAL: the receipt picture is on file (the payment waits for a person to look at it). */
+  receipt_uploaded?: boolean;
+  /** MANUAL: the transaction id the customer typed in (instead of, or besides, the picture). */
+  reference?: string | null;
+  /** Why a manual payment was refused; set exactly when it was. */
+  review_note?: string | null;
 }
 
 /** GET /hesabpay/payments/:id/receipt: what the app shows (and shares) as the digital receipt. */
@@ -623,6 +671,19 @@ export interface ListingQuota {
   resets_at: string | null;
 }
 
+/**
+ * The free period a new agency starts with: it can publish listings without a subscription until `ends_at` or until
+ * `listings_limit` listings are published, whichever comes first.
+ */
+export interface AgencyTrial {
+  /** Running now: before `ends_at`. (A used-up allowance does not end the trial; see `listings_used`.) */
+  is_active: boolean;
+  ends_at: string;
+  remaining_days: number;
+  listings_limit: number;
+  listings_used: number;
+}
+
 /** GET /wallet: everything the signed-in user has bought or earned, in one call. */
 export interface Wallet {
   /** The server's clock when this was computed, so a countdown does not depend on the phone's clock. */
@@ -635,6 +696,8 @@ export interface Wallet {
   ladder_tokens: number;
   /** Listings still available to publish. Absent from servers that predate it. */
   listing_quota?: ListingQuota;
+  /** The free trial of an agency: null for everyone else. Absent from servers that predate it. */
+  trial?: AgencyTrial | null;
   /** The five newest payments. */
   recent_payments: PaymentSummary[];
 }
@@ -785,6 +848,15 @@ export interface AdminTransactionItem extends PaymentSummary {
   hesabpay_tx_id: string;
   user: AdminPerson;
   agency_name: string | null;
+  /** When the receipt picture arrived; null when there is none. */
+  proof_uploaded_at: string | null;
+  /** When the transaction id was typed in; null when none was. */
+  reference_submitted_at: string | null;
+  /** When an admin decided (approved, forced or refused), and who. */
+  reviewed_at: string | null;
+  reviewed_by: AdminPerson | null;
+  /** Activated by an admin without a receipt picture. */
+  force_activated: boolean;
 }
 
 export interface AdminAuditEntry {

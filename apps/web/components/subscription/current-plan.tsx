@@ -16,6 +16,7 @@ export function CurrentPlan({ wallet }: { wallet: Wallet }) {
   const quota = summarizeQuota(wallet);
   const active = !!sub?.is_active && !!sub.package_type;
   const pct = quota && quota.limit ? Math.min(100, Math.round((quota.used / quota.limit) * 100)) : 0;
+  const trial = !active ? wallet.trial : null;
 
   return (
     <Card>
@@ -27,6 +28,8 @@ export function CurrentPlan({ wallet }: { wallet: Wallet }) {
               <Crown aria-hidden className="h-3.5 w-3.5" />
               {labels.plan[sub!.package_type!]}
             </Badge>
+          ) : trial?.is_active ? (
+            <Badge tone="primary">{t('sub.trial.badge')}</Badge>
           ) : (
             <Badge tone="neutral">{t('sub.current.none')}</Badge>
           )
@@ -45,6 +48,17 @@ export function CurrentPlan({ wallet }: { wallet: Wallet }) {
               </div>
               <p className="mt-1 text-xs text-muted">{t('sub.current.until', { date: formatDate(sub!.ends_at) })}</p>
             </>
+          ) : trial?.is_active ? (
+            <>
+              <div className="tabular mt-2 text-2xl font-extrabold text-ink" data-testid="trial-days">
+                {formatNumber(trial.remaining_days)} <span className="text-sm font-semibold text-muted">{t('sub.current.days')}</span>
+              </div>
+              <p className="mt-1 text-xs leading-6 text-muted">
+                {t('sub.trial.text', { date: formatDate(trial.ends_at), limit: formatNumber(trial.listings_limit) })}
+              </p>
+            </>
+          ) : trial ? (
+            <p className="mt-2 text-[13px] leading-6 text-muted">{t('sub.trial.ended')}</p>
           ) : (
             <p className="mt-2 text-[13px] leading-6 text-muted">{t('sub.current.noPlanText')}</p>
           )}

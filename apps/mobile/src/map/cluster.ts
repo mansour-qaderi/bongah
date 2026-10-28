@@ -105,7 +105,7 @@ export function clusterPoints<T extends MapPoint>(
   }));
 }
 
-/** [west, south, east, north], as MapLibre reports the visible area. */
+/** [west, south, east, north], as the map reports the visible area. */
 export type Bounds = [number, number, number, number];
 
 /** Whether a point is in `bounds` grown by `margin` (a fraction of the view's size), so markers just off-screen stay ready. */

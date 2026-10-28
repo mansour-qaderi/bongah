@@ -23,5 +23,9 @@ export function toPaymentSummary(row: PaymentRow): PaymentSummary {
     package_type: row.packageType,
     quantity: row.quantity,
     property_title: row.property?.title ?? null,
+    method: row.method,
+    receipt_uploaded: row.proofImageId !== null,
+    reference: row.paymentReference,
+    review_note: row.reviewNote,
   };
 }

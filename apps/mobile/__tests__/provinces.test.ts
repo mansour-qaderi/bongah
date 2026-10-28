@@ -67,7 +67,7 @@ describe('provinces', () => {
     expect(provinceLabel('جای دیگر', 'ps')).toBe('جای دیگر');
   });
 
-  it('centres the map on the province (MapLibre wants [longitude, latitude])', () => {
+  it('centres the map on the province (the map wants [longitude, latitude])', () => {
     const herat = findProvince('هرات')!;
     expect(provinceCamera(herat).center).toEqual([herat.lng, herat.lat]);
   });

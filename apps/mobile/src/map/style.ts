@@ -1,13 +1,45 @@
-import type { StyleSpecification } from '@maplibre/maplibre-react-native';
-import { MAP_TILE_MAX_ZOOM, MAP_TILE_URL } from '../config';
+import {
+  MAP_FALLBACK_TILE_MAX_ZOOM,
+  MAP_FALLBACK_TILE_URL,
+  MAP_STYLE_URL,
+  SATELLITE_STYLE_URL,
+} from '../config';
 
 /**
- * The whole base map is raster tiles. There is no vector style, so no glyphs or sprites are needed (the app draws its
- * own pins as circles) and nothing is fetched from anyone except the tile servers named here and in config.ts.
+ * A map style written out in full (the Mapbox style specification, the part the app touches). The raster fallback
+ * below is built by the app; the street and satellite styles are Mapbox's own, downloaded and adjusted (streetStyle.ts).
+ */
+export interface StyleSpecification {
+  version: number;
+  sources: Record<string, unknown>;
+  layers: Array<{
+    id: string;
+    type: string;
+    source?: string;
+    minzoom?: number;
+    layout?: Record<string, unknown>;
+    [key: string]: unknown;
+  }>;
+  [key: string]: unknown;
+}
+
+/** What the map accepts as a style: the address of a style, or the style itself. */
+export type MapStyle = string | StyleSpecification;
+
+/**
+ * The street map is Mapbox Streets, fetched by address (see config.ts): the Mapbox SDK downloads the style, its
+ * fonts, sprites and vector tiles from Mapbox, with the app's access token. `styleFor` swaps in the same style with
+ * local-language labels once streetStyle.ts has made it.
+ */
+export const BASE_MAP_STYLE: MapStyle = MAP_STYLE_URL;
+
+/**
+ * The map made of one raster tile server. Only the fallback street map uses it (when the vector style cannot be
+ * loaded), so it is the plain OpenStreetMap tiles by default.
  */
 export function rasterStyle(
-  tileUrl: string = MAP_TILE_URL,
-  maxZoom: number = MAP_TILE_MAX_ZOOM,
+  tileUrl: string = MAP_FALLBACK_TILE_URL,
+  maxZoom: number = MAP_FALLBACK_TILE_MAX_ZOOM,
 ): StyleSpecification {
   return {
     version: 8,
@@ -17,81 +49,40 @@ export function rasterStyle(
         tiles: [tileUrl],
         tileSize: 256,
         maxzoom: maxZoom,
+        attribution: '© OpenStreetMap contributors',
       },
     },
     layers: [{ id: 'basemap', type: 'raster', source: 'basemap' }],
   };
 }
 
-/** Built once: MapLibre reloads the style whenever it receives a new object. */
-export const BASE_MAP_STYLE = rasterStyle();
+/** Built once: the map reloads the style whenever it receives a new object. */
+export const FALLBACK_MAP_STYLE = rasterStyle();
 
 // ───────────────────────────── satellite ─────────────────────────────
 
 /**
- * Aerial photographs (Esri World Imagery): the whole country at about a metre a pixel and cities and towns sharper, so
- * plots, roofs and lanes can be told apart. Needs no key. Like the OpenStreetMap tiles it is a shared service meant for
- * light use: before a public launch with real traffic, swap the URL for a plan of your own (MapTiler's
- * `https://api.maptiler.com/tiles/satellite-v2/{z}/{x}/{y}.jpg?key=YOUR_KEY` is what the agvmap site uses) and keep
- * SATELLITE_ATTRIBUTION accurate for it. Nothing else in the app has to change.
+ * The satellite map is Mapbox Satellite Streets (`satellite-streets-v12`), read by address like the street map: the
+ * aerial photographs with the vector street layer on top (roads and their outlines, building outlines, names). It
+ * replaces the raster-only imagery the app drew before, which had no roads of its own and went soft past zoom 16.
+ * `styleFor` swaps in the same style with local-language labels once streetStyle.ts has made it.
  */
-export const SATELLITE_TILE_URL =
-  'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
-/**
- * Place and road names drawn over the photographs (Esri's transparent reference layer), so the satellite view still
- * says where things are, as agvmap's "hybrid" does.
- */
-export const SATELLITE_LABELS_URL =
-  'https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}';
-/**
- * The deepest imagery level the app ever asks for; past it the map keeps zooming by enlarging this level.
- *
- * Why it is not 19: Esri has photographs at every zoom only for some cities. Where it has none at the asked level its
- * server does not answer "no such tile" (which MapLibre would answer by enlarging the level above): it answers 200 with
- * a grey picture reading "Map data not yet available", which is drawn as if it were the map. Asking for no level deeper
- * than 16 keeps every request inside what Esri serves across the country's towns; the cost is that a few cities with
- * sharper photographs (Kabul, Herat) look a little soft at street zoom. A paid imagery plan that answers every level
- * (see the note above) can raise this again; the limit lives here and nowhere else.
- */
-export const SATELLITE_TILE_MAX_ZOOM = 16;
-/** The credit the imagery's licence asks for; it is in the Account tab with the map credit. */
-export const SATELLITE_ATTRIBUTION =
-  'Esri, Maxar, Earthstar Geographics, and the GIS User Community';
-export const SATELLITE_ATTRIBUTION_URL = 'https://www.esri.com/en-us/legal/terms/data-attributions';
-
-export function satelliteStyle(
-  imageryUrl: string = SATELLITE_TILE_URL,
-  labelsUrl: string = SATELLITE_LABELS_URL,
-  maxZoom: number = SATELLITE_TILE_MAX_ZOOM,
-): StyleSpecification {
-  return {
-    version: 8,
-    sources: {
-      imagery: {
-        type: 'raster',
-        tiles: [imageryUrl],
-        tileSize: 256,
-        maxzoom: maxZoom,
-      },
-      labels: {
-        type: 'raster',
-        tiles: [labelsUrl],
-        tileSize: 256,
-        maxzoom: maxZoom,
-      },
-    },
-    layers: [
-      { id: 'imagery', type: 'raster', source: 'imagery' },
-      { id: 'labels', type: 'raster', source: 'labels' },
-    ],
-  };
-}
-
-export const SATELLITE_MAP_STYLE = satelliteStyle();
+export const SATELLITE_MAP_STYLE: MapStyle = SATELLITE_STYLE_URL;
 
 /** The base maps a person can switch between. */
 export type MapStyleKind = 'street' | 'satellite';
 
-/** The style object for a kind (always the same object, so MapLibre does not reload it on every render). */
-export const styleFor = (kind: MapStyleKind): StyleSpecification =>
-  kind === 'satellite' ? SATELLITE_MAP_STYLE : BASE_MAP_STYLE;
+/**
+ * The style for a kind (always the same value for the same arguments, so the map does not reload it on every
+ * render). `failed`: that style could not be loaded (or there is no Mapbox token), so the plain raster street map
+ * stands in for it. `localized`: the same Mapbox style with local-language labels, when streetStyle.ts has it; until
+ * then (or when it could not be made) the map reads Mapbox's own style by address, labels in its default language.
+ */
+export const styleFor = (
+  kind: MapStyleKind,
+  failed = false,
+  localized: StyleSpecification | null = null,
+): MapStyle =>
+  failed
+    ? FALLBACK_MAP_STYLE
+    : localized ?? (kind === 'satellite' ? SATELLITE_MAP_STYLE : BASE_MAP_STYLE);

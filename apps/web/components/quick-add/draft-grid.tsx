@@ -3,9 +3,9 @@
 import { memo, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { toast } from 'sonner';
-import { AlertCircle, CheckCircle2, ClipboardList, Info, Send, Trash2, Wand2 } from 'lucide-react';
-import { CURRENCIES, DEAL_TYPES, PROPERTY_TYPES } from '@bongah/shared-types';
-import { checkDraft, type DraftErrors, type DraftField } from '@/lib/import/draft-validation';
+import { ClipboardList, CircleHelp, Info, LayoutGrid, Send, Table2, Trash2, Wand2 } from 'lucide-react';
+import { CURRENCIES, DEAL_TYPES, PRICE_TERMS, PROPERTY_TYPES } from '@bongah/shared-types';
+import { checkDraft } from '@/lib/import/draft-validation';
 import { useDrafts } from '@/lib/import/drafts-store';
 import type { ImportField } from '@/lib/import/parse-file';
 import { publishDrafts, type PublishResult } from '@/lib/import/publish';
@@ -19,32 +19,78 @@ import type { MessageKey } from '@/i18n/translate';
 import { useLanguage, useT } from '@/i18n/provider';
 import { useLabels } from '@/i18n/use-labels';
 import { useWallet } from '@/hooks/use-api';
+import { useLocalStorage } from '@/hooks/use-local-storage';
 import { cn } from '@/lib/cn';
 import { Button } from '@/components/ui/button';
 import { Card, CardHeader } from '@/components/ui/card';
-import { ConfirmDialog } from '@/components/ui/dialog';
+import { ConfirmDialog, Dialog } from '@/components/ui/dialog';
 import { EmptyState } from '@/components/ui/empty-state';
-import { Input, Select } from '@/components/ui/field';
+import { Checkbox, Input, Select } from '@/components/ui/field';
+import { Tip } from '@/components/ui/tooltip';
 import { ProgressDialog, type RunState } from '@/components/listings/progress-dialog';
+import { DraftCard } from './draft-card';
+import { fieldName, StatusPill, useRowReport, type RowState } from './draft-shared';
 
 const PAGE = 50;
+const PAGE_CARDS = 10;
+const VIEW_KEY = 'bongah.drafts-view';
+type DraftView = 'table' | 'cards';
 const CELL = 'h-8 rounded-lg px-2 text-[13px]';
 
-/** The name of each field that can be missing, for the one-line hint. */
-const FIELD_LABEL: Partial<Record<DraftField, MessageKey>> = {
-  title: 'import.field.title',
-  type: 'import.field.type',
-  deal_type: 'import.field.deal_type',
-  price: 'import.field.price',
-  currency: 'import.field.currency',
-  area_sqm: 'import.field.area_sqm',
-  province: 'import.field.province',
-  address: 'import.field.address',
-  bedrooms: 'import.field.bedrooms',
-  bathrooms: 'import.field.bathrooms',
-  district: 'import.field.district',
-  neighborhood: 'import.field.neighborhood',
-};
+/** A column heading with a small «?» that explains the cell, for the columns agents most often leave wrong. */
+function HeadWithHint({ text, hint }: { text: string; hint?: string }) {
+  if (!hint) return <>{text}</>;
+  return (
+    <Tip label={hint}>
+      <span className="inline-flex cursor-help items-center gap-1">
+        {text}
+        <CircleHelp aria-hidden className="h-3.5 w-3.5 text-muted" />
+        <span className="sr-only">{hint}</span>
+      </span>
+    </Tip>
+  );
+}
+
+/**
+ * What the three statuses mean, and that nothing is lost while a row is incomplete. It is not on the page all the time:
+ * a small ⓘ beside the title opens it, so the table is the first thing in view and the guide is one press away.
+ */
+function StatusGuide() {
+  const t = useT();
+  const [open, setOpen] = useState(false);
+  const items: { state: RowState; text: MessageKey }[] = [
+    { state: 'ready', text: 'grid.legend.ready' },
+    { state: 'incomplete', text: 'grid.legend.incomplete' },
+    { state: 'failed', text: 'grid.legend.failed' },
+  ];
+  return (
+    <>
+      <button
+        type="button"
+        data-testid="status-guide-button"
+        onClick={() => setOpen(true)}
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        aria-label={t('grid.legend.title')}
+        title={t('grid.legend.title')}
+        className="inline-grid h-6 w-6 shrink-0 place-items-center rounded-full text-muted transition-colors hover:bg-soft hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
+      >
+        <Info aria-hidden className="h-[18px] w-[18px]" />
+      </button>
+      <Dialog open={open} onOpenChange={setOpen} title={t('grid.legend.title')} size="sm">
+        <ul className="space-y-3">
+          {items.map((item) => (
+            <li key={item.state} className="flex items-start gap-2.5 text-[13px] leading-6 text-ink-2">
+              <StatusPill state={item.state} withTip={false} />
+              <span>{t(item.text)}</span>
+            </li>
+          ))}
+        </ul>
+        <p className="mt-4 rounded-xl bg-soft/70 px-3 py-2.5 text-[13px] leading-6 text-muted">{t('grid.legend.note')}</p>
+      </Dialog>
+    </>
+  );
+}
 
 interface RowProps {
   row: DraftRow;
@@ -60,21 +106,14 @@ type TextField = 'title' | 'price' | 'area_sqm' | 'bedrooms' | 'bathrooms' | 'di
 
 const GridRow = memo(function GridRow({ row, index, serverError, attempted, onChange, onRemove }: RowProps) {
   const t = useT();
-  const [touched, setTouched] = useState(false);
   const { language } = useLanguage();
   const labels = useLabels();
   const cellAria = (field: ImportField) => t('grid.cellAria', { field: t(`import.field.${field}`), n: formatNumber(index + 1) });
-  const check = checkDraft(row);
-  // A freshly read row is not an error: what is missing is listed once, quietly. It turns red only when the person has
-  // pressed «ثبت» or started editing this row (or the server refused it).
-  const loud = attempted || touched || Boolean(serverError);
-  const errors: DraftErrors = loud ? { ...check.errors, ...(serverError?.errors ?? {}) } : {};
-  const missing = !loud && !check.ok ? (Object.keys(check.errors) as DraftField[]).map((f) => (f in FIELD_LABEL ? t(FIELD_LABEL[f]!) : '')).filter(Boolean) : [];
+  const { missing, state, fixes, hasProblem, touch, bad } = useRowReport(row, serverError, attempted);
   const change = (key: string, patch: Partial<DraftRow>) => {
-    setTouched(true);
+    touch();
     onChange(key, patch);
   };
-  const bad = (f: DraftField) => Boolean(errors[f]);
   const text = (field: TextField, cls: string, extra?: { ltr?: boolean; mode?: 'decimal' | 'numeric' }) => (
     <Input
       aria-label={cellAria(field)}
@@ -85,20 +124,12 @@ const GridRow = memo(function GridRow({ row, index, serverError, attempted, onCh
       className={cn(CELL, cls, extra?.ltr && 'ltr text-start')}
     />
   );
-  const messages = [...new Set([...Object.values(errors), serverError?.message].filter(Boolean) as string[])];
-
   return (
     <>
-      <tr className={cn('align-top', messages.length ? 'bg-danger-tint/30' : '')}>
+      <tr className={cn('align-top', hasProblem ? 'bg-danger-tint/30' : '')}>
         <td className="px-2 py-1.5 text-center text-xs text-muted">{formatNumber(index + 1)}</td>
         <td className="px-1 py-1.5">
-          {serverError ? (
-            <AlertCircle aria-label={t('grid.failed')} className="h-4.5 w-4.5 text-danger" />
-          ) : check.ok ? (
-            <CheckCircle2 aria-label={t('grid.ready')} className="h-4.5 w-4.5 text-primary" />
-          ) : (
-            <AlertCircle aria-label={t('grid.needsFix')} className="h-4.5 w-4.5 text-accent" />
-          )}
+          <StatusPill state={state} />
         </td>
         <td className="px-1 py-1.5">{text('title', 'w-56')}</td>
         <td className="px-1 py-1.5">
@@ -132,6 +163,16 @@ const GridRow = memo(function GridRow({ row, index, serverError, attempted, onCh
             ))}
           </Select>
         </td>
+        <td className="px-1 py-1.5">
+          <Select aria-label={cellAria('price_terms')} value={row.price_terms} onChange={(e) => change(row.key, { price_terms: e.target.value as DraftRow['price_terms'] })} className={cn(CELL, 'w-28')}>
+            <option value="">—</option>
+            {PRICE_TERMS.map((term) => (
+              <option key={term} value={term}>
+                {labels.terms[term]}
+              </option>
+            ))}
+          </Select>
+        </td>
         <td className="px-1 py-1.5">{text('area_sqm', 'w-20', { ltr: true, mode: 'decimal' })}</td>
         <td className="px-1 py-1.5">{text('bedrooms', 'w-14', { ltr: true, mode: 'numeric' })}</td>
         <td className="px-1 py-1.5">{text('bathrooms', 'w-14', { ltr: true, mode: 'numeric' })}</td>
@@ -154,23 +195,42 @@ const GridRow = memo(function GridRow({ row, index, serverError, attempted, onCh
           </button>
         </td>
       </tr>
-      {messages.length || row.notes.length || missing.length ? (
-        <tr className={messages.length ? 'bg-danger-tint/30' : ''}>
+      {hasProblem || row.notes.length || missing.length ? (
+        <tr className={hasProblem ? 'bg-danger-tint/30' : ''}>
           <td />
-          <td colSpan={13} className="px-1 pb-2">
-            <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs">
-              {missing.length ? <span className="text-muted">{t('grid.todo', { fields: missing.join('، ') })}</span> : null}
-              {messages.map((m) => (
-                <span key={m} role="alert" className="text-danger">
-                  {m}
-                </span>
-              ))}
-              {row.notes.map((n) => (
-                <span key={n} className="flex items-center gap-1 text-accent-text">
-                  <Info aria-hidden className="h-3 w-3 shrink-0" />
-                  {n}
-                </span>
-              ))}
+          <td colSpan={14} className="px-1 pb-2">
+            <div className="space-y-1 text-xs">
+              {serverError ? (
+                <p role="alert" className="font-semibold text-danger">
+                  {t('grid.refused', { reason: serverError.message ?? t('grid.notRegistered') })}
+                </p>
+              ) : null}
+              {fixes.length ? (
+                <div role="alert">
+                  <span className="font-semibold text-ink-2">{t('grid.fixTitle')}</span>
+                  <ul className="mt-0.5 flex flex-wrap gap-x-5 gap-y-1">
+                    {fixes.map(([field, text]) => (
+                      <li key={field} className="text-danger">
+                        <span className="font-bold">{fieldName(t, field)}</span>
+                        <span aria-hidden> — </span>
+                        {text}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+              {serverError ? <p className="text-muted">{t('grid.refusedHint')}</p> : null}
+              {missing.length ? <p className="text-muted">{t('grid.todo', { fields: missing.join('، ') })}</p> : null}
+              {row.notes.length ? (
+                <div className="flex flex-wrap gap-x-4 gap-y-1">
+                  {row.notes.map((n) => (
+                    <span key={n} className="flex items-center gap-1 text-accent-text">
+                      <Info aria-hidden className="h-3 w-3 shrink-0" />
+                      {n}
+                    </span>
+                  ))}
+                </div>
+              ) : null}
             </div>
           </td>
         </tr>
@@ -192,7 +252,7 @@ export function DraftGrid() {
   const [serverResults, setServerResults] = useState<ReadonlyMap<string, PublishResult>>(new Map());
   const [confirmClear, setConfirmClear] = useState(false);
   const [run, setRun] = useState<RunState | null>(null);
-  const [fill, setFill] = useState<{ field: 'province' | 'district' | 'deal_type' | 'currency' | 'type'; value: string }>({ field: 'province', value: '' });
+  const [fill, setFill] = useState<{ field: 'province' | 'district' | 'deal_type' | 'currency' | 'price_terms' | 'type'; value: string }>({ field: 'province', value: '' });
 
   const checks = drafts.map(checkDraft);
   const ready = drafts.filter((_, i) => checks[i]!.ok);
@@ -203,9 +263,14 @@ export function DraftGrid() {
     () => (onlyProblems ? drafts.filter((d) => !checkDraft(d).ok || serverResults.has(d.key)) : drafts),
     [drafts, onlyProblems, serverResults],
   );
-  const pages = Math.max(1, Math.ceil(visible.length / PAGE));
+  // One listing (the usual paste) is shown as a card: a 14-column table is a lot of scrolling for a single row. Whatever
+  // the person picks is remembered; until then it is the card for one draft and the table for more.
+  const [chosenView, setChosenView] = useLocalStorage<DraftView | null>(VIEW_KEY, null);
+  const view: DraftView = chosenView ?? (drafts.length === 1 ? 'cards' : 'table');
+  const pageSize = view === 'cards' ? PAGE_CARDS : PAGE;
+  const pages = Math.max(1, Math.ceil(visible.length / pageSize));
   const current = Math.min(page, pages);
-  const slice = visible.slice((current - 1) * PAGE, current * PAGE);
+  const slice = visible.slice((current - 1) * pageSize, current * pageSize);
 
   async function publish() {
     if (problems > 0) setAttempted(true);
@@ -249,6 +314,7 @@ export function DraftGrid() {
     district: { label: t('grid.fill.district') },
     deal_type: { label: t('grid.fill.deal'), options: DEAL_TYPES.map((d) => ({ value: d, label: labels.deal[d] })) },
     currency: { label: t('import.field.currency'), options: CURRENCIES.map((c) => ({ value: c, label: labels.currency[c] })) },
+    price_terms: { label: t('import.field.price_terms'), options: PRICE_TERMS.map((term) => ({ value: term, label: labels.terms[term] })) },
     type: { label: t('import.field.type'), options: PROPERTY_TYPES.map((type) => ({ value: type, label: labels.type[type] })) },
   };
   const spec = fillOptions[fill.field];
@@ -256,7 +322,12 @@ export function DraftGrid() {
   return (
     <Card className="overflow-hidden">
       <CardHeader
-        title={t('grid.title', { n: formatNumber(drafts.length) })}
+        title={
+          <span className="inline-flex items-center gap-1.5">
+            {t('grid.title', { n: formatNumber(drafts.length) })}
+            <StatusGuide />
+          </span>
+        }
         description={t('grid.summary', { ready: formatNumber(ready.length), problems: formatNumber(problems) })}
         action={
           <div className="flex flex-wrap items-center gap-2">
@@ -286,7 +357,7 @@ export function DraftGrid() {
         </p>
       ) : null}
 
-      <div className="flex flex-wrap items-center gap-3 border-b border-line px-5 py-3">
+      <div className="mt-3 flex flex-wrap items-center gap-3 border-y border-line px-5 py-3">
         <Wand2 aria-hidden className="h-4 w-4 text-primary" />
         <span className="text-[13px] font-semibold text-ink-2">{t('grid.forAll')}</span>
         <Select aria-label={t('grid.fieldAria')} value={fill.field} onChange={(e) => setFill({ field: e.target.value as typeof fill.field, value: '' })} className="h-8 w-32 text-[13px]">
@@ -311,39 +382,104 @@ export function DraftGrid() {
         <Button variant="secondary" size="sm" onClick={applyFill} disabled={!fill.value}>
           {t('grid.apply')}
         </Button>
-        <label className="ms-auto flex items-center gap-2 text-[13px] text-ink-2">
-          <input type="checkbox" checked={onlyProblems} onChange={(e) => { setOnlyProblems(e.target.checked); setPage(1); }} className="h-4 w-4 accent-[#047857]" />
+        <div role="group" aria-label={t('grid.view.aria')} className="ms-auto inline-flex rounded-lg bg-soft p-0.5">
+          {(
+            [
+              ['cards', LayoutGrid, 'grid.view.cards'],
+              ['table', Table2, 'grid.view.table'],
+            ] as const
+          ).map(([value, Icon, label]) => (
+            <button
+              key={value}
+              type="button"
+              aria-pressed={view === value}
+              onClick={() => {
+                setChosenView(value);
+                setPage(1);
+              }}
+              className={cn(
+                'inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-semibold text-ink-2',
+                view === value && 'bg-surface text-primary ring-1 ring-line',
+              )}
+            >
+              <Icon aria-hidden className="h-3.5 w-3.5" />
+              {t(label)}
+            </button>
+          ))}
+        </div>
+        <Checkbox
+          checked={onlyProblems}
+          onChange={(next) => {
+            setOnlyProblems(next);
+            setPage(1);
+          }}
+          label={t('grid.onlyProblems')}
+          className="text-[13px]"
+        >
           {t('grid.onlyProblems')}
-        </label>
+        </Checkbox>
       </div>
 
-      <div className="scrollbar-thin overflow-x-auto">
-        <table className="w-full min-w-[1500px] border-collapse text-start">
-          <thead className="bg-soft/60 text-xs text-muted">
-            <tr>
-              {['#', '', t('grid.h.title'), t('grid.h.type'), t('grid.h.deal'), t('grid.h.price'), t('grid.h.currency'), t('grid.h.area'), t('grid.h.beds'), t('grid.h.baths'), t('grid.h.province'), t('grid.h.district'), t('grid.h.address'), ''].map((h, i) => (
-                <th key={i} scope="col" className="px-2 py-2 text-start font-semibold">
-                  {h}
-                </th>
+      {view === 'cards' ? (
+        <div className="space-y-4 p-4 sm:p-5">
+          {slice.map((row, i) => (
+            <DraftCard
+              key={row.key}
+              row={row}
+              index={(current - 1) * pageSize + i}
+              serverError={serverResults.get(row.key)}
+              attempted={attempted}
+              onChange={actions.update}
+              onRemove={(key) => actions.remove(new Set([key]))}
+            />
+          ))}
+          {slice.length === 0 ? <p className="py-4 text-center text-sm text-muted">{t('grid.allGood')}</p> : null}
+        </div>
+      ) : (
+        <div className="scrollbar-thin overflow-x-auto">
+          <table className="w-full min-w-[1640px] border-collapse text-start">
+            <thead className="bg-soft/60 text-xs text-muted">
+              <tr>
+                {[
+                  { text: '#' },
+                  { text: t('grid.status') },
+                  { text: t('grid.h.title') },
+                  { text: t('grid.h.type') },
+                  { text: t('grid.h.deal') },
+                  { text: t('grid.h.price'), hint: t('grid.hint.price') },
+                  { text: t('grid.h.currency') },
+                  { text: t('grid.h.terms') },
+                  { text: t('grid.h.area'), hint: t('grid.hint.area') },
+                  { text: t('grid.h.beds'), hint: t('grid.hint.rooms') },
+                  { text: t('grid.h.baths'), hint: t('grid.hint.rooms') },
+                  { text: t('grid.h.province') },
+                  { text: t('grid.h.district') },
+                  { text: t('grid.h.address'), hint: t('grid.hint.address') },
+                  { text: '' },
+                ].map((h, i) => (
+                  <th key={i} scope="col" className="px-2 py-2 text-start font-semibold">
+                    <HeadWithHint text={h.text} hint={h.hint} />
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-line">
+              {slice.map((row, i) => (
+                <GridRow
+                  key={row.key}
+                  row={row}
+                  index={(current - 1) * pageSize + i}
+                  serverError={serverResults.get(row.key)}
+                  attempted={attempted}
+                  onChange={actions.update}
+                  onRemove={(key) => actions.remove(new Set([key]))}
+                />
               ))}
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-line">
-            {slice.map((row, i) => (
-              <GridRow
-                key={row.key}
-                row={row}
-                index={(current - 1) * PAGE + i}
-                serverError={serverResults.get(row.key)}
-                attempted={attempted}
-                onChange={actions.update}
-                onRemove={(key) => actions.remove(new Set([key]))}
-              />
-            ))}
-          </tbody>
-        </table>
-        {slice.length === 0 ? <p className="px-5 py-8 text-center text-sm text-muted">{t('grid.allGood')}</p> : null}
-      </div>
+            </tbody>
+          </table>
+          {slice.length === 0 ? <p className="px-5 py-8 text-center text-sm text-muted">{t('grid.allGood')}</p> : null}
+        </div>
+      )}
 
       {pages > 1 ? (
         <div className="flex items-center justify-between border-t border-line px-5 py-3 text-[13px] text-muted">

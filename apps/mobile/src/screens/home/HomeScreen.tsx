@@ -49,11 +49,14 @@ import {
 import { ErrorView } from '../../components/States';
 import { findProvince } from '../../constants/provinces';
 import { MAP_TILE_MAX_ZOOM } from '../../config';
+import { useFormat } from '../../i18n/useFormat';
 import type { MapViewChange } from '../../map/BaseMap';
 import { useMapStyle } from '../../map/mapStyleStore';
+import { useAreaName, type AreaView } from '../../map/useAreaName';
 import { centroid, zoomToSeparate } from '../../map/cluster';
 import {
   AFGHANISTAN_CAMERA,
+  fromLngLat,
   provinceCamera,
   toLngLat,
   type Coordinate,
@@ -79,6 +82,7 @@ import { colors, spacing } from '../../theme';
 import type { CompositeScreenProps } from '@react-navigation/native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import {
+  AreaTitle,
   DealFilter,
   LOCATE_SIZE,
   ModeToggle,
@@ -103,7 +107,7 @@ type Selection =
 const MAP_MAX_PAGES = 3;
 /**
  * How close the map zooms to the person's own position: street level (17), where plots, buildings and lanes are
- * drawn and a listing next door is a separate pin, not a number in a cluster. The tiles go to 19.
+ * drawn and a listing next door is a separate pin, not a number in a cluster. The tiles go to 20.
  */
 const LOCATION_ZOOM = 17;
 /** How long past the search's own time limit the "finding you" mark may stay in the top chip. */
@@ -143,11 +147,17 @@ function activeFilterCount(filters: PropertyFilters): number {
  */
 export default function HomeScreen({ navigation }: Props) {
   const { t } = useTranslation();
+  const { language } = useFormat();
   const insets = useSafeAreaInsets();
   const { width, height } = useWindowDimensions();
   const clearance = floatingBarClearance(insets.bottom);
+  // Where the map's middle is, for the name bar. Only the middle and the zoom: a pan changes it, nothing else does.
+  const [areaView, setAreaView] = useState<AreaView | null>(null);
+  const areaName = useAreaName(areaView, language);
 
   const mapStyle = useMapStyle();
+  // The 3D view: the map leans back and the buildings stand up (the 3D button).
+  const [tilted, setTilted] = useState(false);
   const [filters, setFilters] = useState<PropertyFilters>({});
   // The map is the first thing people see; the list is one tap away.
   const [mode, setMode] = useState<ViewMode>('map');
@@ -458,6 +468,7 @@ export default function HomeScreen({ navigation }: Props) {
       bounds: view.bounds,
     };
     setViewBounds(view.bounds);
+    setAreaView({ center: fromLngLat(view.center), zoom: view.zoom });
     setArea(current => nextArea(current, view.bounds, mapComplete.current));
   }, []);
 
@@ -675,6 +686,7 @@ export default function HomeScreen({ navigation }: Props) {
             onOpenCluster={openCluster}
             onPressMap={clearSelection}
             onViewChange={onViewChange}
+            tilted={tilted}
           />
         ) : (
           // The map is not drawn until the phone has said where it is, so it opens on the phone: drawing the country
@@ -694,6 +706,7 @@ export default function HomeScreen({ navigation }: Props) {
             <View style={styles.topRow} pointerEvents="box-none">
               {topControls}
             </View>
+            <AreaTitle name={areaName} />
             {status}
           </View>
 
@@ -703,6 +716,13 @@ export default function HomeScreen({ navigation }: Props) {
                 style={[styles.stack, { bottom: clearance + spacing.md }]}
                 pointerEvents="box-none"
               >
+                <RoundButton
+                  testID="map-3d"
+                  icon="cube"
+                  label={t('map.view3d')}
+                  active={tilted}
+                  onPress={() => setTilted(on => !on)}
+                />
                 <RoundButton
                   testID="map-style"
                   icon="satellite"

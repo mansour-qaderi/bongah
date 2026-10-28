@@ -68,3 +68,23 @@ export function officeElement(): HTMLElement {
   el.append(svg);
   return el;
 }
+
+/**
+ * "You are here": a blue dot with a white rim and a radar ring that spreads from it (see .me-dot in globals.css; the ring
+ * is still for someone who asked their system for less motion). Fixed markup only.
+ */
+export function meElement(label: string): HTMLElement {
+  const el = document.createElement('div');
+  el.className = 'me-dot';
+  el.setAttribute('role', 'img');
+  el.setAttribute('aria-label', label);
+  el.title = label;
+  const ring = document.createElement('span');
+  ring.className = 'me-dot-ring';
+  const ring2 = document.createElement('span');
+  ring2.className = 'me-dot-ring me-dot-ring-late';
+  const core = document.createElement('span');
+  core.className = 'me-dot-core';
+  el.append(ring, ring2, core);
+  return el;
+}

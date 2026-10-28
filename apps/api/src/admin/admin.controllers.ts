@@ -12,7 +12,9 @@ import {
   Post,
   Put,
   Query,
+  Res,
 } from '@nestjs/common';
+import type { Response } from 'express';
 import type {
   AbuseReportItem,
   AdminAgencyItem,
@@ -35,6 +37,7 @@ import {
   adminPropertiesQuerySchema,
   adminQuotesQuerySchema,
   adminReportsQuerySchema,
+  adminPaymentDecisionSchema,
   adminTransactionsQuerySchema,
   adminUsersQuerySchema,
   analyticsQuerySchema,
@@ -53,6 +56,7 @@ import {
   type AdminPropertiesQuery,
   type AdminQuotesQuery,
   type AdminReportsQuery,
+  type AdminPaymentDecisionInput,
   type AdminTransactionsQuery,
   type AdminUsersQuery,
   type AnalyticsQuery,
@@ -72,6 +76,7 @@ import { CurrentUser } from '../auth/decorators/current-user.decorator.js';
 import { ZodValidationPipe } from '../common/pipes/zod-validation.pipe.js';
 import { BannersService } from '../banners/banners.service.js';
 import { PricingKey } from '../generated/prisma/client.js';
+import { ManualPaymentsService } from '../hesabpay/manual-payments.service.js';
 import { PricingService } from '../hesabpay/pricing.service.js';
 import { BansService } from '../moderation/bans.service.js';
 import { ReportsService } from '../moderation/reports.service.js';
@@ -250,14 +255,60 @@ export class AdminPropertiesController {
 @Controller('admin/transactions')
 @AdminOnly()
 export class AdminTransactionsController {
-  constructor(private readonly transactions: AdminTransactionsService) {}
+  constructor(
+    private readonly transactions: AdminTransactionsService,
+    private readonly manual: ManualPaymentsService,
+  ) {}
 
-  /** The HesabPay transaction log. */
+  /** The transaction log; `awaiting_review=true` is the queue of manual payments to look at. */
   @Get()
   list(
     @Query(new ZodValidationPipe(adminTransactionsQuerySchema)) query: AdminTransactionsQuery,
   ): Promise<Paginated<AdminTransactionItem>> {
     return this.transactions.list(query);
+  }
+
+  /** The receipt picture the customer uploaded. Admin-only; never cached by a shared cache. */
+  @Get(':id/proof')
+  async proof(@Param('id', ParseUUIDPipe) id: string, @Res() res: Response): Promise<void> {
+    const { contentType, data } = await this.manual.readProof(id);
+    // (Headers are set by hand: with @Res() Nest leaves the response to us.)
+    res.set({ 'Cache-Control': 'private, no-store', 'X-Content-Type-Options': 'nosniff' }).type(contentType).send(data);
+  }
+
+  /** Confirms a manual payment whose receipt picture checks out: it is delivered exactly like a gateway payment. */
+  @Post(':id/approve')
+  @HttpCode(HttpStatus.OK)
+  async approve(
+    @CurrentUser() admin: AuthenticatedUser,
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<AdminTransactionItem> {
+    await this.manual.approve(admin.id, id);
+    return this.transactions.one(id);
+  }
+
+  /** Activates a waiting payment without a receipt picture. The reason is required and audited. */
+  @Post(':id/force-activate')
+  @HttpCode(HttpStatus.OK)
+  async forceActivate(
+    @CurrentUser() admin: AuthenticatedUser,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body(new ZodValidationPipe(adminPaymentDecisionSchema)) body: AdminPaymentDecisionInput,
+  ): Promise<AdminTransactionItem> {
+    await this.manual.forceActivate(admin.id, id, body.reason);
+    return this.transactions.one(id);
+  }
+
+  /** Refuses a manual payment. The customer sees the reason. */
+  @Post(':id/reject')
+  @HttpCode(HttpStatus.OK)
+  async reject(
+    @CurrentUser() admin: AuthenticatedUser,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body(new ZodValidationPipe(adminPaymentDecisionSchema)) body: AdminPaymentDecisionInput,
+  ): Promise<AdminTransactionItem> {
+    await this.manual.reject(admin.id, id, body.reason);
+    return this.transactions.one(id);
   }
 }
 

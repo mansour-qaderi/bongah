@@ -2,15 +2,17 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useMemo, useRef, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { toast } from 'sonner';
-import { CheckCircle2, ListPlus, MapPin } from 'lucide-react';
+import { CheckCircle2, ListPlus } from 'lucide-react';
 import { CURRENCIES, DEAL_TYPES, PRICE_TERMS, PROPERTY_TYPES } from '@bongah/shared-types';
-import type { Property } from '@bongah/shared-types';
+import type { Language, PlaceDetails, Property } from '@bongah/shared-types';
 import { addressFrom } from '@/lib/address';
 import { ApiError, api, errorMessage } from '@/lib/api';
-import { checkDraft, splitLatLng, type DraftErrors } from '@/lib/import/draft-validation';
+import { checkDraft, type DraftErrors } from '@/lib/import/draft-validation';
 import { composeTitle } from '@/lib/import/parse-text';
+import { MAPBOX_TOKEN } from '@/lib/map-config';
+import { lookupPlace, planFill, type AutoFilled } from '@/lib/reverse-address';
 import { emptyDraft, type DraftRow } from '@/lib/import/types';
 import { useDrafts } from '@/lib/import/drafts-store';
 import { formatNumber } from '@/lib/format';
@@ -25,6 +27,8 @@ import { cn } from '@/lib/cn';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Field, Input, Select, Textarea } from '@/components/ui/field';
+import { LocationPicker } from '@/components/map/location-picker';
+import type { PickedPosition } from '@/lib/location-picker';
 import { ImagePicker, type PickedImage } from './image-picker';
 
 function Segmented<T extends string>({
@@ -61,6 +65,22 @@ function Segmented<T extends string>({
   );
 }
 
+/** The pin rests this long before the address is looked up (dragging it about asks once, at the end). */
+const LOOKUP_DELAY_MS = 350;
+
+type AddressLookup = { state: 'idle' | 'finding' | 'filled' | 'failed'; text: string; guessedProvince: boolean };
+const NO_LOOKUP: AddressLookup = { state: 'idle', text: '', guessedProvince: false };
+
+/** The server's "what is here" (signed-in; 404 = nothing known there). It throws when it cannot answer, and the caller then asks Mapbox. */
+async function askServer(point: { lat: number; lng: number }, language: Language, signal?: AbortSignal): Promise<PlaceDetails | null> {
+  try {
+    return await api.get<PlaceDetails>('geo/reverse', { signal, query: { lat: point.lat.toFixed(6), lng: point.lng.toFixed(6), lang: language } });
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 404) return null;
+    throw error;
+  }
+}
+
 /** What the form clears after «save and add next»: everything about this one listing. */
 function freshRow(pinned: ReturnType<typeof usePinned>[0]): DraftRow {
   // Province and district are not copied in: while they are empty the form follows the pinned panel live.
@@ -76,12 +96,11 @@ export function SingleForm() {
   const { actions } = useDrafts();
   const [row, setRow] = useState<DraftRow>(() => freshRow(pinned));
   const [pics, setPics] = useState<PickedImage[]>([]);
-  const [locText, setLocText] = useState('');
   const [submitted, setSubmitted] = useState(false);
   const [busy, setBusy] = useState(false);
   const [serverError, setServerError] = useState<{ message: string; quota: boolean } | null>(null);
   const [savedCount, setSavedCount] = useState(0);
-  const first = useRef<HTMLSelectElement>(null);
+  const first = useRef<HTMLButtonElement>(null);
 
   // The form shows the pinned values live: change them above and this form follows until the person edits the field here.
   const effective: DraftRow = useMemo(
@@ -93,6 +112,8 @@ export function SingleForm() {
     }),
     [row, pinned.province, pinned.district, pics],
   );
+  const latest = useRef(effective);
+  latest.current = effective;
   const check = useMemo(() => checkDraft(effective), [effective]);
   const errors: DraftErrors = submitted ? check.errors : {};
 
@@ -113,6 +134,52 @@ export function SingleForm() {
     language,
   );
 
+  // ── the address the pin points at ──
+  const [lookup, setLookup] = useState<AddressLookup>(NO_LOOKUP);
+  const [settled, setSettled] = useState<{ province: string; district: string } | null>(null);
+  const autoFilled = useRef<AutoFilled>({});
+  const lookupTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lookupAbort = useRef<AbortController | null>(null);
+
+  function stopLookup() {
+    if (lookupTimer.current) clearTimeout(lookupTimer.current);
+    lookupTimer.current = null;
+    lookupAbort.current?.abort();
+    lookupAbort.current = null;
+  }
+  useEffect(() => stopLookup, []);
+
+  /** Asks what is at the pin and fills in the province, district, neighbourhood and address the person has not written. */
+  function findAddress(at: { lat: number; lng: number }) {
+    stopLookup();
+    setLookup({ state: 'finding', text: '', guessedProvince: false });
+    lookupTimer.current = setTimeout(async () => {
+      const abort = new AbortController();
+      lookupAbort.current = abort;
+      const { place } = await lookupPlace(at, { language, token: MAPBOX_TOKEN, signal: abort.signal, server: askServer });
+      if (abort.signal.aborted) return;
+      const now = latest.current;
+      const plan = planFill(place, { province: now.province, district: now.district, neighborhood: now.neighborhood, address: now.address }, autoFilled.current, at);
+      autoFilled.current = plan.filled;
+      if (!plan.found) {
+        setLookup({ state: 'failed', text: '', guessedProvince: false });
+        return;
+      }
+      if (Object.keys(plan.patch).length > 0) set(plan.patch);
+      setSettled({ province: plan.patch.province ?? now.province, district: plan.patch.district ?? now.district });
+      setLookup({ state: 'filled', text: plan.line, guessedProvince: plan.provinceGuessed });
+    }, LOOKUP_DELAY_MS);
+  }
+
+  function onPick(position: PickedPosition | null) {
+    set(position ?? { lat: '', lng: '' });
+    if (position) findAddress({ lat: Number(position.lat), lng: Number(position.lng) });
+    else {
+      stopLookup();
+      setLookup(NO_LOOKUP);
+    }
+  }
+
   function withDefaults(): DraftRow {
     const next: DraftRow = { ...effective };
     if (!next.title.trim()) next.title = suggestedTitle;
@@ -123,20 +190,16 @@ export function SingleForm() {
   }
 
   function reset() {
+    stopLookup();
+    setLookup(NO_LOOKUP);
+    setSettled(null);
+    autoFilled.current = {};
     if (!pinned.locked) setPinned({ province: '', district: '' });
     setRow(freshRow(pinned));
     setPics([]);
-    setLocText('');
     setSubmitted(false);
     setServerError(null);
     requestAnimationFrame(() => first.current?.focus());
-  }
-
-  function setLocation(text: string) {
-    setLocText(text);
-    const pair = splitLatLng(text);
-    if (pair) set(pair);
-    else if (!text.trim()) set({ lat: '', lng: '' });
   }
 
   async function save(after: 'next' | 'list', e?: FormEvent) {
@@ -158,7 +221,12 @@ export function SingleForm() {
       if (after === 'next') reset();
       else router.push('/dashboard/listings');
     } catch (err) {
-      const quota = err instanceof ApiError && (err.code === 'AGENCY_LISTING_LIMIT_REACHED' || err.code === 'FREE_LISTING_LIMIT_REACHED');
+      const quota =
+        err instanceof ApiError &&
+        (err.code === 'AGENCY_LISTING_LIMIT_REACHED' ||
+          err.code === 'FREE_LISTING_LIMIT_REACHED' ||
+          err.code === 'TRIAL_LISTING_LIMIT_REACHED' ||
+          err.code === 'SUBSCRIPTION_REQUIRED');
       setServerError({ message: errorMessage(err), quota });
     } finally {
       setBusy(false);
@@ -178,7 +246,7 @@ export function SingleForm() {
   }
 
   const showRooms = !effective.type || hasRoomsFor(effective.type);
-  const officePin = pinned.office_lat && pinned.office_lng ? `${pinned.office_lat}, ${pinned.office_lng}` : '';
+  const officePin = pinned.office_lat && pinned.office_lng ? { lat: pinned.office_lat, lng: pinned.office_lng } : null;
 
   return (
     <Card className="p-4 sm:p-6">
@@ -298,23 +366,27 @@ export function SingleForm() {
               {(p) => <Input {...p} value={row.neighborhood} onChange={(e) => set({ neighborhood: e.target.value })} placeholder={t('form.neighborhoodPlaceholder')} />}
             </Field>
           </div>
-          <div className="grid gap-4 sm:grid-cols-3">
-            <Field label={t('import.field.address')} error={errors.address} hint={t('form.addressHint')} className="sm:col-span-2">
-              {(p) => <Input {...p} value={row.address} onChange={(e) => set({ address: e.target.value })} placeholder={t('form.addressPlaceholder')} />}
-            </Field>
-            <Field label={t('form.mapLocation')} error={errors.location} hint={t('form.mapHint')}>
-              {(p) => (
-                <div className="flex gap-2">
-                  <Input {...p} value={locText} onChange={(e) => setLocation(e.target.value)} placeholder={t('form.mapPlaceholder')} className="ltr text-start" />
-                  {officePin ? (
-                    <Button type="button" variant="secondary" size="icon" aria-label={t('form.officePin')} title={t('form.officePin')} onClick={() => setLocation(officePin)}>
-                      <MapPin className="h-4 w-4" />
-                    </Button>
-                  ) : null}
-                </div>
-              )}
-            </Field>
-          </div>
+          <Field label={t('import.field.address')} error={errors.address} hint={t('form.addressHint')}>
+            {(p) => <Input {...p} value={row.address} onChange={(e) => set({ address: e.target.value })} placeholder={t('form.addressPlaceholder')} />}
+          </Field>
+          <Field label={t('form.mapLocation')} error={errors.location}>
+            {(p) => (
+              <LocationPicker
+                id={p.id}
+                invalid={p.invalid}
+                lat={effective.lat}
+                lng={effective.lng}
+                province={effective.province}
+                district={effective.district}
+                officePin={officePin}
+                onChange={onPick}
+                lookup={lookup}
+                settled={settled}
+                shareTitle={effective.title.trim() || suggestedTitle}
+                shareAddress={effective.address.trim()}
+              />
+            )}
+          </Field>
         </fieldset>
 
         <div className="grid gap-4 lg:grid-cols-2">

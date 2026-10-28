@@ -20,14 +20,16 @@ export function SmartText() {
   const t = useT();
   const EXAMPLE = t('text.example');
   const [text, setText] = useState('');
-  const [stripPhones, setStripPhones] = useState(true);
+  // Off by default: the description keeps the whole text, every number and note in it.
+  const [stripPhones, setStripPhones] = useState(false);
+  const [single, setSingle] = useState(false);
   const [pinned] = usePinned();
   const { actions } = useDrafts();
   const deferred = useDeferredValue(text);
-  const count = useMemo(() => (deferred.trim() ? splitListings(deferred).length : 0), [deferred]);
+  const count = useMemo(() => (deferred.trim() ? splitListings(deferred, { single }).length : 0), [deferred, single]);
 
   function analyse() {
-    const rows = parseText(text, { defaults: pinned, stripPhones });
+    const rows = parseText(text, { defaults: pinned, stripPhones, single });
     if (rows.length === 0) {
       toast.info(tNow('text.empty'));
       return;
@@ -66,10 +68,16 @@ export function SmartText() {
           {t('text.analyse')}
         </Button>
         {count > 0 ? <span className="text-[13px] font-semibold text-primary">{t('text.detected', { n: formatNumber(count) })}</span> : null}
-        <label className="ms-auto flex items-center gap-2 text-[13px] text-ink-2">
-          {t('text.stripPhones')}
-          <Switch label={t('text.stripPhonesAria')} checked={stripPhones} onChange={setStripPhones} />
-        </label>
+        <div className="ms-auto flex flex-wrap items-center gap-x-5 gap-y-2">
+          <label className="flex items-center gap-2 text-[13px] text-ink-2">
+            {t('text.single')}
+            <Switch label={t('text.singleAria')} checked={single} onChange={setSingle} />
+          </label>
+          <label className="flex items-center gap-2 text-[13px] text-ink-2">
+            {t('text.stripPhones')}
+            <Switch label={t('text.stripPhonesAria')} checked={stripPhones} onChange={setStripPhones} />
+          </label>
+        </div>
       </div>
       <p className="mt-3 text-xs text-muted">
         {t('text.footer')}

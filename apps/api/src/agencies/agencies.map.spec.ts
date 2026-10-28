@@ -7,7 +7,7 @@ function serviceWith(agency: { id: string; lat: number | null; lng: number | nul
   const findUnique = vi.fn().mockResolvedValue(agency);
   const findMany = vi.fn().mockResolvedValue([]);
   const prisma = { agency: { findUnique }, property: { findMany } };
-  return { service: new AgenciesService(prisma as never), findUnique };
+  return { service: new AgenciesService(prisma as never, { days: 30, listings: 10 }), findUnique };
 }
 
 describe('AgenciesService.listMapListings: the office pin', () => {

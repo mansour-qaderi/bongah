@@ -181,13 +181,17 @@ https://example.com/a.jpg`;
     });
     expect(r.title).toBe('فروش خانه سه خوابه در کابل');
     expect(r.address).toBe('کابل، ناحیه ۴، کارته سه، نزدیک مسجد');
-    expect(r.description).not.toContain('0791234567');
-    expect(r.description).not.toContain('example.com');
-    expect(r.notes.join(' ')).toContain('شماره تلفن');
+    // Nothing the owner wrote is lost: the number stays in the description AND is read into `phone`.
+    expect(r.description).toContain('0791234567');
+    expect(r.description).not.toContain('example.com'); // a photo link goes to the images, not the text
+    expect(r.phone).toBe('+93791234567');
+    expect(r.notes.join(' ')).not.toContain('شماره تلفن');
   });
 
-  it('can keep the phone when asked', () => {
-    expect(parseListing(ad, { stripPhones: false }).description).toContain('0791234567');
+  it('takes the phone out of the description only when asked', () => {
+    const r = parseListing(ad, { stripPhones: true });
+    expect(r.description).not.toContain('0791234567');
+    expect(r.phone).toBe('+93791234567');
   });
 
   it('uses the pinned defaults for what the text does not say, and says so', () => {

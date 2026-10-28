@@ -22,11 +22,13 @@ import { ModerationModule } from './moderation/moderation.module.js';
 import { WalletModule } from './wallet/wallet.module.js';
 import { NotificationModule } from './notification/notification.module.js';
 import { PropertyImagesModule } from './property-images/property-images.module.js';
+import { AgencyTrialModule } from './agencies/trial.module.js';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
     PrismaModule,
+    AgencyTrialModule,
     AuthModule,
     UsersModule,
     AgenciesModule,
