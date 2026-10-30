@@ -13,7 +13,7 @@ import { Platform } from 'react-native';
 const DEV_API_HOST: string | null = 'http://192.168.0.106:3000';
 const PRODUCTION_API_URL = 'https://bongah.onrender.com';
 
-export const API_BASE_URL = DEV_API_HOST;
+export const API_BASE_URL = PRODUCTION_API_URL;
 
 /**
  * Base map: Mapbox Streets, vector tiles drawn by the Mapbox Maps SDK (through @rnmapbox/maps). Vector tiles are
