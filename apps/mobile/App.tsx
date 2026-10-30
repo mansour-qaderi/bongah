@@ -10,6 +10,7 @@ import Spinner from './src/components/Spinner';
 import { ToastHost } from './src/components/Toast';
 import i18n, { initI18n } from './src/i18n';
 import { isRtlActive } from './src/i18n/rtl';
+import MarketSync from './src/market/MarketSync';
 import { linking } from './src/navigation/linking';
 import RootNavigator from './src/navigation/RootNavigator';
 import PushRegistrar from './src/push/PushRegistrar';
@@ -61,6 +62,7 @@ export default function App() {
           <AuthProvider>
             <ChatProvider>
               <PushRegistrar />
+              <MarketSync />
               {/* `linking`: shared listing links open the listing (see navigation/linking.ts). */}
               <NavigationContainer
                 theme={navigationTheme}

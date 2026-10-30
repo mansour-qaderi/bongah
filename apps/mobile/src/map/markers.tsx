@@ -16,6 +16,8 @@ import { useSafeAuth } from '../auth/useSafeAuth';
 import AppText from '../components/AppText';
 import Icon, { type IconName } from '../components/Icon';
 import { formatNumber } from '../i18n/format';
+import { dealTypeLabel } from '../i18n/market';
+import { listingPriceText } from '../i18n/rentPrice';
 import { currentPropertyType, propertyTypeLabel } from '../i18n/propertyType';
 import { useFormat } from '../i18n/useFormat';
 import { colors, dealColors, radius, spacing } from '../theme';
@@ -27,6 +29,11 @@ export const PROPERTY_ICONS: Record<PropertyType, string> = {
   LAND: '🏞️',
   SHOP: '🏪',
   OFFICE: '🏬',
+  DUPLEX: '🏘️',
+  COMMERCIAL: '🏬',
+  WAREHOUSE: '🏭',
+  LAND_OLD: '🏞️',
+  VILLA_GARDEN: '🏡',
   GARDEN: '🌳',
   VILLA: '🏡',
   GARAGE: '🚗',
@@ -40,6 +47,11 @@ export const PROPERTY_LINE_ICONS: Record<PropertyType, IconName> = {
   LAND: 'land',
   SHOP: 'shop',
   OFFICE: 'office',
+  DUPLEX: 'house',
+  COMMERCIAL: 'shop',
+  WAREHOUSE: 'garage',
+  LAND_OLD: 'land',
+  VILLA_GARDEN: 'villa',
   GARDEN: 'garden',
   VILLA: 'villa',
   GARAGE: 'garage',
@@ -186,7 +198,8 @@ function PropertyMarkerView({
   const { t } = useTranslation();
   const format = useFormat();
   const seller = useSellerLabel()(property);
-  const price = format.compactPrice(property.price, property.currency);
+  // A mortgage-and-rent reads as its deposit and its rent: the marker's spoken label carries both.
+  const price = listingPriceText(property, format.compactPrice, t);
   const tone = dealColors[property.deal_type];
   const featured = property.is_featured;
   return (
@@ -194,8 +207,8 @@ function PropertyMarkerView({
       style={styles.markerBox}
       accessibilityLabel={[
         featured ? t('property.featured') : null,
-        propertyTypeLabel(property.type, t),
-        t(`dealType.${property.deal_type}`),
+        propertyTypeLabel(property.type, t, property.market),
+        dealTypeLabel(property.deal_type, property.market, t),
         price,
         seller,
       ]

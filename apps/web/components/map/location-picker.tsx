@@ -4,11 +4,15 @@ import 'mapbox-gl/dist/mapbox-gl.css';
 import type { Map as MapboxMap, Marker } from 'mapbox-gl';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Loader2, MapPin, X } from 'lucide-react';
+import type { Market } from '@bongah/shared-types';
 import { useT } from '@/i18n/provider';
+import { useMarketT } from '@/i18n/use-labels';
+import { useActiveMarket } from '@/hooks/use-active-market';
+import { marketName } from '@/lib/market';
 import { cn } from '@/lib/cn';
 import { detailTheme, fallbackStyle, localizeLabels, MAPBOX_TOKEN, mapStyle, TILE_MAX_ZOOM } from '@/lib/map-config';
 import { enhanceDetail } from '@/lib/map-detail';
-import { DISTRICT_ZOOM, findDistrict, pinOf, provinceView, startView, toPicked, type PickedPosition } from '@/lib/location-picker';
+import { countryView, DISTRICT_ZOOM, findDistrict, pinOf, provinceView, startView, toPicked, type PickedPosition } from '@/lib/location-picker';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { MapControlStack } from './map-controls';
@@ -69,6 +73,8 @@ export interface LocationPickerProps {
   /** What the share message calls the place, and its address line. */
   shareTitle?: string;
   shareAddress?: string;
+  /** The listing's market: the pin must be inside its country and the map opens on it. Without one, the account's market. */
+  market?: Market;
   invalid?: boolean;
   id?: string;
   className?: string;
@@ -82,8 +88,11 @@ export interface LocationPickerProps {
  * Mapbox bills a map by the number of times it is loaded, so the map is only made when the picker comes into view, and
  * it is kept (pin cleared, not rebuilt) while the form is reused for the next listing.
  */
-export function LocationPicker({ lat, lng, province, district, onChange, officePin, lookup, settled, shareTitle, shareAddress, invalid, id, className }: LocationPickerProps) {
+export function LocationPicker({ lat, lng, province, district, onChange, officePin, lookup, settled, shareTitle, shareAddress, market: marketProp, invalid, id, className }: LocationPickerProps) {
   const t = useT();
+  const tm = useMarketT();
+  const accountMarket = useActiveMarket();
+  const market = marketProp ?? accountMarket;
   const wrapper = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MapboxMap | null>(null);
@@ -95,12 +104,12 @@ export function LocationPicker({ lat, lng, province, district, onChange, officeP
   const [mapObject, setMapObject] = useState<MapboxMap | null>(null);
   const [expanded, setExpanded] = useState(false);
 
-  const pin = pinOf(lat, lng);
+  const pin = pinOf(lat, lng, market);
   const pinKey = pin ? `${pin.lat},${pin.lng}` : '';
 
   // What the map's long-lived handlers need to see: the latest props.
-  const live = useRef({ lat, lng, province, district, onChange, settled, label: t('form.picker.pin') });
-  live.current = { lat, lng, province, district, onChange, settled, label: t('form.picker.pin') };
+  const live = useRef({ lat, lng, province, district, onChange, settled, market, label: t('form.picker.pin') });
+  live.current = { lat, lng, province, district, onChange, settled, market, label: t('form.picker.pin') };
   /** The position this picker itself last reported: the form handing it back is not news to the map. */
   const reported = useRef('');
   /** What the map has already been sent to look at, so only a change flies. */
@@ -129,7 +138,7 @@ export function LocationPicker({ lat, lng, province, district, onChange, officeP
     const map = mapRef.current;
     const mapboxgl = mapboxRef.current;
     if (!map || !mapboxgl) return;
-    const at = pinOf(live.current.lat, live.current.lng);
+    const at = pinOf(live.current.lat, live.current.lng, live.current.market);
     if (!at) {
       markerRef.current?.remove();
       markerRef.current = null;
@@ -152,9 +161,9 @@ export function LocationPicker({ lat, lng, province, district, onChange, officeP
     // eslint-disable-next-line react-hooks/exhaustive-deps -- `commit` only reads refs and the stable state setter
   }, []);
 
-  /** A place the person chose on the map: reported when it is inside Afghanistan, otherwise the pin goes back where it was. */
+  /** A place the person chose on the map: reported when it is inside the listing's country, otherwise the pin goes back where it was. */
   function commit(latitude: number, longitude: number) {
-    const picked = toPicked(latitude, longitude);
+    const picked = toPicked(latitude, longitude, live.current.market);
     if (!picked) {
       setOutside(true);
       applyPin(false);
@@ -176,7 +185,7 @@ export function LocationPicker({ lat, lng, province, district, onChange, officeP
       if (cancelled || !canvas.current) return;
       mapboxRef.current = mapboxgl;
       mapboxgl.accessToken = MAPBOX_TOKEN;
-      const start = startView(pinOf(live.current.lat, live.current.lng), live.current.province);
+      const start = startView(pinOf(live.current.lat, live.current.lng, live.current.market), live.current.province, live.current.market);
       looked.current = { province: live.current.province, districtKey: `${live.current.province}|${live.current.district}` };
       map = new mapboxgl.Map({
         container: canvas.current,
@@ -268,6 +277,18 @@ export function LocationPicker({ lat, lng, province, district, onChange, officeP
     applyPin(!mine && pinKey !== '');
   }, [ready, pinKey, applyPin]);
 
+  // ── …and the country: switching the listing to the other market shows that country while nothing narrower is chosen ──
+  const lookedMarket = useRef(market);
+  useEffect(() => {
+    const map = mapRef.current;
+    if (lookedMarket.current === market) return;
+    lookedMarket.current = market;
+    if (!ready || !map || pinKey || province.trim()) return;
+    const view = countryView(market);
+    map.flyTo({ center: view.center, zoom: view.zoom, duration: FLY_MS, essential: false });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only a change of market moves the map this way
+  }, [market, ready]);
+
   // ── the map follows the province ──
   useEffect(() => {
     const map = mapRef.current;
@@ -290,7 +311,7 @@ export function LocationPicker({ lat, lng, province, district, onChange, officeP
     if (cameFromPin(live.current.settled, province, district)) return;
     const controller = new AbortController();
     const timer = setTimeout(() => {
-      void findDistrict(district, province, MAPBOX_TOKEN, controller.signal).then((at) => {
+      void findDistrict(district, province, MAPBOX_TOKEN, controller.signal, undefined, live.current.market).then((at) => {
         if (at && !controller.signal.aborted && mapRef.current) mapRef.current.flyTo({ center: at, zoom: DISTRICT_ZOOM, duration: FLY_MS - 200, essential: false });
       });
     }, DISTRICT_WAIT_MS);
@@ -350,7 +371,7 @@ export function LocationPicker({ lat, lng, province, district, onChange, officeP
         {MAPBOX_TOKEN && !ready ? <Skeleton className="pointer-events-none absolute inset-0 z-[4] rounded-none opacity-60" /> : null}
         {outside ? (
           <div role="alert" className="absolute inset-x-3 bottom-3 z-[5] rounded-lg border border-danger/30 bg-danger-tint px-3 py-2 text-xs font-semibold text-danger">
-            {t('map.outside')}
+            {t('map.outside', { market: marketName(market) })}
           </div>
         ) : null}
       </div>
@@ -387,7 +408,7 @@ export function LocationPicker({ lat, lng, province, district, onChange, officeP
               : lookup.state === 'filled'
                 ? t('form.picker.found', { address: lookup.text })
                 : t('form.picker.notFound')}
-            {lookup.state === 'filled' && lookup.guessedProvince ? ` ${t('form.picker.provinceGuessed')}` : ''}
+            {lookup.state === 'filled' && lookup.guessedProvince ? ` ${tm('form.picker.provinceGuessed')}` : ''}
           </span>
         </p>
       ) : null}

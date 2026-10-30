@@ -2,17 +2,19 @@
 
 import { memo } from 'react';
 import { Info, Trash2 } from 'lucide-react';
-import { CURRENCIES, DEAL_TYPES, PRICE_TERMS, PROPERTY_TYPES } from '@bongah/shared-types';
+import { marketOfCurrency, MARKETS, PRICE_TERMS } from '@bongah/shared-types';
 import type { DraftField } from '@/lib/import/draft-validation';
 import type { PublishResult } from '@/lib/import/publish';
 import type { DraftRow } from '@/lib/import/types';
 import { hasRoomsFor } from '@/lib/labels';
 import { formatNumber } from '@/lib/format';
-import { PROVINCES, provinceLabel, provinceNameLabel } from '@/lib/provinces';
+import { provincesFor, provinceLabel, provinceNameLabel } from '@/lib/provinces';
+import { currenciesFor, dealsFor, deedsFor, featuresFor, marketName, reconcileDraft, typesForDeal } from '@/lib/market';
+import { useLabelsFor, useRowMarket } from '@/hooks/use-market';
 import { useLanguage, useT } from '@/i18n/provider';
-import { useLabels } from '@/i18n/use-labels';
+import { marketKey } from '@/i18n/translate';
 import { cn } from '@/lib/cn';
-import { Field, Input, Select, Textarea } from '@/components/ui/field';
+import { Checkbox, Field, Input, Select, Textarea } from '@/components/ui/field';
 import { fieldName, StatusPill, useRowReport } from './draft-shared';
 
 interface Props {
@@ -32,12 +34,16 @@ interface Props {
 export const DraftCard = memo(function DraftCard({ row, index, serverError, attempted, onChange, onRemove }: Props) {
   const t = useT();
   const { language } = useLanguage();
-  const labels = useLabels();
+  const market = useRowMarket(row);
+  const labels = useLabelsFor(market);
   const { errors, missing, state, fixes, hasProblem, touch } = useRowReport(row, serverError, attempted);
   const change = (patch: Partial<DraftRow>) => {
     touch();
     onChange(row.key, patch);
   };
+  /** Another country: what does not exist there is cleared, and the row keeps the country from then on. */
+  const switchMarket = (next: typeof market, keep: Partial<DraftRow> = {}) =>
+    change({ ...keep, ...reconcileDraft({ ...row, ...keep }, next), market: next });
   const err = (f: DraftField) => (errors[f] ? String(errors[f]) : null);
   const rooms = row.type === '' || hasRoomsFor(row.type);
   const n = formatNumber(index + 1);
@@ -68,11 +74,22 @@ export const DraftCard = memo(function DraftCard({ row, index, serverError, atte
         <Field label={t('grid.h.title')} error={err('title')} required className="sm:col-span-2 lg:col-span-4">
           {(p) => <Input {...p} value={row.title} onChange={(e) => change({ title: e.target.value })} />}
         </Field>
+        <Field label={t('market.field')}>
+          {(p) => (
+            <Select {...p} value={market} onChange={(e) => switchMarket(e.target.value as typeof market)}>
+              {MARKETS.map((m) => (
+                <option key={m} value={m}>
+                  {marketName(m)}
+                </option>
+              ))}
+            </Select>
+          )}
+        </Field>
         <Field label={t('grid.h.type')} error={err('type')} required>
           {(p) => (
             <Select {...p} value={row.type} onChange={(e) => change({ type: e.target.value as DraftRow['type'] })}>
               <option value="">—</option>
-              {PROPERTY_TYPES.map((type) => (
+              {typesForDeal(market, row.deal_type).map((type) => (
                 <option key={type} value={type}>
                   {labels.type[type]}
                 </option>
@@ -82,9 +99,16 @@ export const DraftCard = memo(function DraftCard({ row, index, serverError, atte
         </Field>
         <Field label={t('grid.h.deal')} error={err('deal_type')} required>
           {(p) => (
-            <Select {...p} value={row.deal_type} onChange={(e) => change({ deal_type: e.target.value as DraftRow['deal_type'] })}>
+            <Select {...p} value={row.deal_type} onChange={(e) => {
+                const deal_type = e.target.value as DraftRow['deal_type'];
+                change({
+                  deal_type,
+                  ...(row.type && !typesForDeal(market, deal_type).includes(row.type) ? { type: '' as const } : {}),
+                  ...(deal_type !== 'MORTGAGE_RENT' && row.monthly_rent ? { monthly_rent: '' } : {}),
+                });
+              }}>
               <option value="">—</option>
-              {DEAL_TYPES.map((d) => (
+              {dealsFor(market).map((d) => (
                 <option key={d} value={d}>
                   {labels.deal[d]}
                 </option>
@@ -92,14 +116,24 @@ export const DraftCard = memo(function DraftCard({ row, index, serverError, atte
             </Select>
           )}
         </Field>
-        <Field label={t('grid.h.price')} error={err('price')} required>
+        <Field label={row.deal_type === 'MORTGAGE_RENT' ? t('form.deposit') : t('grid.h.price')} error={err('price')} required>
           {(p) => <Input {...p} className="ltr text-start" inputMode="decimal" value={row.price} onChange={(e) => change({ price: e.target.value })} />}
         </Field>
+        {row.deal_type === 'MORTGAGE_RENT' ? (
+          <Field label={t('form.monthlyRent')} error={err('monthly_rent')} required>
+            {(p) => <Input {...p} className="ltr text-start" inputMode="decimal" value={row.monthly_rent ?? ''} onChange={(e) => change({ monthly_rent: e.target.value })} />}
+          </Field>
+        ) : null}
         <Field label={t('grid.h.currency')} error={err('currency')} required>
           {(p) => (
-            <Select {...p} value={row.currency} onChange={(e) => change({ currency: e.target.value as DraftRow['currency'] })}>
+            <Select {...p} value={row.currency} onChange={(e) => {
+                const currency = e.target.value as DraftRow['currency'];
+                const owner = currency ? marketOfCurrency(currency) : null;
+                if (owner && owner !== market) switchMarket(owner, { currency });
+                else change({ currency });
+              }}>
               <option value="">—</option>
-              {CURRENCIES.map((c) => (
+              {currenciesFor(market).map((c) => (
                 <option key={c} value={c}>
                   {labels.currency[c]}
                 </option>
@@ -132,14 +166,49 @@ export const DraftCard = memo(function DraftCard({ row, index, serverError, atte
             </Field>
           </>
         ) : null}
-        <Field label={t('grid.h.province')} error={err('province')} required>
+        {deedsFor(market).length > 0 ? (
+          <Field label={t('form.deed')} error={err('deed_type')}>
+            {(p) => (
+              <Select {...p} value={row.deed_type ?? ''} onChange={(e) => change({ deed_type: e.target.value as DraftRow['deed_type'] })}>
+                <option value="">{t('form.unspecified')}</option>
+                {deedsFor(market).map((deed) => (
+                  <option key={deed} value={deed}>
+                    {labels.deed[deed]}
+                  </option>
+                ))}
+              </Select>
+            )}
+          </Field>
+        ) : null}
+        {featuresFor(market).length > 0 ? (
+          <div className="sm:col-span-2 lg:col-span-4">
+            <div className="mb-1.5 text-[13px] font-semibold text-ink-2">{t('form.features')}</div>
+            <div role="group" aria-label={t('form.features')} className="flex flex-wrap gap-2">
+              {featuresFor(market).map((feature) => {
+                const on = (row.features ?? []).includes(feature);
+                return (
+                  <Checkbox
+                    key={feature}
+                    checked={on}
+                    label={labels.feature[feature]}
+                    onChange={(next) => change({ features: next ? [...(row.features ?? []), feature] : (row.features ?? []).filter((x) => x !== feature) })}
+                    className={cn('rounded-xl border px-3 py-1.5', on ? 'border-primary bg-primary-tint text-primary' : 'border-line bg-surface')}
+                  >
+                    {labels.feature[feature]}
+                  </Checkbox>
+                );
+              })}
+            </div>
+          </div>
+        ) : null}
+        <Field label={t(marketKey('grid.h.province', market))} error={err('province')} required={market !== 'IR'}>
           {(p) => (
             <Select {...p} value={row.province} onChange={(e) => change({ province: e.target.value })}>
               <option value="">—</option>
-              {row.province && !PROVINCES.some((pr) => pr.name === row.province) ? (
+              {row.province && !provincesFor(market).some((pr) => pr.name === row.province) ? (
                 <option value={row.province}>{provinceNameLabel(row.province, language)}</option>
               ) : null}
-              {PROVINCES.map((pr) => (
+              {provincesFor(market).map((pr) => (
                 <option key={pr.id} value={pr.name}>
                   {provinceLabel(pr, language)}
                 </option>
@@ -147,7 +216,7 @@ export const DraftCard = memo(function DraftCard({ row, index, serverError, atte
             </Select>
           )}
         </Field>
-        <Field label={t('grid.h.district')} error={err('district')}>
+        <Field label={t(marketKey('grid.h.district', market))} error={err('district')}>
           {(p) => <Input {...p} value={row.district} onChange={(e) => change({ district: e.target.value })} />}
         </Field>
         <Field label={t('grid.h.address')} error={err('address')} required className="sm:col-span-2">

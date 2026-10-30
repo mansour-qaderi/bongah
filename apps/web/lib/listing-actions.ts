@@ -27,7 +27,7 @@ export function patchCachedListings(ids: ReadonlySet<string>, patch: Partial<Pro
 }
 
 export type ListingPatch = Partial<
-  Pick<Property, 'title' | 'price' | 'price_terms' | 'currency' | 'status' | 'lat' | 'lng' | 'description' | 'area_sqm' | 'bedrooms' | 'bathrooms' | 'district' | 'neighborhood' | 'address'>
+  Pick<Property, 'title' | 'price' | 'monthly_rent' | 'features' | 'deed_type' | 'price_terms' | 'currency' | 'status' | 'lat' | 'lng' | 'description' | 'area_sqm' | 'bedrooms' | 'bathrooms' | 'district' | 'neighborhood' | 'address'>
 >;
 
 export function updateListing(id: string, patch: ListingPatch): Promise<Property> {

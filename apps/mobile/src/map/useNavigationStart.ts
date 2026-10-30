@@ -3,6 +3,8 @@ import { AppState, Linking, Platform } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import type { LocationProblem } from '../components/LocationPermissionModal';
 import { showToast } from '../components/Toast';
+import { marketText } from '../i18n/market';
+import { getMarket } from '../market/marketStore';
 import { locate } from './location';
 
 /**
@@ -34,7 +36,7 @@ export function useNavigationStart(onReady: () => void) {
     if (!mounted.current) return;
     setFinding(false);
     if (found.status === 'ok') ready.current();
-    else if (found.status === 'outside') showToast(t('route.outside'), 'info');
+    else if (found.status === 'outside') showToast(marketText(t, 'route.outside', getMarket()), 'info');
     else setProblem(found.status);
   }, [t]);
 

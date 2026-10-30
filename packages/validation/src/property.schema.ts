@@ -1,27 +1,33 @@
 import { z } from 'zod';
 import {
-  AFGHANISTAN_BOUNDS,
   CURRENCIES,
+  DAILY_RENT_TYPES,
   DEAL_TYPES,
+  DEED_TYPES,
+  MARKETS,
   MORTGAGE_MONTHS_MAX,
   PRICE_TERMS,
+  PROPERTY_FEATURES,
   PROPERTY_STATUSES,
   PROPERTY_TYPES,
   PROPERTY_UNIT_MAX_LENGTH,
+  SUPPORTED_BOUNDS,
 } from '@bongah/shared-types';
 import { cleanText, httpUrl, moneyAmount, multilineText, normalizePlaceName, placeName } from './common';
 import { plotBoundarySchema } from './plot.schema';
 
 // Field names are snake_case: they are the public wire format of the property endpoints.
 
+// A pin must be inside the area the platform serves (Afghanistan and Iran). Whether it is inside the market of ITS OWN
+// listing is checked next to the rest of the market rules (marketMismatch in @bongah/shared-types, run by the API).
 export const latitude = z
   .number()
-  .min(AFGHANISTAN_BOUNDS.minLat, 'Latitude is outside Afghanistan')
-  .max(AFGHANISTAN_BOUNDS.maxLat, 'Latitude is outside Afghanistan');
+  .min(SUPPORTED_BOUNDS.minLat, 'Latitude is outside the supported area')
+  .max(SUPPORTED_BOUNDS.maxLat, 'Latitude is outside the supported area');
 export const longitude = z
   .number()
-  .min(AFGHANISTAN_BOUNDS.minLng, 'Longitude is outside Afghanistan')
-  .max(AFGHANISTAN_BOUNDS.maxLng, 'Longitude is outside Afghanistan');
+  .min(SUPPORTED_BOUNDS.minLng, 'Longitude is outside the supported area')
+  .max(SUPPORTED_BOUNDS.maxLng, 'Longitude is outside the supported area');
 
 /**
  * No `.default()` anywhere in this shape: the update schema derives from it with `.partial()`,
@@ -60,12 +66,28 @@ const propertyShape = {
   mortgage_months: z.int().min(1).max(MORTGAGE_MONTHS_MAX).nullish(),
   /** Fixed (مقطوع) or negotiable (جورآمد) price; null says neither (and clears it on an update). */
   price_terms: z.enum(PRICE_TERMS).nullish(),
+  /** For a MORTGAGE_RENT listing this is the deposit; the monthly rent is `monthly_rent`. */
   price: moneyAmount,
+  /** The rent every month. Required for a MORTGAGE_RENT listing, refused on any other; null clears it on an update. */
+  monthly_rent: moneyAmount.nullish(),
   currency: z.enum(CURRENCIES),
+  /** The tags ticked (elevator, parking…), each once. An update replaces the whole set; [] clears it. */
+  features: z
+    .array(z.enum(PROPERTY_FEATURES))
+    .max(PROPERTY_FEATURES.length)
+    .transform((list) => [...new Set(list)])
+    .optional(),
+  /** Afghan ownership paper: SHARI (قباله شرعی) or ORFI (عرفی). null clears it on an update. */
+  deed_type: z.enum(DEED_TYPES).nullish(),
   area_sqm: z.number().positive().max(100_000_000),
   bedrooms: z.int().min(0).max(50).nullish(),
   bathrooms: z.int().min(0).max(50).nullish(),
-  province: placeName(60),
+  /**
+   * Required for an Afghan listing (the picker, the filters and the database use it). An Iranian listing does not ask the
+   * owner for a province: the form fills it in from the pin when there is one, and it may be left blank (see
+   * createPropertySchema).
+   */
+  province: optionalPlace(60),
   /** Optional: filled in from the pin when there is one. */
   district: optionalPlace(80),
   neighborhood: optionalPlace(80),
@@ -95,7 +117,14 @@ const propertyShape = {
  * laddered_at, user_id, agency_id) are rejected loudly instead of being silently dropped.
  */
 export const createPropertySchema = z
-  .strictObject(propertyShape)
+  .strictObject({
+    ...propertyShape,
+    /**
+     * The market the listing belongs to (Afghanistan or Iran). Left out: the account's own market. It cannot be
+     * changed afterwards, so it is not part of the update schema.
+     */
+    market: z.enum(MARKETS).optional(),
+  })
   .refine((value) => (value.lat === undefined) === (value.lng === undefined), {
     message: 'lat and lng must be sent together',
     path: ['lat'],
@@ -108,6 +137,25 @@ export const createPropertySchema = z
   .refine((value) => value.mortgage_months == null || value.deal_type === 'MORTGAGE_GROWI', {
     message: 'A duration is only for a mortgage listing',
     path: ['mortgage_months'],
+  })
+  // The monthly rent belongs to a mortgage-and-rent listing (رهن و اجاره), and that deal needs it.
+  .refine((value) => value.monthly_rent == null || value.deal_type === 'MORTGAGE_RENT', {
+    message: 'A monthly rent is only for a mortgage-and-rent listing',
+    path: ['monthly_rent'],
+  })
+  .refine((value) => value.deal_type !== 'MORTGAGE_RENT' || value.monthly_rent != null, {
+    message: 'A mortgage-and-rent listing needs its monthly rent',
+    path: ['monthly_rent'],
+  })
+  // A daily rental is a villa or a garden let by the day.
+  .refine((value) => value.deal_type !== 'DAILY_RENT' || (DAILY_RENT_TYPES as readonly string[]).includes(value.type), {
+    message: 'A daily rental is only for a villa or a garden',
+    path: ['deal_type'],
+  })
+  // Afghanistan names the province; Iran does not ask for it (a pin fills it in when there is one).
+  .refine((value) => value.market === 'IR' || (value.province !== undefined && value.province !== ''), {
+    message: 'Required',
+    path: ['province'],
   })
   // Where the listing is: a pin on the map, OR the address written out as one line. A pin makes even the address
   // optional; district and neighbourhood are never required (a pin fills them in, a written address carries them).
@@ -142,6 +190,20 @@ export const updatePropertySchema = z
     (value) =>
       value.mortgage_months == null || value.deal_type === undefined || value.deal_type === 'MORTGAGE_GROWI',
     { message: 'A duration is only for a mortgage listing', path: ['mortgage_months'] },
+  )
+  // The monthly rent: refused when the same request names another deal. (A request naming only one of the two is
+  // checked against the stored listing by the service.)
+  .refine(
+    (value) => value.monthly_rent == null || value.deal_type === undefined || value.deal_type === 'MORTGAGE_RENT',
+    { message: 'A monthly rent is only for a mortgage-and-rent listing', path: ['monthly_rent'] },
+  )
+  // Same rule as on create when one request names both; a request naming only one is checked against the stored listing.
+  .refine(
+    (value) =>
+      value.deal_type !== 'DAILY_RENT' ||
+      value.type === undefined ||
+      (DAILY_RENT_TYPES as readonly string[]).includes(value.type),
+    { message: 'A daily rental is only for a villa or a garden', path: ['deal_type'] },
   );
 export type UpdatePropertyInput = z.output<typeof updatePropertySchema>;
 
@@ -157,7 +219,7 @@ export const queryInt = (min: number, max: number) =>
 
 export const queryMoney = z
   .string()
-  .regex(/^\d{1,12}(\.\d{1,2})?$/, 'Must be a number with at most 2 decimals')
+  .regex(/^\d{1,14}(\.\d{1,2})?$/, 'Must be a number with at most 2 decimals')
   .transform(Number);
 
 export const MAX_PAGE_SIZE = 50;
@@ -188,6 +250,16 @@ export type MyListingSort = (typeof MY_LISTING_SORTS)[number];
 /** Longest search text the owner's list accepts. */
 export const MY_LISTING_SEARCH_MAX = 100;
 
+/** The tag and deed filters both list endpoints take: a listing must carry ALL the tags asked for. */
+const tagFilters = {
+  features: z
+    .string()
+    .transform((value) => [...new Set(value.split(',').map((part) => part.trim()))])
+    .pipe(z.array(z.enum(PROPERTY_FEATURES)).min(1))
+    .optional(),
+  deed_type: z.enum(DEED_TYPES).optional(),
+};
+
 /**
  * GET /properties/mine. Page and limit as before, plus optional filters for an office with many listings: a search
  * text (title, address, province, district, neighbourhood), status, kind, deal, a price range (needs a currency: 500
@@ -206,6 +278,7 @@ export const myListingsQuerySchema = z
     type: z.enum(PROPERTY_TYPES).optional(),
     deal_type: z.enum(DEAL_TYPES).optional(),
     currency: z.enum(CURRENCIES).optional(),
+    ...tagFilters,
     min_price: queryMoney.optional(),
     max_price: queryMoney.optional(),
     featured: z
@@ -234,6 +307,11 @@ const AREA_KEYS = ['min_lat', 'max_lat', 'min_lng', 'max_lng'] as const;
 export const listPropertiesQuerySchema = z
   .strictObject({
     ...paginationShape,
+    /**
+     * Only listings of this market. Left out: Afghanistan, so apps that predate markets keep seeing what they always did.
+     * An app sends its account's market (or the one the person switched to).
+     */
+    market: z.enum(MARKETS).optional(),
     province: placeName(60).optional(),
     district: placeName(80).optional(),
     /** true: only listings with an exact pin (what the map shows). false: only those without. */
@@ -252,6 +330,7 @@ export const listPropertiesQuerySchema = z
       .pipe(z.array(z.enum(PROPERTY_TYPES)).min(1))
       .optional(),
     deal_type: z.enum(DEAL_TYPES).optional(),
+    ...tagFilters,
     min_price: queryMoney.optional(),
     max_price: queryMoney.optional(),
     /** Required with min_price/max_price: 500 AFGHANI and 500 USD are not comparable. */

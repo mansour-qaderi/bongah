@@ -8,7 +8,11 @@ import { allText, render } from '../test-utils';
 import { Chip } from '../src/components/Chip';
 import ClusterListSheet from '../src/components/ClusterListSheet';
 import Stepper from '../src/components/Stepper';
-import { matchProvince, PROVINCES } from '../src/constants/provinces';
+import {
+  ALL_PROVINCES,
+  matchProvince,
+  PROVINCES,
+} from '../src/constants/provinces';
 import {
   lookUpPlace,
   nearestProvince,
@@ -61,11 +65,16 @@ describe('property types', () => {
     expect([...PROPERTY_TYPES]).toEqual([
       'HOUSE_HAWILI',
       'APARTMENT',
+      'DUPLEX',
       'SHOP',
       'OFFICE',
+      'COMMERCIAL',
+      'WAREHOUSE',
       'LAND',
+      'LAND_OLD',
       'GARDEN',
       'VILLA',
+      'VILLA_GARDEN',
       'GARAGE',
       'OTHER',
     ]);
@@ -75,11 +84,16 @@ describe('property types', () => {
     expect(PROPERTY_TYPES.map(t => prs.propertyType[t])).toEqual([
       'خانه',
       'آپارتمان',
+      'دوبلکس',
       'دکان',
       'دفتر',
+      'تجاری',
+      'گدام',
       'زمین',
+      'خانه کلنگی',
       'باغ',
       'ویلا',
+      'باغ و ویلا',
       'گاراج',
       'غیره',
     ]);
@@ -277,8 +291,15 @@ describe('provinces from names', () => {
     expect(nearestProvince({ latitude: 31.6, longitude: 65.7 }).id).toBe(
       'kandahar',
     );
-    // Whatever the point, it names one of the 34.
-    expect(PROVINCES).toContain(nearestProvince({ latitude: 0, longitude: 0 }));
+    // Whatever the point, it names one of the provinces: of Afghanistan's 34 when the market says so, else of either country.
+    expect(PROVINCES).toContain(
+      nearestProvince({ latitude: 0, longitude: 0 }, 'AF'),
+    );
+    expect(ALL_PROVINCES).toContain(
+      nearestProvince({ latitude: 0, longitude: 0 }),
+    );
+    // A point in Iran names an Iranian province, not the nearest Afghan one.
+    expect(nearestProvince({ latitude: 35.7, longitude: 51.4 }).id).toBe('tehran');
   });
 });
 

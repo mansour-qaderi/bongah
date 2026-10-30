@@ -62,6 +62,10 @@ export const dealColors = {
   SALE: { main: colors.primary, on: colors.textOnPrimary },
   RENT: { main: colors.info, on: colors.textOnPrimary },
   MORTGAGE_GROWI: { main: colors.accent, on: colors.textOnAccent },
+  // A short stay (a villa or a garden by the day): its own violet, readable with white ink.
+  DAILY_RENT: { main: '#7C3AED', on: colors.textOnPrimary },
+  // رهن و اجاره (Iran: a deposit and a monthly rent): rose, apart from the blue rent, the gold mortgage and the violet stay.
+  MORTGAGE_RENT: { main: '#BE185D', on: colors.textOnPrimary },
 } as const satisfies Record<DealType, { main: string; on: string }>;
 
 export const spacing = {

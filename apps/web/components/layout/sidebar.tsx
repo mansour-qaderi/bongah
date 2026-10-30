@@ -6,7 +6,7 @@ import { cn } from '@/lib/cn';
 import { LogoLockup } from '@/components/ui/logo';
 import { Tip } from '@/components/ui/tooltip';
 import { AccountMenu } from './account-menu';
-import { isActive, NAV_ITEMS } from './nav';
+import { isActive, navItemsFor } from './nav';
 import { useT } from '@/i18n/provider';
 import { useMe } from '@/hooks/use-api';
 
@@ -24,7 +24,7 @@ export function Sidebar({ collapsed, mobileOpen, onNavigate }: { collapsed: bool
   const pathname = usePathname();
   const t = useT();
   const { data: me } = useMe();
-  const items = NAV_ITEMS.filter((item) => !item.adminOnly || me?.role === 'ADMIN');
+  const items = navItemsFor(me?.role);
 
   return (
     <>

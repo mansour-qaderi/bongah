@@ -2,12 +2,13 @@
 
 import { useCallback, useRef, useState, type DragEvent } from 'react';
 import { toast } from 'sonner';
+import type { Market } from '@bongah/shared-types';
 import { Download, FileSpreadsheet, UploadCloud } from 'lucide-react';
 import { formatNumber } from '@/lib/format';
 import { MAX_DRAFTS, useDrafts } from '@/lib/import/drafts-store';
 import { guessMapping, importFields, MAX_FILE_ROWS, rowsFromTable, templateCsv, type FileTable, type ImportField } from '@/lib/import/parse-file';
 import { FileImportError, readTableFile } from '@/lib/import/read-file';
-import { usePinned } from '@/hooks/use-pinned';
+import { pinnedFor, useBatchMarket, usePinned } from '@/hooks/use-pinned';
 import { tNow } from '@/i18n/active';
 import { useLanguage, useT } from '@/i18n/provider';
 import { cn } from '@/lib/cn';
@@ -16,8 +17,8 @@ import { Card } from '@/components/ui/card';
 import { Select } from '@/components/ui/field';
 import { LoadingDots } from '@/components/ui/loading';
 
-function downloadTemplate() {
-  const url = URL.createObjectURL(new Blob([templateCsv()], { type: 'text/csv;charset=utf-8' }));
+function downloadTemplate(market: Market) {
+  const url = URL.createObjectURL(new Blob([templateCsv(undefined, market)], { type: 'text/csv;charset=utf-8' }));
   const a = document.createElement('a');
   a.href = url;
   a.download = 'bongah-listings-template.csv';
@@ -29,7 +30,9 @@ function downloadTemplate() {
 export function FileImport() {
   const t = useT();
   const { language } = useLanguage();
-  const [pinned] = usePinned();
+  const [pinnedRaw] = usePinned();
+  const [market] = useBatchMarket();
+  const pinned = pinnedFor(pinnedRaw, market);
   const { actions } = useDrafts();
   const [over, setOver] = useState(false);
   const [reading, setReading] = useState(false);
@@ -109,7 +112,7 @@ export function FileImport() {
                     <FileSpreadsheet aria-hidden className="h-4 w-4" />
                     {t('file.choose')}
                   </Button>
-                  <Button variant="secondary" onClick={downloadTemplate} className="gap-2">
+                  <Button variant="secondary" onClick={() => downloadTemplate(market)} className="gap-2">
                     <Download aria-hidden className="h-4 w-4" />
                     {t('file.template')}
                   </Button>
@@ -158,7 +161,7 @@ export function FileImport() {
                         className="h-8 text-[13px]"
                       >
                         <option value="">{t('file.ignore')}</option>
-                        {importFields(language).map(([key, label]) => (
+                        {importFields(language, market).map(([key, label]) => (
                           <option key={key} value={key}>
                             {label}
                           </option>

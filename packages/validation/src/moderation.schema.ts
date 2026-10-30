@@ -4,6 +4,7 @@ import {
   ABUSE_REPORT_STATUSES,
   ABUSE_TARGET_TYPES,
   AGENCY_VERIFICATION_STATUSES,
+  FEEDBACK_CATEGORIES,
   REPORT_RESOLUTION_ACTIONS,
   ROLES,
 } from '@bongah/shared-types';
@@ -92,3 +93,31 @@ export const reviewAgencySchema = z
 export type ReviewAgencyInput = z.output<typeof reviewAgencySchema>;
 
 export { booleanQuery, searchQuery };
+
+/** GET /admin/feedback: the messages sent from the app's feedback form, newest first. */
+export const adminFeedbackQuerySchema = z.strictObject({
+  ...paginationShape,
+  category: z.enum(FEEDBACK_CATEGORIES).optional(),
+  /** Part of the message, or the sender's name or phone number. */
+  q: searchQuery,
+});
+export type AdminFeedbackQuery = z.output<typeof adminFeedbackQuerySchema>;
+
+/** The most of one gift an admin may give in one go (a slip of the finger must not hand out hundreds). */
+export const GIFT_MAX_CREDITS = 50;
+
+/**
+ * POST /admin/users/:id/gift: free listings and/or featured frames for an account. At least one of the two, and a short
+ * note for the record (the account's owner is not shown it).
+ */
+export const giftUserSchema = z
+  .strictObject({
+    listing_credits: z.int().min(0).max(GIFT_MAX_CREDITS).default(0),
+    featured_credits: z.int().min(0).max(GIFT_MAX_CREDITS).default(0),
+    note: cleanText(3, 200).optional(),
+  })
+  .refine((value) => value.listing_credits > 0 || value.featured_credits > 0, {
+    message: 'Give at least one listing or one featured frame',
+    path: ['listing_credits'],
+  });
+export type GiftUserInput = z.output<typeof giftUserSchema>;

@@ -1,7 +1,7 @@
-import { AFGHANISTAN_BOUNDS } from '@bongah/shared-types';
-import { insideAfghanistan } from './area-name';
+import { DEFAULT_MARKET, MARKET_CONFIG, type Market } from '@bongah/shared-types';
+import { insideMarket } from './area-name';
 import { parseLatLng } from './import/draft-validation';
-import { PROVINCES, type Province } from './provinces';
+import { IRAN_PROVINCES, PROVINCES, type Province } from './provinces';
 
 /** What the picker hands the form: both numbers as text (the form keeps them as typed text), or null for "no pin". */
 export interface PickedPosition {
@@ -17,6 +17,12 @@ export interface MapView {
 
 /** The whole country in one view: where the picker starts while no province is chosen. */
 export const COUNTRY_VIEW: MapView = { center: [66.2, 33.9], zoom: 4.6 };
+/** The same for a market (the picker of an Iranian listing opens on Iran). */
+export function countryView(market: Market = DEFAULT_MARKET): MapView {
+  if (market === DEFAULT_MARKET) return COUNTRY_VIEW;
+  const { center, zoom } = MARKET_CONFIG[market];
+  return { center: [center[0], center[1]], zoom };
+}
 /** A provincial capital, close enough to see its districts. */
 export const PROVINCE_ZOOM = 11;
 /** A district, close enough to see its streets. */
@@ -27,24 +33,27 @@ export const PIN_ZOOM = 16;
 /** Six decimals is about 10 cm: more is noise, and the API stores no more than this. */
 export const roundCoordinate = (n: number): number => Math.round(n * 1e6) / 1e6;
 
-/** A position as the form's text fields hold it. Null when it is not inside Afghanistan (the API refuses those). */
-export function toPicked(lat: number, lng: number): PickedPosition | null {
-  if (!Number.isFinite(lat) || !Number.isFinite(lng) || !insideAfghanistan(lat, lng)) return null;
+/**
+ * A position as the form's text fields hold it. Null when it is not inside the market's country (the API refuses
+ * those); without a market, inside either country.
+ */
+export function toPicked(lat: number, lng: number, market?: Market): PickedPosition | null {
+  if (!Number.isFinite(lat) || !Number.isFinite(lng) || !insideMarket(lat, lng, market)) return null;
   return { lat: String(roundCoordinate(lat)), lng: String(roundCoordinate(lng)) };
 }
 
 /** The pin the form's two text fields describe, or null while either is empty or unreadable (or outside the country). */
-export function pinOf(lat: string, lng: string): { lat: number; lng: number } | null {
+export function pinOf(lat: string, lng: string, market?: Market): { lat: number; lng: number } | null {
   const la = parseLatLng(lat.trim());
   const ln = parseLatLng(lng.trim());
-  if (la === null || ln === null || !insideAfghanistan(la, ln)) return null;
+  if (la === null || ln === null || !insideMarket(la, ln, market)) return null;
   return { lat: la, lng: ln };
 }
 
 /** The province a stored name (Dari, as the form's select keeps it) stands for. */
 export function provinceByName(name: string): Province | null {
   const wanted = name.trim();
-  return wanted ? (PROVINCES.find((p) => p.name === wanted) ?? null) : null;
+  return wanted ? ([...PROVINCES, ...IRAN_PROVINCES].find((p) => p.name === wanted) ?? null) : null;
 }
 
 /** Where the map should look for a province: its capital, at city zoom. Null while no (known) province is chosen. */
@@ -54,9 +63,9 @@ export function provinceView(name: string): MapView | null {
 }
 
 /** Where the map starts: the pin, else the province, else the country. */
-export function startView(pin: { lat: number; lng: number } | null, provinceName: string): MapView {
+export function startView(pin: { lat: number; lng: number } | null, provinceName: string, market?: Market): MapView {
   if (pin) return { center: [pin.lng, pin.lat], zoom: PIN_ZOOM };
-  return provinceView(provinceName) ?? COUNTRY_VIEW;
+  return provinceView(provinceName) ?? countryView(market);
 }
 
 // ───────────────────────────── finding a district ─────────────────────────────
@@ -64,16 +73,19 @@ export function startView(pin: { lat: number; lng: number } | null, provinceName
 /** A district farther than this (in degrees, about 160 km) from its province's capital is a different place with the same name. */
 const MAX_DISTRICT_DISTANCE = 1.5;
 
+/** The country as the geocoder is asked for it (in Persian, the language of the question). */
+const COUNTRY_NAME: Record<Market, string> = { AF: 'افغانستان', IR: 'ایران' };
+
 const DISTRICT_PREFIX = /^(ولسوالی|ولسوالۍ|ناحیه|ناحیې|ښارګوټی|شهرک)\s+/u;
 
 /** The question for the geocoder: «district، province»; the administrative prefix is dropped (the maps write «پغمان», not «ولسوالی پغمان»). */
-export function districtQuery(district: string, province: string): string | null {
+export function districtQuery(district: string, province: string, market: Market = DEFAULT_MARKET): string | null {
   const written = district.replace(/\s+/g, ' ').trim();
   const stripped = written.replace(DISTRICT_PREFIX, '');
   // «ناحیه ۴» is a numbered district: without its word the number alone names nothing.
   const name = /\p{L}/u.test(stripped) ? stripped : written;
   if (name.length < 2) return null;
-  return [name, province.trim(), 'افغانستان'].filter(Boolean).join('، ');
+  return [name, province.trim(), COUNTRY_NAME[market]].filter(Boolean).join('، ');
 }
 
 interface GeocodeFeature {
@@ -81,12 +93,12 @@ interface GeocodeFeature {
 }
 
 /** The first answer that is inside the country and not far from the province: [lng, lat], or null. */
-export function pickDistrictAnswer(features: readonly GeocodeFeature[], province: Province | null): [number, number] | null {
+export function pickDistrictAnswer(features: readonly GeocodeFeature[], province: Province | null, market?: Market): [number, number] | null {
   for (const feature of features) {
     const c = feature.geometry?.coordinates;
     if (!Array.isArray(c) || typeof c[0] !== 'number' || typeof c[1] !== 'number') continue;
     const [lng, lat] = c as [number, number];
-    if (!insideAfghanistan(lat, lng)) continue;
+    if (!insideMarket(lat, lng, market)) continue;
     if (province && (Math.abs(province.lat - lat) > MAX_DISTRICT_DISTANCE || Math.abs(province.lng - lng) > MAX_DISTRICT_DISTANCE)) continue;
     return [lng, lat];
   }
@@ -106,19 +118,21 @@ export async function findDistrict(
   token: string,
   signal?: AbortSignal,
   fetchImpl: typeof fetch = fetch,
+  market: Market = DEFAULT_MARKET,
 ): Promise<[number, number] | null> {
-  const q = districtQuery(district, provinceName);
+  const q = districtQuery(district, provinceName, market);
   if (!q || !token) return null;
   const province = provinceByName(provinceName);
-  const key = q;
+  const bounds = MARKET_CONFIG[market].bounds;
+  const key = `${market}:${q}`;
   if (answers.has(key)) return answers.get(key)!;
   const params = new URLSearchParams({
     q,
-    country: 'af',
+    country: MARKET_CONFIG[market].country.toLowerCase(),
     language: 'fa',
     limit: '3',
     types: 'district,locality,neighborhood,place',
-    bbox: [AFGHANISTAN_BOUNDS.minLng, AFGHANISTAN_BOUNDS.minLat, AFGHANISTAN_BOUNDS.maxLng, AFGHANISTAN_BOUNDS.maxLat].join(','),
+    bbox: [bounds.minLng, bounds.minLat, bounds.maxLng, bounds.maxLat].join(','),
     access_token: token,
   });
   if (province) params.set('proximity', `${province.lng},${province.lat}`);
@@ -126,7 +140,7 @@ export async function findDistrict(
     const res = await fetchImpl(`${GEOCODE_URL}?${params}`, { signal });
     if (!res.ok) return null;
     const body = (await res.json()) as { features?: GeocodeFeature[] };
-    const hit = pickDistrictAnswer(body.features ?? [], province);
+    const hit = pickDistrictAnswer(body.features ?? [], province, market);
     if (answers.size >= 200) answers.delete(answers.keys().next().value as string);
     answers.set(key, hit);
     return hit;

@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   AppState,
   Linking,
@@ -8,97 +8,104 @@ import {
   ScrollView,
   StyleSheet,
   View,
-} from 'react-native';
+} from "react-native";
+import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
+import type { NativeStackScreenProps } from "@react-navigation/native-stack";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useTranslation } from "react-i18next";
 import {
-  SafeAreaProvider,
-  SafeAreaView,
-} from 'react-native-safe-area-context';
-import type { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { useTranslation } from 'react-i18next';
-import {
-  CURRENCIES,
-  DEAL_TYPES,
-  PROPERTY_TYPES,
+  MARKET_CONFIG,
   PRICE_TERMS,
   PROPERTY_UNIT_MAX_LENGTH,
+  defaultCurrency,
+  marketOf,
   type Currency,
   type DealType,
+  type DeedType,
+  type Market,
   type PriceTerms,
   type Property,
+  type PropertyFeature,
   type PropertyType,
-} from '@bongah/shared-types';
+} from "@bongah/shared-types";
 import {
   createPropertySchema,
   type CreatePropertyInput,
-} from '@bongah/validation';
-import { createProperty, getMe, updateProperty } from '../../api/endpoints';
+} from "@bongah/validation";
+import { createProperty, getMe, updateProperty } from "../../api/endpoints";
 import {
   errorMessage,
   isAnyListingLimit,
   isListingLimitReached,
   isSubscriptionRequired,
   listingLimitMessage,
-} from '../../api/errors';
-import { queryKeys, usePricing, usePropertyDetail } from '../../api/hooks';
-import { useAuth } from '../../auth/AuthContext';
-import AppText from '../../components/AppText';
-import Banner from '../../components/Banner';
-import BottomSheet from '../../components/BottomSheet';
-import Button from '../../components/Button';
-import Card from '../../components/Card';
-import { Chip } from '../../components/Chip';
-import FramePayStep from '../../components/FramePayStep';
-import LadderUnlockBanner from '../../components/LadderUnlockBanner';
-import { KeyboardAwareScrollView } from '../../components/KeyboardAware';
-import LocationEditor from '../../components/LocationEditor';
-import MapLoader from '../../components/MapLoader';
-import { Reveal, useReveal } from '../../components/Reveal';
+} from "../../api/errors";
+import { queryKeys, usePricing, usePropertyDetail } from "../../api/hooks";
+import { useAuth } from "../../auth/AuthContext";
+import AppText from "../../components/AppText";
+import Banner from "../../components/Banner";
+import BottomSheet from "../../components/BottomSheet";
+import Button from "../../components/Button";
+import Card from "../../components/Card";
+import { Chip } from "../../components/Chip";
+import FramePayStep from "../../components/FramePayStep";
+import LadderUnlockBanner from "../../components/LadderUnlockBanner";
+import { KeyboardAwareScrollView } from "../../components/KeyboardAware";
+import LocationEditor from "../../components/LocationEditor";
+import MapLoader from "../../components/MapLoader";
+import { Reveal, useReveal } from "../../components/Reveal";
 import LocationPermissionModal, {
   type LocationProblem,
-} from '../../components/LocationPermissionModal';
-import PinSection from '../../components/PinSection';
-import PlaceSearchField from '../../components/PlaceSearchField';
-import ProvincePicker from '../../components/ProvincePicker';
-import SegmentedControl from '../../components/SegmentedControl';
-import SelectField from '../../components/SelectField';
-import Stepper from '../../components/Stepper';
-import SwitchRow from '../../components/SwitchRow';
-import { showToast } from '../../components/Toast';
-import { EmptyView, ErrorView, LoadingView } from '../../components/States';
-import TextField from '../../components/TextField';
+} from "../../components/LocationPermissionModal";
+import PinSection from "../../components/PinSection";
+import PlaceSearchField from "../../components/PlaceSearchField";
+import ProvincePicker from "../../components/ProvincePicker";
+import SegmentedControl from "../../components/SegmentedControl";
+import SelectField from "../../components/SelectField";
+import Stepper from "../../components/Stepper";
+import SwitchRow from "../../components/SwitchRow";
+import { showToast } from "../../components/Toast";
+import { EmptyView, ErrorView, LoadingView } from "../../components/States";
+import TextField from "../../components/TextField";
 import {
   findProvince,
+  marketOfProvince,
   provinceValue,
   type Province,
-} from '../../constants/provinces';
-import { hasRoomsFor } from '../../constants/propertyRooms';
+} from "../../constants/provinces";
+import { hasRoomsFor } from "../../constants/propertyRooms";
+import { formatDate, formatNumber, parseNumberInput } from "../../i18n/format";
 import {
-  formatDate,
-  formatNumber,
-  parseNumberInput,
-} from '../../i18n/format';
-import { propertyTypeLabel } from '../../i18n/propertyType';
-import { propertyLineIcon } from '../../map/markers';
-import { useFormat } from '../../i18n/useFormat';
+  dealPriceLabel,
+  dealTypeLabel,
+  marketName,
+  marketText,
+  priceTermsLabel,
+} from "../../i18n/market";
+import { propertyTypeLabel } from "../../i18n/propertyType";
+import { propertyLineIcon } from "../../map/markers";
+import { useFormat } from "../../i18n/useFormat";
 import {
-  AFGHANISTAN_CAMERA,
   cameraAt,
+  isInsideMarket,
+  marketCamera,
   provinceCamera,
   toLngLat,
   type Coordinate,
   type MapCamera,
-} from '../../map/geo';
+} from "../../map/geo";
 import {
   findAddressLoosely as findOnMap,
   nearestProvince,
-} from '../../map/geocode';
-import type { MapViewChange } from '../../map/BaseMap';
-import { describeSpot, type ResolvedPlace } from '../../map/GeocodingService';
-import { locate } from '../../map/location';
-import type { RootStackParamList } from '../../navigation/types';
-import { useFeaturedCreditSpend } from '../../payments/useFeaturedCreditSpend';
-import { colors, radius, spacing } from '../../theme';
+} from "../../map/geocode";
+import type { MapViewChange } from "../../map/BaseMap";
+import { describeSpot, type ResolvedPlace } from "../../map/GeocodingService";
+import { locate } from "../../map/location";
+import { useActiveMarket } from "../../market/marketStore";
+import { reconcileChoices, typesForDeal } from "../../market/options";
+import type { RootStackParamList } from "../../navigation/types";
+import { useFeaturedCreditSpend } from "../../payments/useFeaturedCreditSpend";
+import { colors, radius, spacing } from "../../theme";
 import {
   failingFields,
   formFieldFor,
@@ -107,32 +114,47 @@ import {
   toastForErrors,
   type FieldErrors,
   type FormField,
-} from './formErrors';
-import { monthsFromInput, splitMonths, type DurationUnit } from './mortgage';
-import { addressFrom, swapProvince } from '../../utils/addressLine';
+} from "./formErrors";
+import { monthsFromInput, splitMonths, type DurationUnit } from "./mortgage";
+import { addressFrom, swapProvince } from "../../utils/addressLine";
 
-type Props = NativeStackScreenProps<RootStackParamList, 'AddProperty'>;
+type Props = NativeStackScreenProps<RootStackParamList, "AddProperty">;
 type ViewNode = React.ComponentRef<typeof View>;
 /** What the pin's address lookup did: still asking, filled the form in, or the service could not say. */
-type Lookup = 'idle' | 'finding' | 'filled' | 'failed';
+type Lookup = "idle" | "finding" | "filled" | "failed";
 /** What the map did about a written address: still looking, moved there, or did not know the place. */
-type MapSync = 'idle' | 'finding' | 'found' | 'none' | 'province';
+type MapSync = "idle" | "finding" | "found" | "none" | "province";
 
 const MAX_IMAGE_LINKS = 10;
+/** A sample price for the empty box, per currency: a round figure of the size people quote in it (a hint, not a value). */
+const PRICE_EXAMPLES: Record<Currency, number> = {
+  AFGHANI: 2_500_000,
+  USD: 25_000,
+  TOMAN: 3_500_000_000,
+  RIAL: 35_000_000_000,
+};
 /** After the last tap on the map, wait this long before asking for the address: one question per settled pin. */
 export const LOOKUP_DELAY_MS = 700;
 /** How far in the map looks at the phone's position: a few streets, enough to find the property's own. */
 export const MY_POSITION_ZOOM = 16;
 const roundTo2 = (n: number) => Math.round(n * 100) / 100;
 
+/** A listing saved with a kind the market no longer offers (an old row) still shows its own kind in the picker. */
+const withCurrent = (
+  list: readonly PropertyType[],
+  current: PropertyType
+): readonly PropertyType[] =>
+  list.includes(current) ? list : [...list, current];
+
 /**
  * Only a house, an apartment or an office is "unit 3 of a building". Asking it of land, a garden, a garage or a shop
  * only confuses people (a garage is not "unit 3"), so the field is not there for them.
  */
 export const UNIT_TYPES: readonly PropertyType[] = [
-  'HOUSE_HAWILI',
-  'APARTMENT',
-  'OFFICE',
+  "HOUSE_HAWILI",
+  "APARTMENT",
+  "DUPLEX",
+  "OFFICE",
 ];
 export const hasUnitFor = (type: PropertyType) => UNIT_TYPES.includes(type);
 
@@ -171,47 +193,63 @@ export default function AddPropertyScreen({ navigation, route }: Props) {
   const queryClient = useQueryClient();
   const propertyId = route.params?.propertyId;
   const editing = propertyId !== undefined;
-  const existing = usePropertyDetail(propertyId ?? '', editing);
+  const existing = usePropertyDetail(propertyId ?? "", editing);
 
-  const [title, setTitle] = useState('');
-  const [description, setDescription] = useState('');
-  const [type, setType] = useState<PropertyType>(PROPERTY_TYPES[0]);
+  // The country the listing is in. A new listing starts in the market the person works in (their account's, or the
+  // phone's region before they have one); it can be changed on the form, and an existing listing keeps its own.
+  const accountMarket = useActiveMarket();
+  const [market, setFormMarket] = useState<Market>(accountMarket);
+  const marketRef = useRef(market);
+  marketRef.current = market;
+  const config = MARKET_CONFIG[market];
+  const [title, setTitle] = useState("");
+  const [description, setDescription] = useState("");
+  const [type, setType] = useState<PropertyType>(
+    MARKET_CONFIG[accountMarket].propertyTypes[0]
+  );
   // Which unit of a building ("واحد ۳"), as the owner writes it.
-  const [unit, setUnit] = useState('');
-  const [deal, setDeal] = useState<DealType>('SALE');
-  const [priceText, setPriceText] = useState('');
-  const [currency, setCurrency] = useState<Currency>('AFGHANI');
+  const [unit, setUnit] = useState("");
+  const [deal, setDeal] = useState<DealType>("SALE");
+  const [priceText, setPriceText] = useState("");
+  // رهن و اجاره (Iran): the price above is the deposit, this is the rent every month.
+  const [rentText, setRentText] = useState("");
+  // Iran's tags (دوبلکس، آسانسور…) and Afghanistan's deed (قباله شرعی / عرفی); each market has one of them.
+  const [features, setFeatures] = useState<PropertyFeature[]>([]);
+  const [deed, setDeed] = useState<DeedType | null>(null);
+  const [currency, setCurrency] = useState<Currency>(
+    defaultCurrency(accountMarket)
+  );
   // How long a mortgage (گروی) runs, as typed, and whether the number is months or years.
-  const [durationText, setDurationText] = useState('');
-  const [durationUnit, setDurationUnit] = useState<DurationUnit>('month');
+  const [durationText, setDurationText] = useState("");
+  const [durationUnit, setDurationUnit] = useState<DurationUnit>("month");
   // مقطوع / جورآمد; null says neither.
   const [priceTerms, setPriceTerms] = useState<PriceTerms | null>(null);
   // Asked for the featured frame (کادر ویژه) along with this save.
   const [framed, setFramed] = useState(false);
   // The id of the listing just saved while its frame still has to be paid for: the sheet shows the payment step.
   const [payingFrame, setPayingFrame] = useState<string | null>(null);
-  const [areaText, setAreaText] = useState('');
+  const [areaText, setAreaText] = useState("");
   const [bedrooms, setBedrooms] = useState<number | null>(null);
   const [bathrooms, setBathrooms] = useState<number | null>(null);
   const [province, setProvince] = useState<Province | null>(null);
-  const [district, setDistrict] = useState('');
-  const [neighborhood, setNeighborhood] = useState('');
-  const [address, setAddress] = useState('');
+  const [district, setDistrict] = useState("");
+  const [neighborhood, setNeighborhood] = useState("");
+  const [address, setAddress] = useState("");
   const [coordinate, setCoordinate] = useState<Coordinate | null>(null);
-  const [imageLinks, setImageLinks] = useState<string[]>(['']);
+  const [imageLinks, setImageLinks] = useState<string[]>([""]);
   const [errors, setErrors] = useState<FieldErrors>({});
   const [pickerOpen, setPickerOpen] = useState(false);
   const [open, setOpen] = useState(true);
-  const [lookup, setLookup] = useState<Lookup>('idle');
-  const [mapSync, setMapSync] = useState<MapSync>('idle');
+  const [lookup, setLookup] = useState<Lookup>("idle");
+  const [mapSync, setMapSync] = useState<MapSync>("idle");
   const [provinceGuessed, setProvinceGuessed] = useState(false);
   // Where the map looks. It moves when a province is picked by hand or an existing listing is loaded, never
   // because a pin was just placed (it is already there) or the province was filled in from the pin.
-  const [camera, setCamera] = useState<MapCamera>(AFGHANISTAN_CAMERA);
+  const [camera, setCamera] = useState<MapCamera>(marketCamera(accountMarket));
   const [fullscreen, setFullscreen] = useState(false);
   // Where the map is looking now (a finger moves it without telling `camera`), so the other map opens exactly there.
-  const view = useRef<{ center: MapCamera['center']; zoom: number } | null>(
-    null,
+  const view = useRef<{ center: MapCamera["center"]; zoom: number } | null>(
+    null
   );
   const keepView = useCallback((next: MapViewChange) => {
     view.current = { center: next.center, zoom: next.zoom };
@@ -224,16 +262,16 @@ export default function AddPropertyScreen({ navigation, route }: Props) {
   const [outside, setOutside] = useState(false);
   // What the place field did with a chosen row: flew the map there, or could not find it.
   const [placeNote, setPlaceNote] = useState<
-    { kind: 'chosen'; name: string } | { kind: 'notResolved' } | null
+    { kind: "chosen"; name: string } | { kind: "notResolved" } | null
   >(null);
 
   const clearError = (field: string) =>
-    setErrors(current =>
-      current[field] ? { ...current, [field]: undefined } : current,
+    setErrors((current) =>
+      current[field] ? { ...current, [field]: undefined } : current
     );
 
   // What the pin filled in last, so a later move only replaces what the person has not changed by hand.
-  const filledWith = useRef({ address: '' });
+  const filledWith = useRef({ address: "" });
   const provinceIsAuto = useRef(false);
   // Fills the province and the address in from a spot (see findAddress, defined below the early returns).
   const describePlace = useRef<(point: Coordinate) => void>(() => undefined);
@@ -258,7 +296,7 @@ export default function AddPropertyScreen({ navigation, route }: Props) {
       lookupAbort.current?.abort();
       syncAbort.current?.abort();
     },
-    [],
+    []
   );
 
   /** Sends the map somewhere, and remembers it as where the map is looking (the next view event refines it). */
@@ -273,7 +311,7 @@ export default function AddPropertyScreen({ navigation, route }: Props) {
       syncNonce.current += 1;
       moveCamera({ center: toLngLat(at), zoom, nonce: syncNonce.current });
     },
-    [moveCamera],
+    [moveCamera]
   );
 
   /**
@@ -287,18 +325,22 @@ export default function AddPropertyScreen({ navigation, route }: Props) {
       const result = await locate({ ask: true });
       if (!mounted.current) return;
       setLocating(false);
-      if (result.status === 'ok') {
+      if (result.status === "ok") {
         setMe(result.coordinate);
         if (auto && (steered.current || pinRef.current)) return;
+        // A phone in the other country (an Iranian listing written from Kabul, say) does not pull the map away
+        // from the listing's own country, and fills nothing in.
+        if (auto && !isInsideMarket(result.coordinate, marketRef.current))
+          return;
         lookAt(result.coordinate, MY_POSITION_ZOOM);
         // The form has just opened on the phone's position: the province and the address start from it (only what is
         // still empty; the person's own words and choices are never overwritten). No pin is placed: that is theirs.
         if (auto) describePlace.current(result.coordinate);
-      } else if (!auto && result.status !== 'outside') {
+      } else if (!auto && result.status !== "outside") {
         setLocationProblem(result.status);
       }
     },
-    [lookAt],
+    [lookAt]
   );
 
   /**
@@ -310,25 +352,26 @@ export default function AddPropertyScreen({ navigation, route }: Props) {
     syncAbort.current?.abort();
     const abort = new AbortController();
     syncAbort.current = abort;
-    setMapSync('finding');
+    setMapSync("finding");
     const result = await findOnMap(
       text,
       typed.current.province?.name.prs,
       abort.signal,
+      marketRef.current
     );
     if (abort.signal.aborted || !mounted.current) return;
-    if (result.status === 'found') {
+    if (result.status === "found") {
       steered.current = true;
       lookAt(result.coordinate, result.zoom);
       // No province yet: the nearest capital to where the address is, said to be a guess.
       if (typed.current.province === null || provinceIsAuto.current) {
         provinceIsAuto.current = true;
-        setProvince(nearestProvince(result.coordinate));
+        setProvince(nearestProvince(result.coordinate, marketRef.current));
         setProvinceGuessed(true);
-        clearError('province');
+        clearError("province");
       }
-      setMapSync('found');
-    } else if (result.status === 'none') {
+      setMapSync("found");
+    } else if (result.status === "none") {
       // The map does not know this address: show the province it is in, the nearest thing it does know (unless a pin
       // is already placed, which is where the person wants the map to look).
       const known = typed.current.province;
@@ -336,34 +379,116 @@ export default function AddPropertyScreen({ navigation, route }: Props) {
         steered.current = true;
         syncNonce.current += 1;
         moveCamera({ ...provinceCamera(known), nonce: syncNonce.current });
-        setMapSync('province');
+        setMapSync("province");
       } else {
-        setMapSync('none');
+        setMapSync("none");
       }
     } else {
-      setMapSync('idle');
+      setMapSync("idle");
     }
   };
 
+  /**
+   * Whether a province is in the listing's own country. A pin near the border, or a geocoder that names the
+   * neighbour, can hand back a province of the other one: that is replaced by the nearest of the right country.
+   */
+  const provinceFits = (candidate: Province | null) =>
+    !candidate || marketOfProvince(candidate) === marketRef.current;
+
+  /**
+   * Another country for the listing. What that country does not have is replaced by its first choice (a toman price
+   * for an afghani one, a province of its own, a daily rental for a mortgage-only market), what it does have is kept,
+   * a pin outside it is taken off, and the map goes to the country.
+   */
+  const switchMarket = (next: Market) => {
+    if (next === marketRef.current) return;
+    marketRef.current = next;
+    setFormMarket(next);
+    const choices = reconcileChoices(next, { deal, type, currency });
+    setDeal(choices.deal);
+    setType(choices.type);
+    setCurrency(choices.currency);
+    // What belongs to the other country goes: its tags, its deed paper.
+    const nextConfig = MARKET_CONFIG[next];
+    setFeatures((current) =>
+      current.filter((f) => nextConfig.features.includes(f))
+    );
+    setDeed((current) =>
+      current && nextConfig.deedTypes.includes(current) ? current : null
+    );
+    for (const field of [
+      "deal_type",
+      "type",
+      "currency",
+      "monthly_rent",
+      "features",
+      "deed_type",
+      "province",
+      "location",
+    ]) {
+      clearError(field);
+    }
+    if (province && marketOfProvince(province) !== next) {
+      setProvince(null);
+      setProvinceGuessed(false);
+      provinceIsAuto.current = false;
+    }
+    const pin = pinRef.current;
+    if (pin && !isInsideMarket(pin, next)) {
+      setCoordinate(null);
+      pinRef.current = null;
+      setLookup("idle");
+    }
+    setOutside(false);
+    steered.current = true;
+    syncNonce.current += 1;
+    moveCamera({ ...marketCamera(next), nonce: syncNonce.current });
+  };
+
+  // The country is not asked on the form: a new listing is in the country the person is in (found from the phone, or
+  // chosen in Settings). If that changes while the form is open, the form follows it. An existing listing keeps its own.
+  useEffect(() => {
+    if (!editing && accountMarket !== marketRef.current) {
+      switchMarket(accountMarket);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [accountMarket, editing]);
+
+  /** A deal was chosen: a daily rental is only for a villa or a garden, so another kind of property gives way. */
+  const chooseDeal = (next: DealType) => {
+    const choices = reconcileChoices(market, { deal: next, type, currency });
+    setDeal(choices.deal);
+    setType(choices.type);
+    clearError("deal_type");
+    clearError("type");
+  };
+
   /** A row of the place field was chosen and found: fly there and take its province, unless one was chosen by hand. */
-  const placeChosen = (place: ResolvedPlace) => {
+  const placeChosen = (chosen: ResolvedPlace) => {
+    const place: ResolvedPlace = provinceFits(chosen.province)
+      ? chosen
+      : {
+          ...chosen,
+          province: nearestProvince(chosen.coordinate, marketRef.current),
+          provinceApproximate: true,
+        };
     syncAbort.current?.abort();
-    setMapSync('idle');
+    setMapSync("idle");
     steered.current = true;
     lookAt(place.coordinate, place.zoom);
     if (typed.current.province === null || provinceIsAuto.current) {
       provinceIsAuto.current = true;
       setProvince(place.province);
       setProvinceGuessed(place.provinceApproximate);
-      clearError('province');
+      clearError("province");
     }
     // The structured parts belong to the pin when there is one; without one the chosen place supplies them.
     if (!pinRef.current) {
       if (place.district) setDistrict(place.district);
       if (place.neighborhood) setNeighborhood(place.neighborhood);
     }
-    clearError('address');
-    setPlaceNote({ kind: 'chosen', name: place.title });
+    clearError("address");
+    setPlaceNote({ kind: "chosen", name: place.title });
   };
 
   // What to do once the sheet has slid away: go to another screen. Nothing means the person closed the sheet, so
@@ -381,13 +506,13 @@ export default function AddPropertyScreen({ navigation, route }: Props) {
   };
   // Back from the screen the sheet stepped aside for: slide up again, form intact.
   useEffect(
-    () => navigation.addListener('focus', () => setOpen(true)),
-    [navigation],
+    () => navigation.addListener("focus", () => setOpen(true)),
+    [navigation]
   );
 
   // A new listing: find the phone as the form opens, so the map starts on the street the person is standing in.
   // (An edit starts on the listing's own pin; the button still finds the phone there.)
-  const signedIn = status === 'signedIn';
+  const signedIn = status === "signedIn";
   useEffect(() => {
     if (signedIn && !editing) locateMe(true);
   }, [signedIn, editing, locateMe]);
@@ -395,8 +520,8 @@ export default function AddPropertyScreen({ navigation, route }: Props) {
   // Back from the phone's settings after allowing location: try again.
   const awaitingSettings = useRef(false);
   useEffect(() => {
-    const subscription = AppState.addEventListener('change', state => {
-      if (state === 'active' && awaitingSettings.current) {
+    const subscription = AppState.addEventListener("change", (state) => {
+      if (state === "active" && awaitingSettings.current) {
         awaitingSettings.current = false;
         locateMe(false);
       }
@@ -407,9 +532,9 @@ export default function AddPropertyScreen({ navigation, route }: Props) {
     awaitingSettings.current = true;
     const kind = locationProblem;
     setLocationProblem(null);
-    if (kind === 'unavailable' && Platform.OS === 'android') {
-      Linking.sendIntent('android.settings.LOCATION_SOURCE_SETTINGS').catch(
-        () => Linking.openSettings(),
+    if (kind === "unavailable" && Platform.OS === "android") {
+      Linking.sendIntent("android.settings.LOCATION_SOURCE_SETTINGS").catch(
+        () => Linking.openSettings()
       );
     } else {
       Linking.openSettings();
@@ -436,17 +561,23 @@ export default function AddPropertyScreen({ navigation, route }: Props) {
           y: Math.max(0, y - spacing.xl),
           animated: true,
         }),
-      () => scroller.current?.scrollTo({ y: 0, animated: true }),
+      () => scroller.current?.scrollTo({ y: 0, animated: true })
     );
   };
 
   function fillFrom(property: Property) {
+    setFormMarket(marketOf(property.market));
     setTitle(property.title);
     setDescription(property.description);
     setType(property.type);
-    setUnit(property.unit ?? '');
+    setUnit(property.unit ?? "");
     setDeal(property.deal_type);
     setPriceText(String(property.price));
+    setRentText(
+      property.monthly_rent != null ? String(property.monthly_rent) : ""
+    );
+    setFeatures(property.features ?? []);
+    setDeed(property.deed_type ?? null);
     setCurrency(property.currency);
     const length = splitMonths(property.mortgage_months);
     setDurationText(length.text);
@@ -458,7 +589,7 @@ export default function AddPropertyScreen({ navigation, route }: Props) {
     const known = findProvince(property.province) ?? null;
     setProvince(known);
     setDistrict(property.district);
-    setNeighborhood(property.neighborhood ?? '');
+    setNeighborhood(property.neighborhood ?? "");
     setAddress(property.address);
     // The listing's own pin (or province) decides where the map looks; the phone's position does not move it.
     steered.current = true;
@@ -469,7 +600,7 @@ export default function AddPropertyScreen({ navigation, route }: Props) {
     setCoordinate(pin);
     if (pin) moveCamera(cameraAt(pin));
     else if (known) moveCamera(provinceCamera(known));
-    setImageLinks(property.images.length ? [...property.images] : ['']);
+    setImageLinks(property.images.length ? [...property.images] : [""]);
   }
 
   // Editing: fill the form from the listing, once.
@@ -490,9 +621,9 @@ export default function AddPropertyScreen({ navigation, route }: Props) {
   const mutation = useMutation({
     mutationFn: (data: CreatePropertyInput) =>
       editing ? updateProperty(propertyId, data) : createProperty(data),
-    onError: error => {
+    onError: (error) => {
       // The server said which fields it did not accept: show each under its own field, and say so in a toast.
-      const fields = serverFieldErrors(error, t);
+      const fields = serverFieldErrors(error, t, marketRef.current);
       if (fields) {
         setErrors(fields);
         showToast(toastForErrors(fields, t));
@@ -507,7 +638,7 @@ export default function AddPropertyScreen({ navigation, route }: Props) {
       }
       showToast(errorMessage(error, t));
     },
-    onSuccess: async property => {
+    onSuccess: async (property) => {
       // A new listing may have spent the welcome gift or a bonus credit: ask the server for the account again so the
       // balances (and the prompt) follow.
       if (!editing) getMe().then(updateUser, () => undefined);
@@ -518,14 +649,14 @@ export default function AddPropertyScreen({ navigation, route }: Props) {
           try {
             const used = await frameSpend.mutateAsync(property.id);
             showToast(
-              t('checkout.creditUsed', {
+              t("checkout.creditUsed", {
                 count: formatNumber(used.featured_credits, 0),
               }),
-              'success',
+              "success"
             );
           } catch {
             // The listing is saved either way; only the frame did not happen.
-            showToast(t('frame.creditFailed'));
+            showToast(t("frame.creditFailed"));
           }
         } else {
           // No credit: pay for the frame here, in the sheet. Closing the sheet from now on lands on the listing.
@@ -543,12 +674,12 @@ export default function AddPropertyScreen({ navigation, route }: Props) {
     stepAside(() =>
       editing
         ? navigation.goBack()
-        : navigation.replace('PropertyDetails', { id }),
+        : navigation.replace("PropertyDetails", { id })
     );
 
   // Editing: the form fades in over the loader once the listing has arrived.
   const reveal = useReveal(editing && existing.isPending);
-  const sheetTitle = editing ? t('add.editTitle') : t('nav.addProperty');
+  const sheetTitle = editing ? t("add.editTitle") : t("nav.addProperty");
   /** The sheet around whatever the screen has to show right now. */
   const sheet = (content: React.ReactNode, footer?: React.ReactNode) => (
     <BottomSheet
@@ -565,15 +696,15 @@ export default function AddPropertyScreen({ navigation, route }: Props) {
     </BottomSheet>
   );
 
-  if (status !== 'signedIn') {
+  if (status !== "signedIn") {
     return sheet(
-      <EmptyView message={t('auth.signInRequired')}>
+      <EmptyView message={t("auth.signInRequired")}>
         <Button
           icon="login"
-          title={t('auth.signIn')}
-          onPress={() => stepAside(() => navigation.navigate('Auth'))}
+          title={t("auth.signIn")}
+          onPress={() => stepAside(() => navigation.navigate("Auth"))}
         />
-      </EmptyView>,
+      </EmptyView>
     );
   }
   if (editing && existing.isPending) return sheet(<LoadingView />);
@@ -582,7 +713,7 @@ export default function AddPropertyScreen({ navigation, route }: Props) {
       <ErrorView
         message={errorMessage(existing.error, t)}
         onRetry={() => existing.refetch()}
-      />,
+      />
     );
   }
 
@@ -594,7 +725,7 @@ export default function AddPropertyScreen({ navigation, route }: Props) {
           propertyId={payingFrame}
           onDone={() => leave(payingFrame)}
         />
-      </View>,
+      </View>
     );
   }
 
@@ -607,19 +738,26 @@ export default function AddPropertyScreen({ navigation, route }: Props) {
   const areaHelper =
     typedArea === null
       ? undefined
-      : `${formatNumber(typedArea)} ${t('unit.sqm')}`;
+      : `${formatNumber(typedArea)} ${t("unit.sqm")}`;
   // The price typed so far, written back with its currency, like the area above: "۲۵,۰۰۰ افغانی" or "۲۵,۰۰۰ دالر".
   const typedPrice = parseNumberInput(priceText);
   const priceHelper =
     typedPrice === null
       ? undefined
       : `${formatNumber(typedPrice)} ${t(`currency.${currency}`)}`;
+  // The monthly rent typed so far, written back with its currency like the price above.
+  const typedRent = parseNumberInput(rentText);
+  const rentHelper =
+    typedRent === null
+      ? undefined
+      : `${formatNumber(typedRent)} ${t(`currency.${currency}`)}`;
+  const mortgageRent = deal === "MORTGAGE_RENT";
   // The mortgage length typed so far; a number of years also says how many months it comes to.
-  const mortgage = deal === 'MORTGAGE_GROWI';
+  const mortgage = deal === "MORTGAGE_GROWI";
   const typedMonths = monthsFromInput(durationText, durationUnit);
   const durationHelper =
-    mortgage && durationUnit === 'year' && typeof typedMonths === 'number'
-      ? t('mortgage.equals', { months: formatNumber(typedMonths, 0) })
+    mortgage && durationUnit === "year" && typeof typedMonths === "number"
+      ? t("mortgage.equals", { months: formatNumber(typedMonths, 0) })
       : undefined;
   // What turning the frame on does, so nobody is surprised by a payment page: it costs a credit, or money.
   const featuredUntil =
@@ -628,12 +766,12 @@ export default function AddPropertyScreen({ navigation, route }: Props) {
     ? format.price(pricing.data.featured_ad, pricing.data.currency)
     : null;
   const frameHelper = featuredUntil
-    ? t('frame.toggleExtends', { date: formatDate(featuredUntil) })
+    ? t("frame.toggleExtends", { date: formatDate(featuredUntil) })
     : frameCredits > 0
-    ? t('frame.toggleCredit', { count: formatNumber(frameCredits, 0) })
+    ? t("frame.toggleCredit", { count: formatNumber(frameCredits, 0) })
     : framePrice
-    ? t('frame.togglePay', { price: framePrice })
-    : t('frame.togglePayGeneric');
+    ? t("frame.togglePay", { price: framePrice })
+    : t("frame.togglePayGeneric");
 
   /** "۲,۵۰۰,۰۰۰": a sample figure for an empty box (the lighter placeholder colour is what says it is only a hint). */
   const example = (amount: number) => formatNumber(amount);
@@ -643,9 +781,16 @@ export default function AddPropertyScreen({ navigation, route }: Props) {
     lookupAbort.current?.abort();
     const abort = new AbortController();
     lookupAbort.current = abort;
-    setLookup('finding');
-    const place = await describeSpot(point, { language, signal: abort.signal });
+    setLookup("finding");
+    const asked = await describeSpot(point, { language, signal: abort.signal });
     if (abort.signal.aborted) return;
+    const place = provinceFits(asked.province)
+      ? asked
+      : {
+          ...asked,
+          province: nearestProvince(point, marketRef.current),
+          provinceApproximate: true,
+        };
     // The service could not describe the spot: say so, so the person knows to write the address themselves.
     if (!place.answered) {
       if (
@@ -655,9 +800,9 @@ export default function AddPropertyScreen({ navigation, route }: Props) {
         provinceIsAuto.current = true;
         setProvince(place.province);
         setProvinceGuessed(true);
-        clearError('province');
+        clearError("province");
       }
-      setLookup('failed');
+      setLookup("failed");
       return;
     }
 
@@ -672,26 +817,26 @@ export default function AddPropertyScreen({ navigation, route }: Props) {
         ? place.province
         : now.province;
     const found = addressFrom({
-      province: provinceHere ? provinceHere.name[language] : '',
+      province: provinceHere ? provinceHere.name[language] : "",
       district: place.district,
       neighborhood: place.neighborhood,
       street: place.street,
     });
     if (
       found &&
-      (now.address === '' || now.address === filledWith.current.address)
+      (now.address === "" || now.address === filledWith.current.address)
     ) {
       setAddress(found);
       filledWith.current.address = found;
-      clearError('address');
+      clearError("address");
     }
     if (place.province && (now.province === null || provinceIsAuto.current)) {
       provinceIsAuto.current = true;
       setProvince(place.province);
       setProvinceGuessed(place.provinceApproximate);
-      clearError('province');
+      clearError("province");
     }
-    setLookup('filled');
+    setLookup("filled");
   };
 
   describePlace.current = findAddress;
@@ -700,7 +845,7 @@ export default function AddPropertyScreen({ navigation, route }: Props) {
     setCoordinate(point);
     pinRef.current = point;
     setOutside(false);
-    clearError('location');
+    clearError("location");
     if (lookupTimer.current) clearTimeout(lookupTimer.current);
     lookupTimer.current = setTimeout(() => {
       findAddress(point);
@@ -735,6 +880,9 @@ export default function AddPropertyScreen({ navigation, route }: Props) {
     const area = parseNumberInput(areaText);
     const price = parseNumberInput(priceText);
     const raw = {
+      // The listing's country (the person's, found from the phone; there is no picker on the form). It is checked with
+      // the rest and sent only with a new listing: an existing one keeps the country it has (the server refuses a move).
+      market,
       title,
       description,
       type,
@@ -743,17 +891,25 @@ export default function AddPropertyScreen({ navigation, route }: Props) {
       deal_type: deal,
       // Only a mortgage has a length. (An edit that moves a listing off a mortgage needs no null: the server drops it.)
       mortgage_months:
-        mortgage && typeof typedMonths === 'number' ? typedMonths : undefined,
+        mortgage && typeof typedMonths === "number" ? typedMonths : undefined,
       // Neither term is sent unless it clears one that was there.
       price_terms:
         priceTerms ?? (editing && original?.price_terms ? null : undefined),
       price: price === null ? undefined : roundTo2(price),
+      // Only a mortgage-and-rent has a monthly rent (a listing moved off that deal loses it on the server).
+      monthly_rent:
+        mortgageRent && typedRent !== null ? roundTo2(typedRent) : undefined,
+      // The tags are Iran's and the deed Afghanistan's. An edit that empties them sends [] / null so they are cleared.
+      features: config.features.length > 0 ? features : undefined,
+      deed_type:
+        config.deedTypes.length > 0
+          ? deed ?? (editing && original?.deed_type ? null : undefined)
+          : undefined,
       currency,
-      area_sqm:
-        area === null ? undefined : roundTo2(area),
+      area_sqm: area === null ? undefined : roundTo2(area),
       bedrooms: hasRooms ? bedrooms ?? undefined : undefined,
       bathrooms: hasRooms ? bathrooms ?? undefined : undefined,
-      province: province ? provinceValue(province) : '',
+      province: province ? provinceValue(province) : "",
       district,
       neighborhood,
       address,
@@ -761,34 +917,42 @@ export default function AddPropertyScreen({ navigation, route }: Props) {
       // sent, so the server keeps it.)
       lat: coordinate?.latitude,
       lng: coordinate?.longitude,
-      images: imageLinks.map(link => link.trim()).filter(Boolean),
+      images: imageLinks.map((link) => link.trim()).filter(Boolean),
     };
 
     const next: FieldErrors = {};
     // The address is always needed (a pin does not stand in for it); the schema alone lets a pin do that.
-    if (!address.trim()) next.address = t('add.addressMissing');
+    if (!address.trim()) next.address = t("add.addressMissing");
     // The schema lets a count be left out; this form does not (a listing without them is not comparable).
-    if (hasRooms && bedrooms === null) next.bedrooms = t('add.required');
-    if (hasRooms && bathrooms === null) next.bathrooms = t('add.required');
+    if (hasRooms && bedrooms === null) next.bedrooms = t("add.required");
+    if (hasRooms && bathrooms === null) next.bathrooms = t("add.required");
+    // A mortgage-and-rent needs its rent; the schema says so, this words it in the form's own terms.
+    if (mortgageRent && typedRent === null && !rentText.trim())
+      next.monthly_rent = t("add.required");
     // A mortgage says how long it runs; the schema lets it be left out, this form does not.
-    if (mortgage && typedMonths === 'empty')
-      next.mortgage_months = t('add.required');
-    else if (mortgage && typedMonths === 'invalid')
-      next.mortgage_months = fieldMessage('mortgage_months', 'invalid', t);
+    if (mortgage && typedMonths === "empty")
+      next.mortgage_months = t("add.required");
+    else if (mortgage && typedMonths === "invalid")
+      next.mortgage_months = fieldMessage("mortgage_months", "invalid", t);
 
     // The same schema the server enforces, so mistakes are caught before a round trip.
     const parsed = createPropertySchema.safeParse(raw);
     if (!parsed.success) {
       for (const issue of parsed.error.issues) {
-        const field = formFieldFor(String(issue.path[0] ?? ''));
+        const field = formFieldFor(String(issue.path[0] ?? ""));
         if (!field || next[field]) continue;
         const value = (raw as Record<string, unknown>)[issue.path[0] as string];
         const empty =
           value === undefined ||
-          (typeof value === 'string' && value.trim() === '') ||
+          (typeof value === "string" && value.trim() === "") ||
           (Array.isArray(value) && !value.length);
         // Each field says what is wrong with it in its own words (a price is not "invalid", it is "not a number above zero").
-        next[field] = fieldMessage(field, empty ? 'required' : 'invalid', t);
+        next[field] = fieldMessage(
+          field,
+          empty ? "required" : "invalid",
+          t,
+          market
+        );
       }
     }
     if (!parsed.success || Object.keys(next).length > 0) {
@@ -804,102 +968,117 @@ export default function AddPropertyScreen({ navigation, route }: Props) {
     // field nobody filled in.
     const { unit: sentUnit, ...rest } = parsed.data;
     const clearsUnit = editing && Boolean(original?.unit);
-    mutation.mutate(sentUnit || clearsUnit ? parsed.data : rest);
+    // An edit does not name the country (the update refuses the field).
+    const send = sentUnit || clearsUnit ? parsed.data : rest;
+    if (editing) {
+      const patch: Partial<typeof send> = { ...send };
+      delete patch.market;
+      mutation.mutate(patch as typeof send);
+    } else {
+      mutation.mutate(send);
+    }
   };
 
   const setImageLink = (index: number, value: string) =>
-    setImageLinks(links =>
-      links.map((link, i) => (i === index ? value : link)),
+    setImageLinks((links) =>
+      links.map((link, i) => (i === index ? value : link))
     );
 
   /** The place field: the address, always required. */
-  const placeLabel = t('add.place');
+  const placeLabel = t("add.place");
 
   /** The place field, the same in the form and at the top of the fullscreen map. */
   const placeField = (testID: string, compact = false) => (
     <PlaceSearchField
       testID={testID}
-      label={compact ? '' : placeLabel}
+      label={compact ? "" : placeLabel}
       value={address}
-      onChangeText={v => {
+      onChangeText={(v) => {
         setAddress(v);
         setPlaceNote(null);
-        clearError('address');
+        clearError("address");
       }}
       onPlace={placeChosen}
-      onPlaceFailed={() => setPlaceNote({ kind: 'notResolved' })}
+      onPlaceFailed={() => setPlaceNote({ kind: "notResolved" })}
       onNoMatch={chaseAddress}
       near={coordinate ?? me ?? null}
       language={language}
-      placeholder={t('add.placePlaceholder')}
+      placeholder={t(
+        market === "IR" ? "add.placePlaceholderIR" : "add.placePlaceholder"
+      )}
       error={compact ? undefined : errors.address}
     />
   );
 
   /** What the place field just did, or what the map made of a written address. */
   const placeStatus =
-    placeNote?.kind === 'chosen' ? (
+    placeNote?.kind === "chosen" ? (
       <AppText
         variant="caption"
         color={colors.primaryDark}
         style={styles.status}
         testID="place-chosen"
       >
-        {t('add.placeChosen', { name: placeNote.name })}
+        {t("add.placeChosen", { name: placeNote.name })}
       </AppText>
-    ) : placeNote?.kind === 'notResolved' ? (
+    ) : placeNote?.kind === "notResolved" ? (
       <AppText variant="caption" color={colors.textMuted} style={styles.status}>
-        {t('add.placeNotResolved')}
+        {t("add.placeNotResolved")}
       </AppText>
-    ) : mapSync === 'finding' ? (
+    ) : mapSync === "finding" ? (
       <View style={[styles.finding, styles.status]}>
         <View style={styles.finderSlot}>
           <MapLoader size={26} />
         </View>
         <AppText variant="caption" color={colors.textMuted}>
-          {t('add.mapFinding')}
+          {t("add.mapFinding")}
         </AppText>
       </View>
-    ) : mapSync === 'found' ? (
-      <AppText variant="caption" color={colors.primaryDark} style={styles.status}>
-        {t('add.mapFound')}
+    ) : mapSync === "found" ? (
+      <AppText
+        variant="caption"
+        color={colors.primaryDark}
+        style={styles.status}
+      >
+        {t("add.mapFound")}
       </AppText>
-    ) : mapSync === 'province' && province ? (
+    ) : mapSync === "province" && province ? (
       <AppText variant="caption" color={colors.textMuted} style={styles.status}>
-        {t('add.mapNotFoundProvince', { province: province.name[language] })}
+        {t("add.mapNotFoundProvince", { province: province.name[language] })}
       </AppText>
-    ) : mapSync === 'none' ? (
+    ) : mapSync === "none" ? (
       <AppText variant="caption" color={colors.textMuted} style={styles.status}>
-        {t('add.mapNotFound')}
+        {t("add.mapNotFound")}
       </AppText>
     ) : null;
 
   /** What the pin's address lookup did. */
   const pinStatus =
-    lookup === 'finding' ? (
+    lookup === "finding" ? (
       <View style={styles.finding}>
         <View style={styles.finderSlot}>
           <MapLoader size={26} />
         </View>
         <AppText variant="caption" color={colors.textMuted}>
-          {t('add.finding')}
+          {t("add.finding")}
         </AppText>
       </View>
-    ) : lookup === 'failed' ? (
+    ) : lookup === "failed" ? (
       <AppText variant="caption" color={colors.textMuted}>
-        {t('add.lookupFailed')}
+        {t("add.lookupFailed")}
       </AppText>
     ) : null;
 
   /** The map, in the form or fullscreen: one component and one state, so both show the same pin. */
   const editor = (big: boolean) => (
     <LocationEditor
-      testID={big ? 'location-editor-full' : 'location-editor'}
-      mapTestID={big ? 'location-picker-map-full' : 'location-picker-map'}
+      testID={big ? "location-editor-full" : "location-editor"}
+      mapTestID={big ? "location-picker-map-full" : "location-picker-map"}
       pin={coordinate}
       onPin={placePin}
       deal={deal}
       type={type}
+      market={market}
       camera={camera}
       me={me}
       onLocate={() => locateMe(false)}
@@ -922,9 +1101,9 @@ export default function AddPropertyScreen({ navigation, route }: Props) {
         <Banner kind="error" message={errorMessage(mutation.error, t)}>
           <Button
             icon="card"
-            title={t('add.buySubscription')}
+            title={t("add.buySubscription")}
             variant="outline"
-            onPress={() => stepAside(() => navigation.navigate('Upgrade'))}
+            onPress={() => stepAside(() => navigation.navigate("Upgrade"))}
           />
         </Banner>
       ) : null}
@@ -933,8 +1112,8 @@ export default function AddPropertyScreen({ navigation, route }: Props) {
         <Banner kind="promo" message={listingLimitMessage(mutation.error, t)}>
           <Button
             icon="up"
-            title={t('add.upgradeAccount')}
-            onPress={() => stepAside(() => navigation.navigate('Upgrade'))}
+            title={t("add.upgradeAccount")}
+            onPress={() => stepAside(() => navigation.navigate("Upgrade"))}
           />
         </Banner>
       ) : null}
@@ -942,64 +1121,70 @@ export default function AddPropertyScreen({ navigation, route }: Props) {
       {isAnyListingLimit(mutation.error) ? (
         <LadderUnlockBanner
           onUnlocked={submit}
-          onInvite={() => stepAside(() => navigation.navigate('Referral'))}
+          onInvite={() => stepAside(() => navigation.navigate("Referral"))}
         />
       ) : null}
 
-      <Card title={t('add.sectionPlace')} flush>
+      <Card title={t("add.sectionPlace")} flush>
         {/* One field for the address or the name of a nearby place; picking a suggestion flies the map there. */}
-        <View ref={anchor('address')} collapsable={false}>
-          {placeField('place-search')}
+        <View ref={anchor("address")} collapsable={false}>
+          {placeField("place-search")}
           {placeStatus}
         </View>
-        {/* The province is still its own value (filters, the database) and is written at the head of the address
-            line. Its row, with the button to change it, is only there while it is unknown or only a guess (or
-            refused): once it is certain there is nothing to say about it. */}
-        <View ref={anchor('province')} collapsable={false}>
-          {!province || provinceGuessed || errors.province ? (
-            <View style={styles.provinceRow}>
-              <AppText
-                variant="bodySm"
-                color={province ? colors.textSecondary : colors.textMuted}
-                style={styles.provinceText}
-              >
-                {province
-                  ? t('add.provinceLine', { name: province.name[language] })
-                  : t('add.provinceUnknown')}
-              </AppText>
-              <Pressable
-                accessibilityRole="button"
-                onPress={() => setPickerOpen(true)}
-                hitSlop={8}
-                testID="province-change"
-              >
-                <AppText variant="label" color={colors.primary}>
-                  {province ? t('add.provinceChange') : t('home.selectProvince')}
+        {/* Afghanistan asks for the province. An Iranian listing does not: the pin and the written address say where it
+            is, and the province is filled in from the pin behind the scenes. The province is its own value (filters,
+            the database) and is written at the head of the address line. Its row, with the button to change it, is only
+            there while it is unknown or only a guess (or refused): once it is certain there is nothing to say. */}
+        {market === "IR" ? null : (
+          <View ref={anchor("province")} collapsable={false}>
+            {!province || provinceGuessed || errors.province ? (
+              <View style={styles.provinceRow}>
+                <AppText
+                  variant="bodySm"
+                  color={province ? colors.textSecondary : colors.textMuted}
+                  style={styles.provinceText}
+                >
+                  {province
+                    ? t("add.provinceLine", { name: province.name[language] })
+                    : t("add.provinceUnknown")}
                 </AppText>
-              </Pressable>
-            </View>
-          ) : null}
-          {errors.province ? (
-            <AppText
-              variant="caption"
-              color={colors.danger}
-              style={styles.fieldError}
-            >
-              {errors.province}
-            </AppText>
-          ) : provinceGuessed ? (
-            <AppText
-              variant="caption"
-              color={colors.accentText}
-              style={styles.fieldError}
-            >
-              {t('add.provinceGuessed')}
-            </AppText>
-          ) : null}
-        </View>
-        <View ref={anchor('location')} collapsable={false}>
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={() => setPickerOpen(true)}
+                  hitSlop={8}
+                  testID="province-change"
+                >
+                  <AppText variant="label" color={colors.primary}>
+                    {province
+                      ? t("add.provinceChange")
+                      : t("home.selectProvince")}
+                  </AppText>
+                </Pressable>
+              </View>
+            ) : null}
+            {errors.province ? (
+              <AppText
+                variant="caption"
+                color={colors.danger}
+                style={styles.fieldError}
+              >
+                {errors.province}
+              </AppText>
+            ) : provinceGuessed ? (
+              <AppText
+                variant="caption"
+                color={colors.accentText}
+                style={styles.fieldError}
+              >
+                {t("add.provinceGuessed")}
+              </AppText>
+            ) : null}
+          </View>
+        )}
+        <View ref={anchor("location")} collapsable={false}>
           <PinSection
             outside={outside}
+            market={market}
             error={errors.location}
             map={fullscreen ? null : editor(false)}
           >
@@ -1008,67 +1193,68 @@ export default function AddPropertyScreen({ navigation, route }: Props) {
         </View>
       </Card>
 
-      <Card title={t('add.sectionBasics')} flush>
-        <View ref={anchor('title')} collapsable={false}>
+      <Card title={t("add.sectionBasics")} flush>
+        <View ref={anchor("title")} collapsable={false}>
           <TextField
-            label={t('add.titleField')}
+            label={t("add.titleField")}
             value={title}
-            onChangeText={v => {
+            onChangeText={(v) => {
               setTitle(v);
-              clearError('title');
+              clearError("title");
             }}
-            placeholder={t(`add.titleExamples.${type}`)}
+            placeholder={marketText(t, `add.titleExamples.${type}`, market)}
             maxLength={150}
             error={errors.title}
           />
         </View>
-        <View ref={anchor('type')} collapsable={false}>
+        <View ref={anchor("type")} collapsable={false}>
           <SelectField
             testID="type-select"
-            label={t('add.type')}
-            title={t('add.type')}
-            searchPlaceholder={t('add.typeSearch')}
+            label={t("add.type")}
+            title={t("add.type")}
+            searchPlaceholder={t("add.typeSearch")}
             value={type}
-            onChange={v => {
+            onChange={(v) => {
               setType(v);
-              clearError('type');
+              clearError("type");
             }}
-            options={PROPERTY_TYPES.map(p => ({
+            options={withCurrent(typesForDeal(market, deal), type).map((p) => ({
               value: p,
-              label: propertyTypeLabel(p, t),
+              label: propertyTypeLabel(p, t, market),
               icon: propertyLineIcon(p),
             }))}
             error={errors.type}
           />
         </View>
         {hasUnit ? (
-          <View ref={anchor('unit')} collapsable={false}>
+          <View ref={anchor("unit")} collapsable={false}>
             <TextField
-              label={`${t('add.unit')} (${t('common.optional')})`}
+              label={`${t("add.unit")} (${t("common.optional")})`}
               value={unit}
-              onChangeText={v => {
+              onChangeText={(v) => {
                 setUnit(v);
-                clearError('unit');
+                clearError("unit");
               }}
-              placeholder={t('add.unitPlaceholder')}
-              helper={t('add.unitHelp')}
+              placeholder={t("add.unitPlaceholder")}
+              helper={t("add.unitHelp")}
               maxLength={PROPERTY_UNIT_MAX_LENGTH}
               error={errors.unit}
             />
           </View>
         ) : null}
-        <View ref={anchor('deal_type')} collapsable={false}>
+        <View ref={anchor("deal_type")} collapsable={false}>
           <AppText variant="label" color={colors.textSecondary}>
-            {t('add.deal')}
+            {t("add.deal")}
           </AppText>
           <View style={styles.wrap}>
-            {DEAL_TYPES.map(d => (
+            {config.dealTypes.map((d) => (
               <Chip
                 compact
                 key={d}
-                label={t(`dealType.${d}`)}
+                testID={`deal-${d}`}
+                label={dealTypeLabel(d, market, t)}
                 selected={deal === d}
-                onPress={() => setDeal(d)}
+                onPress={() => chooseDeal(d)}
               />
             ))}
           </View>
@@ -1082,33 +1268,109 @@ export default function AddPropertyScreen({ navigation, route }: Props) {
             </AppText>
           ) : null}
         </View>
+        {config.features.length > 0 ? (
+          <View
+            ref={anchor("features")}
+            collapsable={false}
+            testID="form-features"
+          >
+            <AppText variant="label" color={colors.textSecondary}>
+              {`${t("listingFeature.label")} (${t("common.optional")})`}
+            </AppText>
+            <View style={styles.wrap}>
+              {config.features.map((f) => (
+                <Chip
+                  compact
+                  key={f}
+                  testID={`feature-${f}`}
+                  label={t(`listingFeature.${f}`)}
+                  selected={features.includes(f)}
+                  onPress={() => {
+                    // Kept in the market's own order, so the same ticks always save the same list.
+                    setFeatures((current) =>
+                      config.features.filter((x) =>
+                        x === f ? !current.includes(f) : current.includes(x)
+                      )
+                    );
+                    clearError("features");
+                  }}
+                />
+              ))}
+            </View>
+            {errors.features ? (
+              <AppText
+                variant="caption"
+                color={colors.danger}
+                style={styles.chipError}
+              >
+                {errors.features}
+              </AppText>
+            ) : null}
+          </View>
+        ) : null}
+        {config.deedTypes.length > 0 ? (
+          <View
+            ref={anchor("deed_type")}
+            collapsable={false}
+            testID="form-deed"
+          >
+            <AppText variant="label" color={colors.textSecondary}>
+              {`${t("deed.label")} (${t("common.optional")})`}
+            </AppText>
+            <View style={styles.wrap}>
+              {[...config.deedTypes, null].map((d) => (
+                <Chip
+                  compact
+                  key={d ?? "none"}
+                  testID={`deed-${d ?? "NONE"}`}
+                  label={d ? t(`deed.${d}`) : t("deed.none")}
+                  selected={deed === d}
+                  onPress={() => {
+                    setDeed(d);
+                    clearError("deed_type");
+                  }}
+                />
+              ))}
+            </View>
+            {errors.deed_type ? (
+              <AppText
+                variant="caption"
+                color={colors.danger}
+                style={styles.chipError}
+              >
+                {errors.deed_type}
+              </AppText>
+            ) : null}
+          </View>
+        ) : null}
       </Card>
 
-      <Card title={t('add.sectionPrice')} flush>
-        <View ref={anchor('price')} collapsable={false}>
+      <Card title={t("add.sectionPrice")} flush>
+        <View ref={anchor("price")} collapsable={false}>
           <TextField
-            label={t(`dealPrice.${deal}`)}
+            label={dealPriceLabel(deal, market, t)}
             value={priceText}
-            onChangeText={v => {
+            onChangeText={(v) => {
               setPriceText(v);
-              clearError('price');
+              clearError("price");
             }}
             keyboardType="decimal-pad"
-            placeholder={example(currency === 'USD' ? 25_000 : 2_500_000)}
+            placeholder={example(PRICE_EXAMPLES[currency])}
             thousands
             helper={priceHelper}
             error={errors.price}
           />
           <View style={styles.wrap}>
-            {CURRENCIES.map(c => (
+            {config.currencies.map((c) => (
               <Chip
                 compact
                 key={c}
+                testID={`currency-${c}`}
                 label={t(`currency.${c}`)}
                 selected={currency === c}
                 onPress={() => {
                   setCurrency(c);
-                  clearError('currency');
+                  clearError("currency");
                 }}
               />
             ))}
@@ -1123,18 +1385,36 @@ export default function AddPropertyScreen({ navigation, route }: Props) {
             </AppText>
           ) : null}
         </View>
-        {mortgage ? (
-          <View ref={anchor('mortgage_months')} collapsable={false}>
+        {mortgageRent ? (
+          <View ref={anchor("monthly_rent")} collapsable={false}>
             <TextField
-              testID="mortgage-duration"
-              label={t('mortgage.label')}
-              value={durationText}
-              onChangeText={v => {
-                setDurationText(v);
-                clearError('mortgage_months');
+              testID="monthly-rent-input"
+              label={t("add.monthlyRent")}
+              value={rentText}
+              onChangeText={(v) => {
+                setRentText(v);
+                clearError("monthly_rent");
               }}
               keyboardType="decimal-pad"
-              placeholder={t('mortgage.placeholder')}
+              placeholder={example(PRICE_EXAMPLES[currency] / 10)}
+              thousands
+              helper={rentHelper}
+              error={errors.monthly_rent}
+            />
+          </View>
+        ) : null}
+        {mortgage ? (
+          <View ref={anchor("mortgage_months")} collapsable={false}>
+            <TextField
+              testID="mortgage-duration"
+              label={marketText(t, "mortgage.label", market)}
+              value={durationText}
+              onChangeText={(v) => {
+                setDurationText(v);
+                clearError("mortgage_months");
+              }}
+              keyboardType="decimal-pad"
+              placeholder={t("mortgage.placeholder")}
               helper={durationHelper}
               error={errors.mortgage_months}
             />
@@ -1142,7 +1422,7 @@ export default function AddPropertyScreen({ navigation, route }: Props) {
               <SegmentedControl
                 value={durationUnit}
                 onChange={setDurationUnit}
-                options={(['month', 'year'] as const).map(measure => ({
+                options={(["month", "year"] as const).map((measure) => ({
                   value: measure,
                   label: t(`mortgage.${measure}`),
                 }))}
@@ -1150,20 +1430,20 @@ export default function AddPropertyScreen({ navigation, route }: Props) {
             </View>
           </View>
         ) : null}
-        <View ref={anchor('price_terms')} collapsable={false}>
+        <View ref={anchor("price_terms")} collapsable={false}>
           <AppText variant="label" color={colors.textSecondary}>
-            {`${t('priceTerms.label')} (${t('common.optional')})`}
+            {`${t("priceTerms.label")} (${t("common.optional")})`}
           </AppText>
           <View style={styles.wrap}>
-            {[...PRICE_TERMS, null].map(term => (
+            {[...PRICE_TERMS, null].map((term) => (
               <Chip
                 compact
-                key={term ?? 'none'}
-                label={t(`priceTerms.${term ?? 'NONE'}`)}
+                key={term ?? "none"}
+                label={priceTermsLabel(term ?? "NONE", market, t)}
                 selected={priceTerms === term}
                 onPress={() => {
                   setPriceTerms(term);
-                  clearError('price_terms');
+                  clearError("price_terms");
                 }}
               />
             ))}
@@ -1178,13 +1458,13 @@ export default function AddPropertyScreen({ navigation, route }: Props) {
             </AppText>
           ) : null}
         </View>
-        <View ref={anchor('area_sqm')} collapsable={false}>
+        <View ref={anchor("area_sqm")} collapsable={false}>
           <TextField
-            label={t('add.area')}
+            label={t("add.area")}
             value={areaText}
-            onChangeText={v => {
+            onChangeText={(v) => {
               setAreaText(v);
-              clearError('area_sqm');
+              clearError("area_sqm");
             }}
             keyboardType="decimal-pad"
             placeholder={example(200)}
@@ -1192,26 +1472,26 @@ export default function AddPropertyScreen({ navigation, route }: Props) {
             error={errors.area_sqm}
           />
         </View>
-        <View ref={anchor('bedrooms')} collapsable={false}>
+        <View ref={anchor("bedrooms")} collapsable={false}>
           {hasRooms ? (
             <View style={styles.counts}>
               <Stepper
-                label={t('add.bedrooms')}
+                label={t("add.bedrooms")}
                 required
                 value={bedrooms}
-                onChange={v => {
+                onChange={(v) => {
                   setBedrooms(v);
-                  clearError('bedrooms');
+                  clearError("bedrooms");
                 }}
                 error={errors.bedrooms}
               />
               <Stepper
-                label={t('add.bathrooms')}
+                label={t("add.bathrooms")}
                 required
                 value={bathrooms}
-                onChange={v => {
+                onChange={(v) => {
                   setBathrooms(v);
-                  clearError('bathrooms');
+                  clearError("bathrooms");
                 }}
                 error={errors.bathrooms}
               />
@@ -1220,43 +1500,43 @@ export default function AddPropertyScreen({ navigation, route }: Props) {
         </View>
       </Card>
 
-      <Card title={t('add.sectionDetails')} flush>
-        <View ref={anchor('description')} collapsable={false}>
+      <Card title={t("add.sectionDetails")} flush>
+        <View ref={anchor("description")} collapsable={false}>
           <TextField
-            label={t('add.descriptionLabel')}
+            label={t("add.descriptionLabel")}
             required
             value={description}
-            onChangeText={v => {
+            onChangeText={(v) => {
               setDescription(v);
-              clearError('description');
+              clearError("description");
             }}
-            placeholder={t('add.descriptionPlaceholder')}
+            placeholder={marketText(t, "add.descriptionPlaceholder", market)}
             multiline
             maxLength={5000}
             error={errors.description}
             style={styles.descriptionInput}
           />
         </View>
-        <View ref={anchor('images')} collapsable={false}>
+        <View ref={anchor("images")} collapsable={false}>
           <AppText variant="label" color={colors.textSecondary}>
-            {t('add.images')}
+            {t("add.images")}
           </AppText>
           <AppText
             variant="caption"
             color={colors.textMuted}
             style={styles.help}
           >
-            {t('add.imagesHelp')}
+            {t("add.imagesHelp")}
           </AppText>
           {imageLinks.map((link, index) => (
             <TextField
               key={index}
               value={link}
-              onChangeText={v => {
+              onChangeText={(v) => {
                 setImageLink(index, v);
-                clearError('images');
+                clearError("images");
               }}
-              placeholder={t('add.imageUrl')}
+              placeholder={t("add.imageUrl")}
               autoCapitalize="none"
               autoCorrect={false}
               keyboardType="url"
@@ -1268,9 +1548,9 @@ export default function AddPropertyScreen({ navigation, route }: Props) {
           {imageLinks.length < MAX_IMAGE_LINKS ? (
             <Button
               icon="plus"
-              title={t('add.addImage')}
+              title={t("add.addImage")}
               variant="outline"
-              onPress={() => setImageLinks(links => [...links, ''])}
+              onPress={() => setImageLinks((links) => [...links, ""])}
             />
           ) : null}
         </View>
@@ -1281,7 +1561,7 @@ export default function AddPropertyScreen({ navigation, route }: Props) {
       <SwitchRow
         gold
         testID="frame-switch"
-        label={t('frame.toggle', {
+        label={t("frame.toggle", {
           days: formatNumber(pricing.data?.featured_ad_days ?? 7, 0),
         })}
         helper={frameHelper}
@@ -1292,9 +1572,10 @@ export default function AddPropertyScreen({ navigation, route }: Props) {
 
       <ProvincePicker
         visible={pickerOpen}
+        market={market}
         selectedId={province?.id ?? null}
         onClose={() => setPickerOpen(false)}
-        onSelect={p => {
+        onSelect={(p) => {
           if (!p) return;
           // Chosen by hand: from now on a pin does not change it.
           provinceIsAuto.current = false;
@@ -1305,14 +1586,14 @@ export default function AddPropertyScreen({ navigation, route }: Props) {
             const swapped = swapProvince(
               address,
               province.name[language],
-              p.name[language],
+              p.name[language]
             );
             setAddress(swapped);
             filledWith.current.address = swapped;
           }
           setProvince(p);
           moveCamera(provinceCamera(p));
-          clearError('province');
+          clearError("province");
           setPickerOpen(false);
         }}
       />
@@ -1326,32 +1607,34 @@ export default function AddPropertyScreen({ navigation, route }: Props) {
         onRequestClose={() => closeFullscreen()}
       >
         <SafeAreaProvider>
-          <SafeAreaView style={styles.full} edges={['top', 'bottom']}>
+          <SafeAreaView style={styles.full} edges={["top", "bottom"]}>
             <View style={styles.fullHeader}>
-              {placeField('place-search-full', true)}
+              {placeField("place-search-full", true)}
               {placeStatus}
             </View>
-            <View style={styles.fullMap}>{fullscreen ? editor(true) : null}</View>
+            <View style={styles.fullMap}>
+              {fullscreen ? editor(true) : null}
+            </View>
             <View style={styles.fullFooter}>
               <View style={styles.fullSummary}>
                 {/* Only what needs attention: the first hint, a lookup in progress or failed, a tap outside the
                     country. What the map already shows (the area, "placed", "address filled") is not repeated. */}
                 {!coordinate ? (
                   <AppText variant="caption" color={colors.textMuted}>
-                    {t('map.tapToPlace')}
+                    {t("map.tapToPlace")}
                   </AppText>
                 ) : null}
                 {pinStatus}
                 {outside ? (
                   <AppText variant="caption" color={colors.danger}>
-                    {t('map.outside')}
+                    {t("map.outside", { market: marketName(market, t) })}
                   </AppText>
                 ) : null}
               </View>
               <Button
                 testID="map-done"
                 icon="check"
-                title={t('map.done')}
+                title={t("map.done")}
                 onPress={closeFullscreen}
               />
             </View>
@@ -1367,11 +1650,11 @@ export default function AddPropertyScreen({ navigation, route }: Props) {
     </KeyboardAwareScrollView>,
     <Button
       icon="check"
-      title={editing ? t('add.save') : t('add.submit')}
+      title={editing ? t("add.save") : t("add.submit")}
       onPress={submit}
       loading={mutation.isPending}
       style={styles.submit}
-    />,
+    />
   );
 }
 
@@ -1379,25 +1662,25 @@ const styles = StyleSheet.create({
   content: { padding: spacing.lg, paddingBottom: spacing.xl },
   submit: { flex: 1 },
   wrap: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
+    flexDirection: "row",
+    flexWrap: "wrap",
     gap: spacing.sm,
     marginTop: spacing.sm,
     marginBottom: spacing.lg,
   },
   toggle: { marginTop: spacing.xs, marginBottom: spacing.lg },
-  counts: { flexDirection: 'row', gap: spacing.md },
-  finding: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  counts: { flexDirection: "row", gap: spacing.md },
+  finding: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
   // The map loader's pin hops above its box: the slot keeps the line as tall as the words.
   finderSlot: {
     width: 26,
     height: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    justifyContent: "center",
   },
   select: {
     minHeight: 48,
-    justifyContent: 'center',
+    justifyContent: "center",
     borderWidth: 1,
     borderColor: colors.border,
     borderRadius: radius.md,
@@ -1412,8 +1695,8 @@ const styles = StyleSheet.create({
   chipError: { marginTop: -spacing.sm, marginBottom: spacing.md },
   status: { marginTop: -spacing.sm, marginBottom: spacing.md },
   provinceRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     gap: spacing.md,
     marginBottom: spacing.lg,
   },
@@ -1427,8 +1710,8 @@ const styles = StyleSheet.create({
   },
   fullMap: { flex: 1 },
   fullFooter: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     gap: spacing.md,
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.md,

@@ -3,8 +3,22 @@ import { PricingKey } from '../generated/prisma/client.js';
 import type { HesabPaySettings } from './hesabpay.config.js';
 import { PricingService } from './pricing.service.js';
 
+const IRAN = {
+  currency: 'TOMAN',
+  manual: { accounts: [{ kind: 'CARD', number: '6037 9912 3456 7893', holder: 'Bongah', bank: null }], note: null },
+  prices: {
+    subscription: { MONTHLY: '1800000', QUARTERLY: '4800000', SEMIANNUAL: '7800000', YEARLY: '12000000' },
+    subscriptionListMonthly: '2000000',
+    ladder: '50000',
+    featuredAd: '100000',
+    mapLocation: '30000',
+    contactCredits: '40000',
+  },
+};
+
 const settings = {
   currency: 'AFGHANI',
+  iran: IRAN,
   featuredAdDays: 7,
   contactCreditsPerPack: 10,
   prices: {
@@ -35,6 +49,7 @@ describe('PricingService', () => {
     expect(effective.FEATURED_AD).toEqual({ price: '100.50', quantity: 7 });
     expect(effective.CONTACT_CREDITS).toEqual({ price: '40', quantity: 10 });
     expect(pricing.toWire(effective)).toEqual({
+      market: 'AF',
       currency: 'AFGHANI',
       subscription: { MONTHLY: 900, QUARTERLY: 2400, SEMIANNUAL: 3900, YEARLY: 6000 },
       subscription_list: { MONTHLY: 1000, QUARTERLY: 3000, SEMIANNUAL: 6000, YEARLY: 12000 },
@@ -98,5 +113,32 @@ describe('PricingService', () => {
       updated_at: '2026-10-01T00:00:00.000Z',
     });
     expect(list.find((e) => e.key === 'LADDER')).toMatchObject({ price: 50, overridden: false, updated_at: null });
+  });
+
+  describe('Iran', () => {
+    it('prices in toman from its own settings, ignoring the Afghan price list overrides', async () => {
+      const pricing = service([{ key: PricingKey.LADDER, price: 75.25, quantity: null }]);
+      const effective = await pricing.effective(undefined, 'IR');
+      expect(effective.LADDER).toEqual({ price: '50000', quantity: null }); // the override is Afghanistan's
+      const wire = pricing.toWire(effective, 'IR');
+      expect(wire).toMatchObject({
+        market: 'IR',
+        currency: 'TOMAN',
+        ladder: 50000,
+        featured_ad: 100000,
+        featured_ad_days: 7,
+        subscription: { MONTHLY: 1800000, YEARLY: 12000000 },
+        subscription_list: { MONTHLY: 2000000, YEARLY: 24000000 },
+      });
+      // And Afghanistan is untouched by it.
+      expect((await pricing.effective()).LADDER).toEqual({ price: '75.25', quantity: null });
+    });
+
+    it('says plainly that Iranian payments are unavailable when no Iranian account is set, instead of charging afghani', async () => {
+      const bare = new PricingService({ pricingOverride: { findMany: async () => [] } } as never, { ...settings, iran: null } as never);
+      await expect(bare.effective(undefined, 'IR')).rejects.toMatchObject({
+        response: { code: 'MARKET_PAYMENTS_UNAVAILABLE', market: 'IR' },
+      });
+    });
   });
 });

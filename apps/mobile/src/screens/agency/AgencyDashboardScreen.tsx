@@ -14,6 +14,7 @@ import { Screen } from '../../components/Screen';
 import { Reveal, useReveal } from '../../components/Reveal';
 import { EmptyView, ErrorView, LoadingView } from '../../components/States';
 import { formatDate, formatNumber } from '../../i18n/format';
+import { listingPriceText } from '../../i18n/rentPrice';
 import { useFormat } from '../../i18n/useFormat';
 import type { RootStackParamList } from '../../navigation/types';
 import { colors, radius, spacing, surfaces } from '../../theme';
@@ -265,7 +266,7 @@ function TopListingRow({
           {listing.title}
         </AppText>
         <AppText variant="caption" color={colors.textMuted}>
-          {format.price(listing.price, listing.currency)} ·{' '}
+          {listingPriceText(listing, format.price, t)} ·{' '}
           {t('dashboard.views', { count: formatNumber(listing.view_count, 0) })}
         </AppText>
         {listing.is_featured ? (

@@ -482,7 +482,9 @@ describe('AddPropertyScreen: location is free and has two ways in', () => {
       tapMap(tree.root, 'location-picker-map', [-0.12, 51.5]),
     );
     expect(mapParts(tree.root, 'ViewAnnotation')).toHaveLength(0);
-    expect(allText(tree.root)).toContain(prs.map.outside);
+    expect(allText(tree.root)).toContain(
+      prs.map.outside.replace('{{market}}', prs.market.AF),
+    );
     await afterLookupDelay();
     expect(geocoderCalls()).toHaveLength(0);
   });
@@ -504,6 +506,7 @@ describe('AddPropertyScreen: the form itself', () => {
       prs.propertyType.APARTMENT,
       prs.propertyType.SHOP,
       prs.propertyType.OFFICE,
+      prs.propertyType.WAREHOUSE,
       prs.propertyType.LAND,
       prs.propertyType.GARDEN,
       prs.propertyType.VILLA,
@@ -772,7 +775,7 @@ describe('AddPropertyScreen: the form in its new order', () => {
     const search = tree.root.find(n => n.props.testID === 'type-select-search');
     const rows = () =>
       tree.root.findAll(n => String(n.props.testID ?? '').startsWith('type-select-option-') && typeof n.props.onPress === 'function');
-    expect(rows()).toHaveLength(9);
+    expect(rows()).toHaveLength(10);
     // Typing part of a name narrows the list.
     await act(async () => search.props.onChangeText('آپار'));
     expect(rows().map(r => r.props.testID)).toEqual(['type-select-option-APARTMENT']);
@@ -1327,7 +1330,9 @@ describe('AddPropertyScreen: the map fills the form', () => {
     const asked = geocoderCalls().length;
     await drop(tree.root, [-0.12, 51.5]);
     await afterLookupDelay();
-    expect(allText(tree.root)).toContain(prs.map.outside);
+    expect(allText(tree.root)).toContain(
+      prs.map.outside.replace('{{market}}', prs.market.AF),
+    );
     expect(geocoderCalls().length).toBe(asked);
     expect(annotation(tree.root).props.lngLat).toEqual([69.1, 34.5]);
   });

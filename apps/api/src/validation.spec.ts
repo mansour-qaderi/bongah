@@ -1,6 +1,8 @@
 import {
+  adminFeedbackQuerySchema,
   createFeedbackSchema,
   createPropertySchema,
+  giftUserSchema,
   initiatePaymentSchema,
   listPropertiesQuerySchema,
   normalizePlaceName,
@@ -27,6 +29,26 @@ const valid = {
 };
 const fields = (r: { success: boolean; error?: { issues: { path: PropertyKey[] }[] } }) =>
   r.error?.issues.map((i) => i.path.map(String).join('.')) ?? [];
+
+describe('admin gifts and the feedback inbox', () => {
+  it('takes free listings and/or featured frames, at least one, with a short note', () => {
+    expect(giftUserSchema.parse({ listing_credits: 2 })).toEqual({ listing_credits: 2, featured_credits: 0 });
+    expect(giftUserSchema.parse({ featured_credits: 1, note: '  Launch   gift ' })).toEqual({
+      listing_credits: 0,
+      featured_credits: 1,
+      note: 'Launch gift',
+    });
+    for (const bad of [{}, { listing_credits: 0 }, { listing_credits: 51 }, { featured_credits: -1 }, { listing_credits: 1.5 }, { listing_credits: 1, role: 'ADMIN' }]) {
+      expect(giftUserSchema.safeParse(bad).success).toBe(false);
+    }
+  });
+
+  it('reads the inbox filters from the query string', () => {
+    expect(adminFeedbackQuerySchema.parse({})).toMatchObject({ page: 1 });
+    expect(adminFeedbackQuerySchema.parse({ category: 'PROBLEM', q: ' سلام ' })).toMatchObject({ category: 'PROBLEM', q: 'سلام' });
+    expect(adminFeedbackQuerySchema.safeParse({ category: 'RUDE' }).success).toBe(false);
+  });
+});
 
 describe('normalizePlaceName', () => {
   it('folds Arabic look-alike letters, NFKC forms and whitespace', () => {
@@ -63,10 +85,10 @@ describe('createPropertySchema', () => {
     ['price', { price: 1.005 }],
     ['price', { price: '100' }],
     ['price', { price: Number.POSITIVE_INFINITY }],
-    ['price', { price: 1_000_000_000_000 }],
+    ['price', { price: 100_000_000_000_000 }],
     ['area_sqm', { area_sqm: 0 }],
-    ['lat', { lat: 38.7 }],
-    ['lng', { lng: 60.3 }],
+    ['lat', { lat: 40.5 }],
+    ['lng', { lng: 43.5 }],
     ['bedrooms', { bedrooms: -1 }],
     ['images.1', { images: ['https://ok.example/a.jpg', 'data:text/html,hi'] }],
     ['title', { title: 'ab' }],
@@ -334,5 +356,118 @@ describe('createFeedbackSchema', () => {
     expect(createFeedbackSchema.safeParse({ ...ok, message: 'x'.repeat(1001) }).success).toBe(false);
     expect(createFeedbackSchema.safeParse({ ...ok, category: 'RUDE' }).success).toBe(false);
     expect(createFeedbackSchema.safeParse({ ...ok, user_id: 'x' }).success).toBe(false);
+  });
+});
+
+describe('multi-market listings', () => {
+  const iran = {
+    ...valid,
+    market: 'IR',
+    type: 'VILLA_GARDEN',
+    deal_type: 'DAILY_RENT',
+    currency: 'TOMAN',
+    price: 3_500_000,
+    province: 'مازندران',
+    lat: 36.55,
+    lng: 53.06,
+  };
+
+  it('accepts an Iranian daily villa rental priced in toman', () => {
+    expect(createPropertySchema.safeParse(iran).success).toBe(true);
+  });
+
+  it('does not ask for a province in Iran (the form does not), but still asks for one in Afghanistan', () => {
+    const { province: _province, ...noProvince } = iran;
+    expect(createPropertySchema.safeParse(noProvince).success).toBe(true);
+    expect(createPropertySchema.safeParse({ ...iran, province: '' }).success).toBe(true);
+    const { province: _p, ...afghan } = { ...valid, market: 'AF' };
+    expect(fields(createPropertySchema.safeParse(afghan))).toContain('province');
+    expect(fields(createPropertySchema.safeParse({ ...valid, province: '' }))).toContain('province');
+    // A name that is given must still look like one.
+    expect(fields(createPropertySchema.safeParse({ ...iran, province: 'x' }))).toContain('province');
+  });
+
+  it('accepts a price in rials up to just under 10^14 (a 200-billion-toman villa is 2 * 10^12 rials)', () => {
+    expect(createPropertySchema.safeParse({ ...iran, deal_type: 'SALE', currency: 'RIAL', price: 2_000_000_000_000 }).success).toBe(true);
+    expect(createPropertySchema.safeParse({ ...iran, deal_type: 'SALE', currency: 'RIAL', price: 99_999_999_999_999 }).success).toBe(true);
+  });
+
+  it('knows the new kinds: duplex, commercial, daily rental, toman, rial, and the two markets', () => {
+    for (const type of ['DUPLEX', 'COMMERCIAL', 'LAND_OLD', 'VILLA_GARDEN', 'WAREHOUSE']) {
+      expect(createPropertySchema.safeParse({ ...iran, deal_type: 'SALE', type }).success).toBe(true);
+    }
+    expect(createPropertySchema.safeParse({ ...iran, market: 'AF' }).success).toBe(true); // market rules are the service's
+    expect(createPropertySchema.safeParse({ ...iran, market: 'TR' }).success).toBe(false);
+  });
+
+  it('allows a daily rental only for a villa or a garden', () => {
+    expect(createPropertySchema.safeParse({ ...iran, type: 'GARDEN' }).success).toBe(true);
+    expect(createPropertySchema.safeParse({ ...iran, type: 'VILLA_GARDEN' }).success).toBe(true);
+    const bad = createPropertySchema.safeParse({ ...iran, type: 'APARTMENT' });
+    expect(bad.success).toBe(false);
+    expect(fields(bad)).toContain('deal_type');
+    expect(updatePropertySchema.safeParse({ deal_type: 'DAILY_RENT', type: 'SHOP' }).success).toBe(false);
+    expect(updatePropertySchema.safeParse({ deal_type: 'DAILY_RENT', type: 'VILLA' }).success).toBe(true);
+  });
+
+  describe('mortgage and rent (رهن و اجاره)', () => {
+    const rent = { ...iran, type: 'APARTMENT', deal_type: 'MORTGAGE_RENT', price: 200_000_000, monthly_rent: 8_000_000 };
+
+    it('takes a deposit (price) and a monthly rent', () => {
+      expect(createPropertySchema.safeParse(rent).success).toBe(true);
+    });
+
+    it('needs the monthly rent, and refuses it on any other deal', () => {
+      const { monthly_rent: _rent, ...without } = rent;
+      expect(fields(createPropertySchema.safeParse(without))).toContain('monthly_rent');
+      expect(fields(createPropertySchema.safeParse({ ...rent, deal_type: 'SALE' }))).toContain('monthly_rent');
+      expect(createPropertySchema.safeParse({ ...rent, monthly_rent: null }).success).toBe(false);
+      expect(createPropertySchema.safeParse({ ...rent, monthly_rent: 0 }).success).toBe(false);
+    });
+
+    it('on an update, refuses a rent next to another deal; a rent alone is the service\'s to check', () => {
+      expect(updatePropertySchema.safeParse({ deal_type: 'SALE', monthly_rent: 5 }).success).toBe(false);
+      expect(updatePropertySchema.safeParse({ deal_type: 'MORTGAGE_RENT', monthly_rent: 5 }).success).toBe(true);
+      expect(updatePropertySchema.safeParse({ monthly_rent: 5 }).success).toBe(true);
+      expect(updatePropertySchema.safeParse({ monthly_rent: null }).success).toBe(true);
+    });
+  });
+
+  describe('tags and deed', () => {
+    it('keeps each tag once and refuses an unknown one', () => {
+      const ok = createPropertySchema.parse({ ...iran, type: 'APARTMENT', deal_type: 'SALE', features: ['ELEVATOR', 'PARKING', 'ELEVATOR'] });
+      expect(ok.features).toEqual(['ELEVATOR', 'PARKING']);
+      expect(createPropertySchema.safeParse({ ...iran, type: 'APARTMENT', deal_type: 'SALE', features: ['POOL'] }).success).toBe(false);
+    });
+
+    it('takes the two Afghan deeds, and null to clear one on an update', () => {
+      expect(createPropertySchema.safeParse({ ...valid, deed_type: 'SHARI' }).success).toBe(true);
+      expect(createPropertySchema.safeParse({ ...valid, deed_type: 'ORFI' }).success).toBe(true);
+      expect(createPropertySchema.safeParse({ ...valid, deed_type: 'OTHER' }).success).toBe(false);
+      expect(updatePropertySchema.safeParse({ deed_type: null }).success).toBe(true);
+    });
+
+    it('filters a list by tags (all of them) and by deed', () => {
+      const parsed = listPropertiesQuerySchema.parse({ features: 'ELEVATOR, PARKING,ELEVATOR', deed_type: 'SHARI' });
+      expect(parsed.features).toEqual(['ELEVATOR', 'PARKING']);
+      expect(parsed.deed_type).toBe('SHARI');
+      expect(listPropertiesQuerySchema.safeParse({ features: 'POOL' }).success).toBe(false);
+      expect(listPropertiesQuerySchema.safeParse({ features: '' }).success).toBe(false);
+    });
+  });
+
+  it('does not let an update change the market', () => {
+    expect(updatePropertySchema.safeParse({ market: 'IR' }).success).toBe(false);
+  });
+
+  it('refuses a pin outside Afghanistan and Iran', () => {
+    expect(createPropertySchema.safeParse({ ...iran, lat: 41.0, lng: 29.0 }).success).toBe(false); // Istanbul
+    expect(createPropertySchema.safeParse({ ...iran, lat: 35.7, lng: 51.4 }).success).toBe(true); // Tehran
+  });
+
+  it('filters the feed by market, and refuses an unknown one', () => {
+    expect(listPropertiesQuerySchema.parse({ market: 'IR' })).toMatchObject({ market: 'IR' });
+    expect(listPropertiesQuerySchema.safeParse({ market: 'XX' }).success).toBe(false);
+    expect(listPropertiesQuerySchema.parse({ min_price: '5000000000000', currency: 'RIAL' })).toMatchObject({ min_price: 5_000_000_000_000 });
   });
 });

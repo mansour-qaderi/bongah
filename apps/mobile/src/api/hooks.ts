@@ -4,8 +4,9 @@ import {
   useQuery,
   type InfiniteData,
 } from '@tanstack/react-query';
-import type { Language, Paginated, Property } from '@bongah/shared-types';
+import type { Language, Market, Paginated, Property } from '@bongah/shared-types';
 import type { Area } from '../map/viewport';
+import { useActiveMarket } from '../market/marketStore';
 import { ApiError } from './client';
 import {
   getAgencyDashboard,
@@ -51,6 +52,7 @@ export const queryKeys = {
   agencyDashboard: ['properties', 'agency-dashboard'] as const,
   property: (id: string) => ['properties', 'detail', id] as const,
   pricing: ['pricing'] as const,
+  pricingFor: (market: Market) => ['pricing', market] as const,
   /**
    * Under `properties` on purpose, like the agency dashboard: the listings I can still publish change when I add one or
    * pay for a plan, and those already refresh everything under `properties`.
@@ -68,6 +70,7 @@ export const queryKeys = {
   chatCapabilities: ['chat', 'capabilities'] as const,
   templates: ['chat', 'templates'] as const,
   agencyPins: ['agency-map-pins'] as const,
+  myFeedback: ['feedback', 'mine'] as const,
   welcomeQuote: (language: string) => ['welcome-quote', language] as const,
 };
 
@@ -148,9 +151,11 @@ export function useWallet(enabled: boolean) {
 }
 
 export function usePricing(enabled = true) {
+  // The price list is in the money of the country the person works in (a card-to-card payment in toman for Iran).
+  const market = useActiveMarket();
   return useQuery({
-    queryKey: queryKeys.pricing,
-    queryFn: getPricing,
+    queryKey: queryKeys.pricingFor(market),
+    queryFn: () => getPricing(market),
     staleTime: 5 * 60_000,
     enabled,
   });

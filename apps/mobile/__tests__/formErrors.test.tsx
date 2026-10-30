@@ -271,7 +271,7 @@ describe('field errors from the server, in words', () => {
     );
     expect(found).toEqual({
       price: prs.add.error.price,
-      location: prs.map.outside,
+      location: prs.map.outside.replace('{{market}}', prs.market.AF),
       address: prs.add.error.address,
       images: prs.add.error.images,
     });
@@ -633,15 +633,20 @@ describe('AddPropertyScreen: what is wrong is said where it is wrong', () => {
 });
 
 describe('the form and the API agree on what a property type is', () => {
-  it('offers exactly the nine types, in the order of the shared list, and the shared schema accepts each', async () => {
+  it('offers exactly the fourteen types, in the order of the shared list, and the shared schema accepts each', async () => {
     expect(PROPERTY_TYPES).toEqual([
       'HOUSE_HAWILI',
       'APARTMENT',
+      'DUPLEX',
       'SHOP',
       'OFFICE',
+      'COMMERCIAL',
+      'WAREHOUSE',
       'LAND',
+      'LAND_OLD',
       'GARDEN',
       'VILLA',
+      'VILLA_GARDEN',
       'GARAGE',
       'OTHER',
     ]);
@@ -674,11 +679,15 @@ describe('the form and the API agree on what a property type is', () => {
     const tree = await render(screenElement(AddPropertyScreen, navigation()));
     mounted.push(tree);
     await settle();
-    // The dropdown lists exactly the shared types, in the shared order.
+    // Afghanistan's dropdown lists the shared types in the shared order, without the four only Iran has.
+    const afghan = PROPERTY_TYPES.filter(
+      p =>
+        !['DUPLEX', 'COMMERCIAL', 'LAND_OLD', 'VILLA_GARDEN'].includes(p),
+    );
     const rows = await typeOptions(tree.root);
-    expect(rows.map(row => row.value)).toEqual([...PROPERTY_TYPES]);
+    expect(rows.map(row => row.value)).toEqual(afghan);
     expect(rows.map(row => row.label)).toEqual(
-      PROPERTY_TYPES.map(p => (prs.propertyType as Record<string, string>)[p]),
+      afghan.map(p => (prs.propertyType as Record<string, string>)[p]),
     );
   });
 

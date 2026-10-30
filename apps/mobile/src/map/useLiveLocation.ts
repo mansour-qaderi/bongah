@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { LocationManager } from './native';
 import { locate } from './location';
-import { isInsideAfghanistan, metresBetween, type Coordinate } from './geo';
+import { isInsideSupportedArea, metresBetween, type Coordinate } from './geo';
 
 /** One GPS fix as the navigation screen uses it. */
 export interface LiveFix {
@@ -166,7 +166,7 @@ export function useWatchedPosition(
     if (!enabled) return;
     const listener = (raw: RawFix) => {
       const next = nextFix(last.current, raw);
-      if (!isInsideAfghanistan(next.coordinate)) return;
+      if (!isInsideSupportedArea(next.coordinate)) return;
       last.current = next;
       setFix(next);
     };

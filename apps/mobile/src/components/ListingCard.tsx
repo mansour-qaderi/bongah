@@ -149,7 +149,7 @@ export default function ListingCard({
         {/* The far-end column: the tag at the very top, the buttons stacked directly under it. */}
         <View style={styles.side} testID="listing-side">
           <View style={styles.tags} testID="listing-tags">
-            <DealBadge deal={property.deal_type} />
+            <DealBadge deal={property.deal_type} market={property.market} />
             {property.is_featured ? (
               <Badge label={t('property.featured')} tone={badgeTones.warning} />
             ) : null}

@@ -5,7 +5,7 @@ import useSWR from 'swr';
 import { FilePlus2, Eye } from 'lucide-react';
 import type { Paginated, Property } from '@bongah/shared-types';
 import { fetcher } from '@/lib/api';
-import { formatMoney, formatNumber, formatRelative } from '@/lib/format';
+import { formatNumber, formatRelative } from '@/lib/format';
 import { useLabels } from '@/i18n/use-labels';
 import { useLanguage, useT } from '@/i18n/provider';
 import { provinceNameLabel } from '@/lib/provinces';
@@ -17,6 +17,7 @@ import { EmptyState, ErrorState } from '@/components/ui/empty-state';
 import { TableRowsSkeleton } from '@/components/ui/skeleton';
 import { StatusActions, useStatusChange } from '@/components/listings/status-toggle';
 import { PriceTermsTag } from '@/components/listings/price-terms-tag';
+import { listingPrice } from '@/lib/price';
 
 const KEY = 'properties/mine?status=ACTIVE&sort=newest&limit=8';
 
@@ -75,8 +76,8 @@ export function RecentListings() {
                   </div>
                 </div>
                 <div className="flex w-36 flex-col items-start gap-0.5">
-                  <span className="tabular text-sm font-semibold text-ink-2">{formatMoney(p.price, p.currency)}</span>
-                  <PriceTermsTag terms={p.price_terms} />
+                  <span className="tabular text-sm font-semibold text-ink-2">{listingPrice(p)}</span>
+                  <PriceTermsTag terms={p.price_terms} market={p.market} />
                 </div>
                 <div className="tabular flex w-14 items-center gap-1 text-xs text-muted" title={t('dash.recent.views')}>
                   <Eye aria-hidden className="h-3.5 w-3.5" />

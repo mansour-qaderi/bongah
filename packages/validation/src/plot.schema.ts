@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import {
-  AFGHANISTAN_BOUNDS,
+  SUPPORTED_BOUNDS,
   GEO_PROVIDERS,
   PLACE_QUERY_MAX_LENGTH,
   PLOT_MAX_AREA_SQM,
@@ -150,11 +150,11 @@ const position = z
     ([lng, lat]) =>
       Number.isFinite(lng) &&
       Number.isFinite(lat) &&
-      lat >= AFGHANISTAN_BOUNDS.minLat &&
-      lat <= AFGHANISTAN_BOUNDS.maxLat &&
-      lng >= AFGHANISTAN_BOUNDS.minLng &&
-      lng <= AFGHANISTAN_BOUNDS.maxLng,
-    'A corner of the plot is outside Afghanistan',
+      lat >= SUPPORTED_BOUNDS.minLat &&
+      lat <= SUPPORTED_BOUNDS.maxLat &&
+      lng >= SUPPORTED_BOUNDS.minLng &&
+      lng <= SUPPORTED_BOUNDS.maxLng,
+    'A corner of the plot is outside the supported area (Afghanistan and Iran)',
   )
   .transform(([lng, lat]): LngLatPair => [round7(lng), round7(lat)]);
 
@@ -220,8 +220,8 @@ export const placeAutocompleteQuerySchema = z
       .string()
       .transform((value) => value.replace(/\s+/g, ' ').trim())
       .pipe(z.string().min(2, 'At least 2 characters').max(PLACE_QUERY_MAX_LENGTH)),
-    lat: queryNumber(AFGHANISTAN_BOUNDS.minLat, AFGHANISTAN_BOUNDS.maxLat).optional(),
-    lng: queryNumber(AFGHANISTAN_BOUNDS.minLng, AFGHANISTAN_BOUNDS.maxLng).optional(),
+    lat: queryNumber(SUPPORTED_BOUNDS.minLat, SUPPORTED_BOUNDS.maxLat).optional(),
+    lng: queryNumber(SUPPORTED_BOUNDS.minLng, SUPPORTED_BOUNDS.maxLng).optional(),
     session: sessionToken,
     lang: z.enum(['prs', 'ps']).optional(),
   })
@@ -243,17 +243,17 @@ export const placeIdSchema = z.string().regex(/^[A-Za-z0-9_.:=-]{4,512}$/, 'Bad 
 
 /** GET /geo/reverse?lat=…&lng=… */
 export const reverseGeocodeQuerySchema = z.object({
-  lat: queryNumber(AFGHANISTAN_BOUNDS.minLat, AFGHANISTAN_BOUNDS.maxLat),
-  lng: queryNumber(AFGHANISTAN_BOUNDS.minLng, AFGHANISTAN_BOUNDS.maxLng),
+  lat: queryNumber(SUPPORTED_BOUNDS.minLat, SUPPORTED_BOUNDS.maxLat),
+  lng: queryNumber(SUPPORTED_BOUNDS.minLng, SUPPORTED_BOUNDS.maxLng),
   lang: z.enum(['prs', 'ps']).optional(),
 });
 export type ReverseGeocodeQuery = z.output<typeof reverseGeocodeQuerySchema>;
 
-/** GET /geo/route?from_lat=…&from_lng=…&to_lat=…&to_lng=… (both ends inside Afghanistan). */
+/** GET /geo/route?from_lat=…&from_lng=…&to_lat=…&to_lng=… (both ends inside the supported area). */
 export const routeQuerySchema = z.object({
-  from_lat: queryNumber(AFGHANISTAN_BOUNDS.minLat, AFGHANISTAN_BOUNDS.maxLat),
-  from_lng: queryNumber(AFGHANISTAN_BOUNDS.minLng, AFGHANISTAN_BOUNDS.maxLng),
-  to_lat: queryNumber(AFGHANISTAN_BOUNDS.minLat, AFGHANISTAN_BOUNDS.maxLat),
-  to_lng: queryNumber(AFGHANISTAN_BOUNDS.minLng, AFGHANISTAN_BOUNDS.maxLng),
+  from_lat: queryNumber(SUPPORTED_BOUNDS.minLat, SUPPORTED_BOUNDS.maxLat),
+  from_lng: queryNumber(SUPPORTED_BOUNDS.minLng, SUPPORTED_BOUNDS.maxLng),
+  to_lat: queryNumber(SUPPORTED_BOUNDS.minLat, SUPPORTED_BOUNDS.maxLat),
+  to_lng: queryNumber(SUPPORTED_BOUNDS.minLng, SUPPORTED_BOUNDS.maxLng),
 });
 export type RouteQuery = z.output<typeof routeQuerySchema>;

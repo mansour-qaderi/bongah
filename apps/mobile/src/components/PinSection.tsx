@@ -1,14 +1,18 @@
 import React from 'react';
 import { StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
+import type { Market } from '@bongah/shared-types';
+import { marketName, marketText } from '../i18n/market';
 import { colors, radius, spacing } from '../theme';
 import AppText from './AppText';
 
 interface Props {
   /** The map itself (LocationEditor). null while the same map is open fullscreen, so only one is drawn. */
   map: React.ReactNode;
-  /** The last tap or drop was outside Afghanistan. */
+  /** The last tap or drop was outside the listing's country. */
   outside?: boolean;
+  /** The listing's country, named in the "outside" line. */
+  market?: Market;
   error?: string;
   /** What is known about the spot, the drawn plot and the map's buttons. */
   children?: React.ReactNode;
@@ -22,6 +26,7 @@ interface Props {
 export default function PinSection({
   map,
   outside = false,
+  market,
   error,
   children,
 }: Props) {
@@ -33,12 +38,12 @@ export default function PinSection({
         color={colors.textSecondary}
         testID="location-hint"
       >
-        {t('add.locationHint')}
+        {marketText(t, 'add.locationHint', market)}
       </AppText>
       <View style={styles.map}>{map}</View>
       {outside ? (
         <AppText variant="caption" color={colors.danger}>
-          {t('map.outside')}
+          {t('map.outside', { market: marketName(market, t) })}
         </AppText>
       ) : null}
       {children}

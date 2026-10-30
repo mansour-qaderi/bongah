@@ -5,8 +5,10 @@ import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
   CURRENCIES,
+  DEFAULT_MARKET,
   SUBSCRIPTION_BASE_MONTHLY_PRICE,
   SUBSCRIPTION_PACKAGES,
+  type Market,
   type ManualPaymentAccount,
   type ManualPaymentInfo,
 } from '@bongah/shared-types';
@@ -14,6 +16,15 @@ import type { Currency, SubscriptionPackage } from '../generated/prisma/client.j
 import { asPriceText, defaultPriceOf } from './subscription-prices.js';
 
 export const HESABPAY_SETTINGS = Symbol('HESABPAY_SETTINGS');
+
+/** What a customer pays and where the money goes, for one market. Afghanistan's are the top-level settings below. */
+export interface MarketPaymentSettings {
+  currency: Currency;
+  /** Prices as decimal strings with at most 2 decimals. Decided here, never by the client. */
+  prices: HesabPaySettings['prices'];
+  /** Where a manual payment is sent. */
+  manual: ManualPaymentInfo;
+}
 
 export interface HesabPaySettings {
   /**
@@ -54,6 +65,12 @@ export interface HesabPaySettings {
   contactCreditsPerPack: number;
   /** Where a manual payment is sent (mode "manual"; empty otherwise). */
   manual: ManualPaymentInfo;
+  /**
+   * Iran's payments, or null when no Iranian account is set (then an Iranian account cannot pay for anything). Iran has
+   * no gateway: every Iranian payment is a manual one (card-to-card / Sheba transfer, receipt, an admin's approval),
+   * whatever HESABPAY_MODE says for Afghanistan. Set by IR_* and MANUAL_PAY_IR_* (see readIranPayments).
+   */
+  iran: MarketPaymentSettings | null;
   /** The largest receipt picture a customer may upload (MANUAL_PAY_PROOF_MAX_BYTES). */
   proofMaxBytes: number;
   /** Where receipt pictures are kept (UPLOAD_DIR, like the chat pictures). Production needs object storage, see ChatImageStorage. */
@@ -77,7 +94,7 @@ const MOCK_DEFAULT_PRICES = {
 
 const MOCK_DEFAULT_CONTACT_CREDITS_PER_PACK = '10';
 
-const PRICE_PATTERN = /^\d{1,12}(\.\d{1,2})?$/;
+const PRICE_PATTERN = /^\d{1,14}(\.\d{1,2})?$/;
 
 /** Reads and validates all payment settings once, so bad config fails at startup, not at the first payment. */
 export function readHesabPaySettings(config: ConfigService): HesabPaySettings {
@@ -207,6 +224,7 @@ export function readHesabPaySettings(config: ConfigService): HesabPaySettings {
     featuredAdDays,
     contactCreditsPerPack,
     manual: mode === 'manual' ? readManualPayment(text) : { accounts: [], note: null },
+    iran: readIranPayments(text, { realMoney }, logger),
     proofMaxBytes: proofMaxBytes(text('MANUAL_PAY_PROOF_MAX_BYTES')),
     uploadDir: text('UPLOAD_DIR') || join(tmpdir(), 'bongah-uploads'),
   };
@@ -250,4 +268,135 @@ function readManualPayment(text: (name: string) => string): ManualPaymentInfo {
   const note = text('MANUAL_PAY_NOTE');
   if (note.length > 300) throw new Error('MANUAL_PAY_NOTE must be at most 300 characters.');
   return { accounts, note: note || null };
+}
+
+// ───────────────────────────── Iran ─────────────────────────────
+
+/** What a month of the Iranian plans costs before a discount, when nothing is set (a placeholder: real money needs the setting). */
+const IR_MOCK_LIST_MONTHLY = '2000000';
+const IR_MOCK_DEFAULT_PRICES = {
+  IR_PRICE_LADDER: '50000',
+  IR_PRICE_FEATURED_AD: '100000',
+  IR_PRICE_MAP_LOCATION: '30000',
+  IR_PRICE_CONTACT_CREDITS: '40000',
+} as const;
+
+/** A card number passes the Luhn check (every Iranian bank card does), so a mistyped digit is caught at startup. */
+export function isValidCardNumber(digits: string): boolean {
+  if (!/^\d{16}$/.test(digits)) return false;
+  let sum = 0;
+  for (let i = 0; i < 16; i++) {
+    let d = Number(digits[15 - i]);
+    if (i % 2 === 1) {
+      d *= 2;
+      if (d > 9) d -= 9;
+    }
+    sum += d;
+  }
+  return sum % 10 === 0;
+}
+
+/** A Sheba number: "IR" + 24 digits, with a valid IBAN check (mod 97), so a mistyped digit is caught at startup. */
+export function isValidSheba(sheba: string): boolean {
+  if (!/^IR\d{24}$/.test(sheba)) return false;
+  const rearranged = sheba.slice(4) + sheba.slice(0, 4);
+  const numeric = rearranged.replace(/[A-Z]/g, (letter) => String(letter.charCodeAt(0) - 55));
+  let remainder = 0;
+  for (const digit of numeric) remainder = (remainder * 10 + Number(digit)) % 97;
+  return remainder === 1;
+}
+
+/**
+ * Iran's payment settings, or null when no Iranian account is configured (card or Sheba). Iranian customers pay the
+ * platform by card-to-card or a Sheba (Paya / Satna) transfer to the operator's own account, upload the receipt, and an
+ * admin confirms it: the same manual flow as MANUAL mode, always, because there is no gateway.
+ *
+ *   MANUAL_PAY_IR_CARD_NUMBER, MANUAL_PAY_IR_CARD_HOLDER, MANUAL_PAY_IR_CARD_BANK   the card (16 digits, Luhn-checked)
+ *   MANUAL_PAY_IR_SHEBA, MANUAL_PAY_IR_SHEBA_HOLDER, MANUAL_PAY_IR_SHEBA_BANK       the Sheba ("IR" + 24 digits, checked);
+ *                                                                                    holder and bank default to the card's
+ *   MANUAL_PAY_IR_NOTE                                                               an extra line shown with them
+ *   IR_CURRENCY                  TOMAN (default) or RIAL: what the prices below are in
+ *   IR_PRICE_SUBSCRIPTION_LIST_MONTHLY, IR_PRICE_LADDER, IR_PRICE_FEATURED_AD, IR_PRICE_MAP_LOCATION,
+ *   IR_PRICE_CONTACT_CREDITS     the prices; required when real money is taken, placeholders otherwise
+ *
+ * An admin's price changes (the price list in the admin panel) are Afghanistan's; Iran's prices change by editing these.
+ */
+function readIranPayments(
+  text: (name: string) => string,
+  shared: { realMoney: boolean },
+  logger: Logger,
+): MarketPaymentSettings | null {
+  const compact = (value: string) => value.replace(/[\s\-]/g, '');
+  const cardRaw = text('MANUAL_PAY_IR_CARD_NUMBER');
+  const shebaRaw = text('MANUAL_PAY_IR_SHEBA');
+  if (!cardRaw && !shebaRaw) {
+    const stray = Object.keys(IR_MOCK_DEFAULT_PRICES).filter((name) => text(name));
+    if (stray.length > 0) {
+      logger.warn(`${stray.join(', ')} set, but no Iranian account (MANUAL_PAY_IR_CARD_NUMBER or MANUAL_PAY_IR_SHEBA): Iranian payments stay off.`);
+    }
+    return null;
+  }
+
+  const accounts: ManualPaymentAccount[] = [];
+  const cardHolder = text('MANUAL_PAY_IR_CARD_HOLDER');
+  const cardBank = text('MANUAL_PAY_IR_CARD_BANK') || null;
+  if (cardRaw) {
+    const card = compact(cardRaw);
+    if (!isValidCardNumber(card)) throw new Error('MANUAL_PAY_IR_CARD_NUMBER must be a 16-digit bank card number (digits, spaces and dashes; the check digit must be right).');
+    if (!cardHolder) throw new Error('MANUAL_PAY_IR_CARD_NUMBER needs MANUAL_PAY_IR_CARD_HOLDER.');
+    if (cardHolder.length > 80) throw new Error('MANUAL_PAY_IR_CARD_HOLDER must be at most 80 characters.');
+    accounts.push({ kind: 'CARD', number: card.replace(/(\d{4})(?=\d)/g, '$1 '), holder: cardHolder, bank: cardBank });
+  }
+  if (shebaRaw) {
+    const sheba = compact(shebaRaw).toUpperCase();
+    if (!isValidSheba(sheba)) throw new Error('MANUAL_PAY_IR_SHEBA must be "IR" followed by 24 digits (the check digits must be right).');
+    const holder = text('MANUAL_PAY_IR_SHEBA_HOLDER') || cardHolder;
+    if (!holder) throw new Error('MANUAL_PAY_IR_SHEBA needs MANUAL_PAY_IR_SHEBA_HOLDER (or MANUAL_PAY_IR_CARD_HOLDER).');
+    if (holder.length > 80) throw new Error('MANUAL_PAY_IR_SHEBA_HOLDER must be at most 80 characters.');
+    accounts.push({ kind: 'SHEBA', number: sheba, holder, bank: text('MANUAL_PAY_IR_SHEBA_BANK') || cardBank });
+  }
+  const note = text('MANUAL_PAY_IR_NOTE');
+  if (note.length > 300) throw new Error('MANUAL_PAY_IR_NOTE must be at most 300 characters.');
+
+  const currency = (text('IR_CURRENCY') || 'TOMAN') as Currency;
+  if (currency !== 'TOMAN' && currency !== 'RIAL') throw new Error('IR_CURRENCY must be TOMAN or RIAL.');
+
+  const amount = (name: string, fallback: string): string => {
+    const given = text(name);
+    if (!given && shared.realMoney) throw new Error(`${name} must be set.`);
+    const raw = given || fallback;
+    if (!PRICE_PATTERN.test(raw) || Number(raw) <= 0) {
+      throw new Error(`${name} must be a positive amount with at most 2 decimals (got "${raw}").`);
+    }
+    return raw;
+  };
+  const listMonthly = amount('IR_PRICE_SUBSCRIPTION_LIST_MONTHLY', IR_MOCK_LIST_MONTHLY);
+  const subscription = Object.fromEntries(
+    SUBSCRIPTION_PACKAGES.map((pkg) => [pkg, asPriceText(defaultPriceOf(Number(listMonthly), pkg))]),
+  ) as Record<SubscriptionPackage, string>;
+  return {
+    currency,
+    manual: { accounts, note: note || null },
+    prices: {
+      subscription,
+      subscriptionListMonthly: listMonthly,
+      ladder: amount('IR_PRICE_LADDER', IR_MOCK_DEFAULT_PRICES.IR_PRICE_LADDER),
+      featuredAd: amount('IR_PRICE_FEATURED_AD', IR_MOCK_DEFAULT_PRICES.IR_PRICE_FEATURED_AD),
+      mapLocation: amount('IR_PRICE_MAP_LOCATION', IR_MOCK_DEFAULT_PRICES.IR_PRICE_MAP_LOCATION),
+      contactCredits: amount('IR_PRICE_CONTACT_CREDITS', IR_MOCK_DEFAULT_PRICES.IR_PRICE_CONTACT_CREDITS),
+    },
+  };
+}
+
+/** A payment's settings for a market: the currency, the prices and where the money goes. Null: that market cannot pay. */
+export function paymentSettingsFor(settings: HesabPaySettings, market: Market): MarketPaymentSettings | null {
+  if (market === DEFAULT_MARKET) {
+    return { currency: settings.currency, prices: settings.prices, manual: settings.manual };
+  }
+  return settings.iran;
+}
+
+/** How a payment in a market is settled: Iran always by hand, Afghanistan as HESABPAY_MODE says. */
+export function settlesByHand(settings: HesabPaySettings, market: Market): boolean {
+  return market !== DEFAULT_MARKET || settings.mode === 'manual';
 }

@@ -78,13 +78,17 @@ export function toPropertyDto(row: PropertyRowWithAgency, now: Date): PropertyDt
     title: row.title,
     description: row.description,
     type: row.type,
+    market: row.market,
     unit: row.unit,
     deal_type: row.dealType,
     mortgage_months: row.mortgageMonths,
     price_terms: row.priceTerms,
-    // NUMERIC(14,2) always fits a double exactly enough to round-trip with 2 decimals.
+    // NUMERIC(18,2), but never above MAX_MONEY (just under 10^14), which a double round-trips with 2 decimals.
     price: row.price.toNumber(),
+    monthly_rent: row.monthlyRent?.toNumber() ?? null,
     currency: row.currency,
+    features: row.features,
+    deed_type: row.deedType,
     area_sqm: row.areaSqm,
     bedrooms: row.bedrooms,
     bathrooms: row.bathrooms,

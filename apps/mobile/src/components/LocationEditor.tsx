@@ -2,12 +2,12 @@ import React, { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { Marker, ViewAnnotation } from '../map/native';
 import { useTranslation } from 'react-i18next';
-import type { DealType, PropertyType } from '@bongah/shared-types';
+import type { DealType, Market, PropertyType } from '@bongah/shared-types';
 import BaseMap, { type MapViewChange } from '../map/BaseMap';
 import { useMapStyle } from '../map/mapStyleStore';
 import {
   fromLngLat,
-  isInsideAfghanistan,
+  isInsideMarket,
   toLngLat,
   type Coordinate,
   type MapCamera,
@@ -23,6 +23,8 @@ interface Props {
   /** What the property is offered for and what it is: the pin takes its colour and its icon from them. */
   deal: DealType;
   type: PropertyType;
+  /** The country the listing is in: a pin is only accepted inside it. Default: Afghanistan. */
+  market?: Market;
   camera: MapCamera;
   /** The phone's position, drawn as the pulsing blue marker. */
   me: Coordinate | null;
@@ -32,7 +34,7 @@ interface Props {
   onToggleFullscreen: () => void;
   /** Where the map is looking after every move: the form keeps it so the other map (fullscreen or not) opens there. */
   onView?: (view: MapViewChange) => void;
-  /** A tap or a drop landed outside Afghanistan; nothing was changed. */
+  /** A tap or a drop landed outside the listing's country; nothing was changed. */
   onOutside?: () => void;
   testID?: string;
   /** The map's own test id (the form's small map keeps the one the chat's picker and the tests know). */
@@ -52,6 +54,7 @@ export default function LocationEditor({
   onPin,
   deal,
   type,
+  market = 'AF',
   camera,
   me,
   onLocate,
@@ -64,7 +67,7 @@ export default function LocationEditor({
   mapTestID = `${testID}-map`,
 }: Props) {
   const { t } = useTranslation();
-  // A drop outside Afghanistan is refused, but the pin has already moved under the finger: a new key puts it back.
+  // A drop outside the country is refused, but the pin has already moved under the finger: a new key puts it back.
   const [reset, setReset] = useState(0);
   const mapStyle = useMapStyle();
   const satellite = mapStyle.kind === 'satellite';
@@ -72,7 +75,7 @@ export default function LocationEditor({
   const [tilted, setTilted] = useState(false);
 
   const tap = (point: Coordinate) => {
-    if (isInsideAfghanistan(point)) onPin(point);
+    if (isInsideMarket(point, market)) onPin(point);
     else onOutside?.();
   };
 
@@ -96,7 +99,7 @@ export default function LocationEditor({
             draggable
             onDragEnd={event => {
               const dropped = fromLngLat(event.nativeEvent.lngLat);
-              if (isInsideAfghanistan(dropped)) onPin(dropped);
+              if (isInsideMarket(dropped, market)) onPin(dropped);
               else {
                 setReset(count => count + 1);
                 onOutside?.();

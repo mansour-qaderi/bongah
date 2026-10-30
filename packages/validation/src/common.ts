@@ -101,7 +101,11 @@ export const multilineText = (min: number, max: number) =>
 export const httpUrl = z.url({ protocol: /^https?$/ }).max(2048);
 
 /** Largest value the NUMERIC(14,2) money columns can hold. */
-export const MAX_MONEY = 999_999_999_999.99;
+/**
+ * The largest price or fee: just under 10^14. Rials need the room (a 200-billion-toman villa is 2 * 10^12 rials), and
+ * the database column holds 16 digits before the decimal point. Below 10^14 a double still keeps two decimals exactly.
+ */
+export const MAX_MONEY = 99_999_999_999_999;
 
 /** A positive amount with at most 2 decimal places, as a JSON number. */
 export const moneyAmount = z

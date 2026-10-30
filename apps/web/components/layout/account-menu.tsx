@@ -11,6 +11,7 @@ import { useT } from '@/i18n/provider';
 import { cn } from '@/lib/cn';
 import { formatPhone } from '@/lib/format';
 import { useMe } from '@/hooks/use-api';
+import { useActiveMarket } from '@/hooks/use-active-market';
 import { DropdownContent, DropdownItem, DropdownLabel, DropdownRoot, DropdownSeparator, DropdownTrigger } from '@/components/ui/dropdown';
 import { LanguageSwitcher } from '@/components/ui/language-switcher';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -47,6 +48,7 @@ export function AccountMenu({ collapsed }: { collapsed: boolean }) {
   const router = useRouter();
   const t = useT();
   const { data: me } = useMe();
+  const market = useActiveMarket();
   const [leaving, setLeaving] = useState(false);
 
   async function logout() {
@@ -111,9 +113,12 @@ export function AccountMenu({ collapsed }: { collapsed: boolean }) {
           <div className="px-3 pb-2 md:hidden">
             <PlanBadge />
           </div>
-          <div className="px-3 pb-2">
-            <LanguageSwitcher />
-          </div>
+          {/* In Iran the site is in Persian and has no language choice. */}
+          {market === 'IR' ? null : (
+            <div className="px-3 pb-2">
+              <LanguageSwitcher />
+            </div>
+          )}
           <DropdownSeparator />
           <DropdownItem onSelect={() => router.push('/dashboard/subscription')} icon={<WalletIcon className="h-4 w-4" />}>
             {t('account.subscription')}

@@ -1,8 +1,10 @@
-import { createPropertySchema, type CreatePropertyInput } from '@bongah/validation';
-import { AFGHANISTAN_BOUNDS } from '@bongah/shared-types';
+import { createPropertySchema, MAX_MONEY, type CreatePropertyInput } from '@bongah/validation';
+import type { Market } from '@bongah/shared-types';
 import { hasRoomsFor, labelsNow } from '../labels';
-import { formatMoney, formatNumber, parseLooseNumber, toAsciiDigits } from '../format';
+import { formatMoney, formatNumber, parseLooseNumber } from '../format';
+import { parseLatLng } from '../coords';
 import { activeLanguage, tNow } from '@/i18n/active';
+import { activeMarket, draftMismatch, inMarket, marketName, mismatchText } from '../market';
 import type { Language } from '@/i18n/config';
 import type { DraftRow } from './types';
 
@@ -12,7 +14,10 @@ export type DraftField =
   | 'type'
   | 'deal_type'
   | 'price'
+  | 'monthly_rent'
   | 'currency'
+  | 'features'
+  | 'deed_type'
   | 'area_sqm'
   | 'bedrooms'
   | 'bathrooms'
@@ -49,11 +54,21 @@ export function autoDescription(row: DraftRow): string {
   let text = parts.join('، ');
   if (row.address.trim()) text += `، ${row.address.trim()}`;
   const price = parseLooseNumber(row.price);
-  if (price && row.currency) text += `. ${tNow('desc.price', { price: formatMoney(price, row.currency) })}`;
+  if (row.deal_type === 'MORTGAGE_RENT') {
+    const rent = parseLooseNumber(row.monthly_rent ?? '');
+    if (price && row.currency) text += `. ${tNow('desc.deposit', { price: formatMoney(price, row.currency) })}`;
+    if (rent && row.currency) text += `${price ? '، ' : '. '}${tNow('desc.monthlyRent', { price: formatMoney(rent, row.currency) })}`;
+  } else if (price && row.currency) text += `. ${tNow('desc.price', { price: formatMoney(price, row.currency) })}`;
+  const tags = (row.features ?? []).map((feature) => labels.feature[feature]);
+  if (tags.length) text += `. ${tags.join('، ')}`;
+  if (row.deed_type) text += `. ${labels.deed[row.deed_type]}`;
   return `${text}.`;
 }
 
-const cache = new WeakMap<DraftRow, { language: Language; check: DraftCheck }>();
+const cache = new WeakMap<DraftRow, { language: Language; market: Market; check: DraftCheck }>();
+
+/** The market a draft is for: its own, else the account's. */
+export const marketOfDraft = (row: DraftRow): Market => row.market ?? activeMarket();
 
 /**
  * Checks a draft the way the API will, with the messages in the language shown, and builds the request body.
@@ -62,14 +77,15 @@ const cache = new WeakMap<DraftRow, { language: Language; check: DraftCheck }>()
  */
 export function checkDraft(row: DraftRow): DraftCheck {
   const language = activeLanguage();
+  const market = marketOfDraft(row);
   const hit = cache.get(row);
-  if (hit && hit.language === language) return hit.check;
-  const check = compute(row);
-  cache.set(row, { language, check });
+  if (hit && hit.language === language && hit.market === market) return hit.check;
+  const check = compute(row, market);
+  cache.set(row, { language, market, check });
   return check;
 }
 
-function compute(row: DraftRow): DraftCheck {
+function compute(row: DraftRow, market: Market): DraftCheck {
   const errors: DraftErrors = {};
   const title = row.title.replace(/\s+/g, ' ').trim();
   if (title.length < 3) errors.title = tNow('list.col.titleShort');
@@ -82,10 +98,25 @@ function compute(row: DraftRow): DraftCheck {
   if (!row.deal_type) errors.deal_type = tNow('v.deal.required');
 
   const price = parseLooseNumber(row.price);
+  // A mortgage-and-rent (رهن و اجاره) has two amounts: the deposit (the price) and the rent every month.
+  const rentDeal = row.deal_type === 'MORTGAGE_RENT';
+  let monthlyRent: number | undefined;
+  if (rentDeal) {
+    const rent = parseLooseNumber(row.monthly_rent ?? '');
+    if (!(row.monthly_rent ?? '').trim()) errors.monthly_rent = tNow('v.monthlyRent.required');
+    else if (rent === null || rent <= 0) errors.monthly_rent = tNow('list.col.priceNumber');
+    else if (rent > MAX_MONEY) errors.monthly_rent = tNow('v.price.big');
+    else if (!/^\d+(\.\d{1,2})?$/.test(String(rent))) errors.monthly_rent = tNow('v.price.decimals');
+    else monthlyRent = rent;
+  }
   if (price === null || price <= 0) errors.price = tNow('list.col.priceNumber');
-  else if (price > 999_999_999_999.99) errors.price = tNow('v.price.big');
+  else if (price > MAX_MONEY) errors.price = tNow('v.price.big');
   else if (!/^\d+(\.\d{1,2})?$/.test(String(price))) errors.price = tNow('v.price.decimals');
   if (!row.currency) errors.currency = tNow('v.currency.required');
+
+  // The choices that only exist in the other market (a toman price on an Afghan listing, a daily rental of a flat).
+  const mismatch = draftMismatch(market, row);
+  if (mismatch) errors[mismatch.field] ??= mismatchText(mismatch.reason, market);
 
   const area = parseLooseNumber(row.area_sqm);
   if (area === null || area <= 0) errors.area_sqm = tNow('v.area.number');
@@ -104,7 +135,8 @@ function compute(row: DraftRow): DraftCheck {
   const baths = row.type && !hasRoomsFor(row.type) ? undefined : count(row.bathrooms, 'bathrooms');
 
   const province = row.province.replace(/\s+/g, ' ').trim();
-  if (province.length < 2) errors.province = tNow('v.province.required');
+  // Afghanistan names the province; an Iranian listing does not (the form fills it in from the pin when it can).
+  if (market !== 'IR' && province.length < 2) errors.province = tNow('v.province.required');
   const place = (v: string, field: 'district' | 'neighborhood') => {
     const t = v.replace(/\s+/g, ' ').trim();
     if (t && t.length < 2) errors[field] = tNow('v.place.short');
@@ -122,8 +154,7 @@ function compute(row: DraftRow): DraftCheck {
     const la = parseLatLng(latText);
     const ln = parseLatLng(lngText);
     if (la === null || ln === null) errors.location = tNow('v.location.both');
-    else if (la < AFGHANISTAN_BOUNDS.minLat || la > AFGHANISTAN_BOUNDS.maxLat || ln < AFGHANISTAN_BOUNDS.minLng || ln > AFGHANISTAN_BOUNDS.maxLng)
-      errors.location = tNow('v.location.outside');
+    else if (!inMarket(market, la, ln)) errors.location = tNow('v.location.outside', { market: marketName(market) });
     else {
       lat = la;
       lng = ln;
@@ -138,12 +169,16 @@ function compute(row: DraftRow): DraftCheck {
   if (Object.keys(errors).length > 0) return { ok: false, errors };
 
   const candidate = {
+    market,
     title,
     description,
     type: row.type,
     deal_type: row.deal_type,
     price,
+    ...(monthlyRent !== undefined ? { monthly_rent: monthlyRent } : {}),
     currency: row.currency,
+    ...(row.features?.length ? { features: row.features } : {}),
+    ...(row.deed_type ? { deed_type: row.deed_type } : {}),
     area_sqm: area,
     province,
     ...(row.price_terms ? { price_terms: row.price_terms } : {}),
@@ -162,24 +197,10 @@ function compute(row: DraftRow): DraftCheck {
   const late: DraftErrors = {};
   for (const issue of parsed.error.issues) {
     const field = String(issue.path[0] ?? '') as DraftField;
-    const known: DraftField[] = ['title', 'description', 'type', 'deal_type', 'price', 'currency', 'area_sqm', 'bedrooms', 'bathrooms', 'province', 'district', 'neighborhood', 'address', 'images'];
+    const known: DraftField[] = ['title', 'description', 'type', 'deal_type', 'price', 'monthly_rent', 'currency', 'features', 'deed_type', 'area_sqm', 'bedrooms', 'bathrooms', 'province', 'district', 'neighborhood', 'address', 'images'];
     late[known.includes(field) ? field : 'title'] ??= field === 'images' ? tNow('v.images') : tNow('import.publish.invalidValue');
   }
   return { ok: false, errors: late };
 }
 
-/** "34.5281", "۳۴٫۵۲۸۱", "34,5281" (one comma = decimal mark when there is nothing else). */
-export function parseLatLng(text: string): number | null {
-  const t = toAsciiDigits(text).replace(/٫/g, '.').trim();
-  if (!/^-?\d{1,3}([.,]\d+)?$/.test(t)) return null;
-  const n = Number(t.replace(',', '.'));
-  return Number.isFinite(n) ? n : null;
-}
-
-/** "34.5281, 69.1761" pasted from a map app → the two numbers as text. */
-export function splitLatLng(text: string): { lat: string; lng: string } | null {
-  const t = toAsciiDigits(text).replace(/٫/g, '.').trim();
-  const m = /^(-?\d{1,3}(?:\.\d+)?)\s*[,;،\s]\s*(-?\d{1,3}(?:\.\d+)?)$/.exec(t);
-  return m ? { lat: m[1]!, lng: m[2]! } : null;
-}
-
+export { parseLatLng, splitLatLng } from '../coords';

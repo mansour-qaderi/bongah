@@ -141,8 +141,11 @@ describe('AddPropertyScreen', () => {
     mockAuth = { status: 'signedIn', user };
     const tree = await render(withQuery(<AddPropertyScreen {...addProps()} />));
     const labels = (await typeOptions(tree.root)).map(row => row.label);
-    for (const label of Object.values(prs.propertyType))
-      expect(labels).toContain(label);
+    // Afghanistan's form: every kind except the four that only the Iranian market has.
+    const iranOnly = ['DUPLEX', 'COMMERCIAL', 'LAND_OLD', 'VILLA_GARDEN'];
+    for (const [key, label] of Object.entries(prs.propertyType))
+      if (iranOnly.includes(key)) expect(labels).not.toContain(label);
+      else expect(labels).toContain(label);
     expect(Object.keys(prs.propertyType)).toEqual(
       expect.arrayContaining([
         'SHOP',

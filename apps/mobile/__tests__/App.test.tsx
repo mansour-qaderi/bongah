@@ -4,6 +4,7 @@ import App from '../App';
 import prs from '../src/i18n/locales/prs.json';
 import { SPLASH_DURATION_MS } from '../src/screens/splash/SplashScreen';
 import { queryClient } from '../src/api/hooks';
+import { setMarket } from '../src/market/marketStore';
 import {
   allText,
   flush,
@@ -75,6 +76,8 @@ test('the app opens on the map in Dari, and the list shows Persian digits and th
   });
   (globalThis as unknown as { fetch: unknown }).fetch = fetchMock;
 
+  // A phone that already works in Afghanistan (a first start with no location falls back to Iran instead).
+  await setMarket('AF');
   const tree = await render(<App />);
   await flush();
   await pastSplash();
@@ -106,7 +109,7 @@ test('the app opens on the map in Dari, and the list shows Persian digits and th
     .map(call => call[0])
     .find(url => url.includes('/properties?'));
   expect(asked).toMatch(
-    /\/properties\?min_lat=[\d.]+&max_lat=[\d.]+&min_lng=[\d.]+&max_lng=[\d.]+&page=1&limit=50$/,
+    /\/properties\?market=AF&min_lat=[\d.]+&max_lat=[\d.]+&min_lng=[\d.]+&max_lng=[\d.]+&page=1&limit=50$/,
   );
 
   // The list one tap away shows the full price.

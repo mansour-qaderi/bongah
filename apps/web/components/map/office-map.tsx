@@ -7,16 +7,20 @@ import { useSearchParams } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { Crosshair, List, LocateFixed, MapPinOff, Search, X } from 'lucide-react';
-import { AFGHANISTAN_BOUNDS, DEAL_TYPES, type AgencyListingPin, type DealType } from '@bongah/shared-types';
+import { DEAL_TYPES, type AgencyListingPin, type DealType } from '@bongah/shared-types';
+import { insideMarket } from '@/lib/area-name';
+import { activeMarket, dealsFor, marketName } from '@/lib/market';
+import { useActiveMarket } from '@/hooks/use-active-market';
 import { normalizePlaceName } from '@bongah/validation';
 import { errorMessage } from '@/lib/api';
-import { formatMoney, formatNumber } from '@/lib/format';
+import { formatNumber } from '@/lib/format';
 import { DEAL_COLOR } from '@/lib/labels';
+import { listingPrice } from '@/lib/price';
 import { tNow } from '@/i18n/active';
 import { useLanguage, useT } from '@/i18n/provider';
 import { useLabels } from '@/i18n/use-labels';
 import { refreshListingData, updateListing } from '@/lib/listing-actions';
-import { DEFAULT_CENTER, detailTheme, fallbackStyle, localizeLabels, MAPBOX_TOKEN, mapStyle, TILE_MAX_ZOOM } from '@/lib/map-config';
+import { defaultCenter, detailTheme, fallbackStyle, localizeLabels, MAPBOX_TOKEN, mapStyle, TILE_MAX_ZOOM } from '@/lib/map-config';
 import { enhanceDetail } from '@/lib/map-detail';
 import { useDashboard, useMapListings, useOfficePin } from '@/hooks/use-api';
 import { useAreaName, type AreaView } from '@/hooks/use-area-name';
@@ -43,8 +47,6 @@ const fitPadding = () => ({ top: 80, bottom: 80, left: 80, right: typeof window 
 /** Listings farther than this (in degrees, about 35 km) from the office are left out of the first view; "show all" has them. */
 const NEAR_OFFICE_DEGREES = 0.35;
 
-const inAfghanistan = (lat: number, lng: number) =>
-  lat >= AFGHANISTAN_BOUNDS.minLat && lat <= AFGHANISTAN_BOUNDS.maxLat && lng >= AFGHANISTAN_BOUNDS.minLng && lng <= AFGHANISTAN_BOUNDS.maxLng;
 
 /** Listings with their position as the screen shows it: the saved one, or the one just dragged and being saved. */
 interface Item extends AgencyListingPin {
@@ -96,6 +98,12 @@ export function OfficeMap() {
       }),
     [data, overrides],
   );
+  // The deals of the market being worked in, plus any a listing on this map already has (an old one, say).
+  const market = useActiveMarket();
+  const dealChoices = useMemo(
+    () => DEAL_TYPES.filter((d) => dealsFor(market).includes(d) || items.some((p) => p.deal_type === d)),
+    [market, items],
+  );
 
   const filtered = useMemo(() => {
     const q = normalizePlaceName(search).toLowerCase();
@@ -128,8 +136,8 @@ export function OfficeMap() {
   // ── saving a position ──
   const savePosition = useCallback(
     async (id: string, to: Pos, from: Pos | null, label: string) => {
-      if (!inAfghanistan(to.lat, to.lng)) {
-        toast.error(tNow('map.outside'));
+      if (!insideMarket(to.lat, to.lng)) {
+        toast.error(tNow('map.outside', { market: marketName(activeMarket()) }));
         setOverrides((o) => {
           const n = new Map(o);
           if (from) n.set(id, from);
@@ -179,7 +187,7 @@ export function OfficeMap() {
     const map = new mapboxgl.Map({
       container: container.current,
       style: mapStyle(),
-      center: DEFAULT_CENTER,
+      center: defaultCenter(activeMarket()),
       zoom: 11,
       maxZoom: TILE_MAX_ZOOM,
       attributionControl: false,
@@ -460,7 +468,7 @@ export function OfficeMap() {
     else meMarker.current = new mapboxgl.Marker({ element: meElement(tNow('map.you')) }).setLngLat([me.lng, me.lat]).addTo(map);
   }, [me, ready]);
 
-  /** Flies to where the person is, and keeps the dot following them. Never moves the map outside Afghanistan. */
+  /** Flies to where the person is, and keeps the dot following them. Never moves the map outside the countries served. */
   const locateMe = useCallback(() => {
     if (!('geolocation' in navigator)) {
       toast.error(tNow('map.locate.unsupported'));
@@ -471,8 +479,8 @@ export function OfficeMap() {
       (position) => {
         setLocating(false);
         const here = { lat: position.coords.latitude, lng: position.coords.longitude };
-        if (!inAfghanistan(here.lat, here.lng)) {
-          toast.info(tNow('map.locate.outside'));
+        if (!insideMarket(here.lat, here.lng)) {
+          toast.info(tNow('map.locate.outside', { market: marketName(activeMarket()) }));
           return;
         }
         setMe(here);
@@ -481,7 +489,7 @@ export function OfficeMap() {
           watchId.current = navigator.geolocation.watchPosition(
             (p) => {
               const next = { lat: p.coords.latitude, lng: p.coords.longitude };
-              if (inAfghanistan(next.lat, next.lng)) setMe(next);
+              if (insideMarket(next.lat, next.lng)) setMe(next);
             },
             () => undefined, // the dot simply stays where it was
             { enableHighAccuracy: true, maximumAge: 5_000 },
@@ -581,7 +589,7 @@ export function OfficeMap() {
             <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder={t('map.searchPlaceholder')} aria-label={t('common.search')} className="ps-9" />
           </div>
           <div className="flex flex-wrap items-center gap-1.5">
-            {DEAL_TYPES.map((d) => {
+            {dealChoices.map((d) => {
               const on = deals.has(d);
               return (
                 <button
@@ -757,7 +765,7 @@ export function OfficeMap() {
             <div className="min-w-0">
               <div className="truncate text-sm font-bold text-ink">{selected.title}</div>
               <div className="mt-1 flex flex-wrap items-center gap-1.5 text-xs text-muted">
-                <Badge tone={selected.deal_type === 'SALE' ? 'primary' : selected.deal_type === 'RENT' ? 'info' : 'gold'}>{labels.deal[selected.deal_type]}</Badge>
+                <Badge tone={selected.deal_type === 'SALE' ? 'primary' : selected.deal_type === 'RENT' || selected.deal_type === 'MORTGAGE_RENT' ? 'info' : 'gold'}>{labels.deal[selected.deal_type]}</Badge>
                 <span>{labels.type[selected.type]}</span>
                 <Badge tone={selected.status === 'ACTIVE' ? 'primary' : 'neutral'}>{labels.status[selected.status]}</Badge>
                 {selected.is_featured ? <Badge tone="gold">{t('list.col.featured')}</Badge> : null}
@@ -767,7 +775,7 @@ export function OfficeMap() {
               <X className="h-4 w-4" />
             </button>
           </div>
-          <div className="tabular mt-2 text-sm font-semibold text-ink-2">{formatMoney(selected.price, selected.currency)}</div>
+          <div className="tabular mt-2 text-sm font-semibold text-ink-2">{listingPrice(selected)}</div>
           <p className="mt-1 line-clamp-2 text-xs text-muted">{selected.address}</p>
           <div className="mt-3 flex flex-wrap gap-2">
             {selected.placed ? (

@@ -39,10 +39,13 @@ export function formatPrice(amount: number, currencyLabel: string): string {
   return `${formatNumber(amount)} ${currencyLabel}`;
 }
 
-/** The sign written after a price: ؋ for Afghani, $ for dollars. */
+/** The sign written after a price: ؋ for Afghani, $ for dollars, the word «تومان» / «ریال» for Iran's. */
 export const CURRENCY_SYMBOLS: Record<Currency, string> = {
   AFGHANI: '؋',
   USD: '$',
+  // Iran writes the word after the number; there is no short sign in everyday use.
+  TOMAN: 'تومان',
+  RIAL: 'ریال',
 };
 
 /**

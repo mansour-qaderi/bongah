@@ -6,9 +6,10 @@ import { Sparkles } from 'lucide-react';
 import { formatNumber } from '@/lib/format';
 import { tNow } from '@/i18n/active';
 import { useT } from '@/i18n/provider';
+import { marketKey } from '@/i18n/translate';
 import { MAX_DRAFTS, useDrafts } from '@/lib/import/drafts-store';
 import { parseText, splitListings } from '@/lib/import/parse-text';
-import { usePinned } from '@/hooks/use-pinned';
+import { pinnedFor, useBatchMarket, usePinned } from '@/hooks/use-pinned';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Switch, Textarea } from '@/components/ui/field';
@@ -18,12 +19,14 @@ const MAX_CHARS = 200_000;
 /** Paste messages as they come from Telegram or WhatsApp; the listings are read out of them and land in the draft grid. */
 export function SmartText() {
   const t = useT();
-  const EXAMPLE = t('text.example');
+  const [market] = useBatchMarket();
+  const EXAMPLE = t(marketKey('text.example', market));
   const [text, setText] = useState('');
   // Off by default: the description keeps the whole text, every number and note in it.
   const [stripPhones, setStripPhones] = useState(false);
   const [single, setSingle] = useState(false);
-  const [pinned] = usePinned();
+  const [pinnedRaw] = usePinned();
+  const pinned = pinnedFor(pinnedRaw, market);
   const { actions } = useDrafts();
   const deferred = useDeferredValue(text);
   const count = useMemo(() => (deferred.trim() ? splitListings(deferred, { single }).length : 0), [deferred, single]);

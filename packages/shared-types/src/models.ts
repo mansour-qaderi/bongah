@@ -6,16 +6,20 @@ import type {
   BannerPlacement,
   Currency,
   DealType,
+  DeedType,
+  FeedbackCategory,
   GeoProvider,
   ContactUnlockMethod,
   MapLocationUnlimitedReason,
   MessageType,
   Language,
   LadderSpendPurpose,
+  Market,
   PerkReason,
   PlanBenefits,
   PricingKey,
   PriceTerms,
+  PropertyFeature,
   PropertyStatus,
   PropertyType,
   QuoteCategory,
@@ -37,6 +41,12 @@ export interface User {
   phone_number: string;
   full_name: string | null;
   role: Role;
+  /**
+   * The market this account works in (Afghanistan or Iran): it sets the currencies, deal and property kinds, places
+   * and payment details the apps offer, and which listings they show. Absent from servers that predate markets
+   * (treat as AF).
+   */
+  market?: Market;
   avatar: string | null;
   /** The morning quote push is wanted. (The phone's notification permission is separate.) */
   enable_daily_motivation: boolean;
@@ -114,6 +124,8 @@ export interface Property {
   title: string;
   description: string;
   type: PropertyType;
+  /** The market the listing belongs to. Absent from servers that predate markets (treat as AF). */
+  market?: Market;
   /** Which unit of a building it is ("واحد ۳"), as the owner wrote it. Null when the owner did not say. */
   unit?: string | null;
   deal_type: DealType;
@@ -121,8 +133,17 @@ export interface Property {
   mortgage_months?: number | null;
   /** Whether the price is final (مقطوع) or open to an offer (جورآمد). Null when the owner did not say. */
   price_terms?: PriceTerms | null;
-  /** Up to 2 decimals. Safe as a JSON number (the column holds at most 14 digits). */
+  /**
+   * Up to 2 decimals. Safe as a JSON number (the column holds at most 14 digits). For a MORTGAGE_RENT listing this is
+   * the deposit (رهن / ودیعه); the rent every month is `monthly_rent`.
+   */
   price: number;
+  /** The rent every month, in `currency`. Only a MORTGAGE_RENT listing has one; null otherwise. */
+  monthly_rent?: number | null;
+  /** The tags the owner ticked (elevator, parking…). Empty when none; absent from a server that predates them. */
+  features?: PropertyFeature[];
+  /** Afghan ownership paper (قباله شرعی / عرفی). Null when not said; absent from a server that predates it. */
+  deed_type?: DeedType | null;
   currency: Currency;
   area_sqm: number;
   bedrooms: number | null;
@@ -197,7 +218,10 @@ export interface Transaction {
 export interface DashboardListing {
   id: string;
   title: string;
+  deal_type?: DealType;
   price: number;
+  /** The monthly rent of a mortgage-and-rent listing (then `price` is the deposit). */
+  monthly_rent?: number | null;
   currency: Currency;
   view_count: number;
   /** True only while a paid featured promotion is running. */
@@ -274,6 +298,8 @@ export interface PropertyContact {
 
 /** What each purchase costs. Prices are decided by the server. */
 export interface Pricing {
+  /** The market these prices are for (the signed-in account's, or the one asked for). Absent from older servers (AF). */
+  market?: Market;
   currency: Currency;
   /** What each plan costs. */
   subscription: Record<SubscriptionPackage, number>;
@@ -326,10 +352,13 @@ export interface MapLocationStatus {
   tokens_available: number;
 }
 
-/** Where the customer sends the money in manual mode: a HesabPay wallet (by phone number) or a bank card. */
+/**
+ * Where the customer sends the money in manual mode: a HesabPay wallet (by phone number, Afghanistan), or a bank card
+ * and a Sheba (IBAN) number (Iran's card-to-card and Paya / Satna transfers).
+ */
 export interface ManualPaymentAccount {
-  kind: 'HESABPAY' | 'CARD';
-  /** The phone number of the HesabPay account, or the card number. Shown as is, to be copied. */
+  kind: 'HESABPAY' | 'CARD' | 'SHEBA';
+  /** The phone number of the HesabPay account, the card number or the Sheba number ("IR" + 24 digits). Shown as is, to be copied. */
   number: string;
   /** The name the account is in: the customer checks it before sending. */
   holder: string;
@@ -498,7 +527,10 @@ export interface ChatCapabilities {
 export interface ChatPropertySummary {
   id: string;
   title: string;
+  deal_type?: DealType;
   price: number;
+  /** The monthly rent of a mortgage-and-rent listing (then `price` is the deposit). */
+  monthly_rent?: number | null;
   currency: Currency;
   province: string;
   district: string;
@@ -804,6 +836,10 @@ export interface AbuseReportItem {
 
 export interface AdminUserItem extends AdminPerson {
   role: Role;
+  /** What the account may still publish beyond its monthly allowance (the welcome gift for a person, bonus listings for an office). */
+  listing_credits: number;
+  /** Featured-frame credits (a free «کادر ویژه» for one listing each). */
+  featured_credits: number;
   ban_reason: string | null;
   last_login_at: string | null;
   created_at: string;
@@ -819,6 +855,41 @@ export interface AdminUserDetail extends AdminUserItem {
   listings: { active: number; sold: number; archived: number };
   reports_filed: number;
   reports_against: number;
+}
+
+/** One message from the app's feedback form, for the admin's inbox (GET /admin/feedback). */
+export interface AdminFeedbackItem {
+  id: string;
+  category: FeedbackCategory;
+  message: string;
+  /** The app version it was sent from. */
+  app_version: string | null;
+  created_at: string;
+  user: AdminPerson;
+  /** What an admin answered, or null when nobody has yet. */
+  reply: FeedbackReply | null;
+}
+
+/** An admin's answer to a feedback message. */
+export interface FeedbackReply {
+  message: string;
+  replied_at: string;
+}
+
+/** The answer to POST /admin/feedback/:id/reply. */
+export interface AdminFeedbackReplyResult {
+  item: AdminFeedbackItem;
+  /** Whether a push went to at least one of the person's phones (the answer is saved and shown in the app either way). */
+  notified: boolean;
+}
+
+/** One of my own feedback messages, with the answer when there is one (GET /feedback/mine). */
+export interface MyFeedbackItem {
+  id: string;
+  category: FeedbackCategory;
+  message: string;
+  created_at: string;
+  reply: FeedbackReply | null;
 }
 
 export interface AdminAgencyItem {
@@ -1059,6 +1130,8 @@ export interface AgencyListingPin {
   deal_type: DealType;
   status: PropertyStatus;
   price: number;
+  /** The rent every month of a mortgage-and-rent listing (then `price` is the deposit); null otherwise. */
+  monthly_rent?: number | null;
   currency: Currency;
   province: string;
   district: string;

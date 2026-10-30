@@ -1,11 +1,11 @@
 import { useQuery } from '@tanstack/react-query';
-import type { Property } from '@bongah/shared-types';
+import { marketOf, type Property } from '@bongah/shared-types';
 import type { Coordinate } from './geo';
 import { findAddressLoosely } from './geocode';
 
 type Located = Pick<
   Property,
-  'lat' | 'lng' | 'province' | 'district' | 'neighborhood' | 'address'
+  'lat' | 'lng' | 'province' | 'district' | 'neighborhood' | 'address' | 'market'
 >;
 
 /** What the details page can say about where a listing is on the map. */
@@ -45,9 +45,9 @@ export function useApproxLocation(property: Located): ApproxLocation {
   const pinned = property.lat !== null && property.lng !== null;
   const text = writtenPlace(property);
   const query = useQuery({
-    queryKey: ['approx-location', property.province, text],
+    queryKey: ['approx-location', marketOf(property.market), property.province, text],
     queryFn: ({ signal }) =>
-      findAddressLoosely(text, property.province, signal),
+      findAddressLoosely(text, property.province, signal, marketOf(property.market)),
     enabled: !pinned && text.length >= 3,
     staleTime: Infinity,
     gcTime: 24 * 60 * 60 * 1000,

@@ -18,3 +18,12 @@ export const createFeedbackSchema = z.strictObject({
   app_version: z.string().trim().max(32).optional(),
 });
 export type CreateFeedbackInput = z.output<typeof createFeedbackSchema>;
+
+/** POST /admin/feedback/:id/reply: what the team writes back to the person. Same tidy-up as the message itself. */
+export const adminFeedbackReplySchema = z.strictObject({
+  message: z
+    .string()
+    .transform((value) => value.replace(/[ \t]+/g, ' ').replace(/ ?\n ?/g, '\n').replace(/\n{3,}/g, '\n\n').trim())
+    .pipe(z.string().min(2, 'At least 2 characters').max(FEEDBACK_MAX_LENGTH, `At most ${FEEDBACK_MAX_LENGTH} characters`)),
+});
+export type AdminFeedbackReplyInput = z.output<typeof adminFeedbackReplySchema>;

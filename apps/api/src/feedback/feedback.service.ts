@@ -1,10 +1,12 @@
 import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
-import type { FeedbackReceived } from '@bongah/shared-types';
+import type { FeedbackReceived, MyFeedbackItem } from '@bongah/shared-types';
 import type { CreateFeedbackInput } from '@bongah/validation';
 import { PrismaService } from '../prisma/prisma.service.js';
 
 /** One person can send this many messages in a day: a brake on someone flooding the team's inbox. */
 export const MAX_FEEDBACK_PER_DAY = 20;
+/** How many of their own messages a person sees under the form. */
+export const MY_FEEDBACK_LIMIT = 30;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 @Injectable()
@@ -32,5 +34,21 @@ export class FeedbackService {
       select: { id: true, createdAt: true },
     });
     return { id: row.id, created_at: row.createdAt.toISOString() };
+  }
+
+  /** The person's own messages, newest first, each with the team's answer when there is one. */
+  async mine(userId: string): Promise<MyFeedbackItem[]> {
+    const rows = await this.prisma.feedback.findMany({
+      where: { userId },
+      orderBy: [{ createdAt: 'desc' }, { id: 'asc' }],
+      take: MY_FEEDBACK_LIMIT,
+    });
+    return rows.map((row) => ({
+      id: row.id,
+      category: row.category,
+      message: row.message,
+      created_at: row.createdAt.toISOString(),
+      reply: row.adminReply && row.repliedAt ? { message: row.adminReply, replied_at: row.repliedAt.toISOString() } : null,
+    }));
   }
 }

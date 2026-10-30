@@ -1138,6 +1138,7 @@ describe('Home map: moving around', () => {
       max_lng: expect.any(String),
       page: '1',
       limit: '50',
+      market: 'AF',
     });
     // The area is Kabul's, with a margin.
     expect(Number(first.query.min_lat)).toBeLessThan(34.5281);

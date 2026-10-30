@@ -1,4 +1,4 @@
-import { LAUNCH_GIFTS_ONCE_PER_ACCOUNT, type User } from '@bongah/shared-types';
+import { LAUNCH_GIFTS_ONCE_PER_ACCOUNT, type Market, type User } from '@bongah/shared-types';
 
 /** The fields of a users row the wire `User` is built from. */
 export interface UserRow {
@@ -6,6 +6,7 @@ export interface UserRow {
   phoneNumber: string;
   fullName: string | null;
   role: User['role'];
+  market: Market;
   avatar: string | null;
   enableDailyMotivation: boolean;
   hasSeenWelcome: boolean;
@@ -22,6 +23,7 @@ export function toUser(row: UserRow): User {
     phone_number: row.phoneNumber,
     full_name: row.fullName,
     role: row.role,
+    market: row.market,
     avatar: row.avatar,
     enable_daily_motivation: row.enableDailyMotivation,
     has_seen_welcome: row.hasSeenWelcome,

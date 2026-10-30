@@ -1,7 +1,7 @@
 import { PermissionsAndroid, Platform } from 'react-native';
 import { LocationManager } from './native';
 import { within } from '../utils/within';
-import { isInsideAfghanistan, type Coordinate } from './geo';
+import { isInsideSupportedArea, type Coordinate } from './geo';
 
 /**
  * Where the phone is, for the "you are here" dot and for centring the map.
@@ -70,7 +70,7 @@ export async function locate({ ask }: { ask: boolean }): Promise<LocateResult> {
       return { status: 'unavailable' };
     }
     const coordinate = { latitude, longitude };
-    return isInsideAfghanistan(coordinate)
+    return isInsideSupportedArea(coordinate)
       ? { status: 'ok', coordinate }
       : { status: 'outside' };
   } catch {

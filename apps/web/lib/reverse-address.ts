@@ -1,6 +1,6 @@
 import type { Language, PlaceDetails } from '@bongah/shared-types';
 import { addressFrom } from './address';
-import { insideAfghanistan, matchProvince } from './area-name';
+import { insideMarket, matchProvince } from './area-name';
 import { nearestProvince } from './provinces';
 
 /**
@@ -77,7 +77,7 @@ export function planFill(place: PlaceParts | null, current: FormAddress, before:
   if (matched) {
     set('province', matched.name);
     if (patch.province) provinceValue = matched.name;
-  } else if (!provinceValue && insideAfghanistan(at.lat, at.lng)) {
+  } else if (!provinceValue && insideMarket(at.lat, at.lng)) {
     const nearest = nearestProvince(at.lat, at.lng);
     set('province', nearest.name);
     if (patch.province) {
@@ -148,7 +148,7 @@ export interface LookupOptions {
  */
 export async function lookupPlace(point: { lat: number; lng: number }, options: LookupOptions): Promise<PlaceAnswer> {
   const { language, token, signal, server, fetchImpl = fetch } = options;
-  if (!insideAfghanistan(point.lat, point.lng)) return { place: null, source: 'none' };
+  if (!insideMarket(point.lat, point.lng)) return { place: null, source: 'none' };
   try {
     const answer = await server(point, language, signal);
     return answer ? { place: answer, source: 'server' } : { place: null, source: 'none' };
@@ -161,7 +161,7 @@ export async function lookupPlace(point: { lat: number; lng: number }, options: 
       longitude: String(point.lng),
       latitude: String(point.lat),
       language: language === 'ps' ? 'ps' : 'fa',
-      country: 'af',
+      country: 'af,ir', // the point decides which: both countries are served
       limit: '1',
       access_token: token,
     });

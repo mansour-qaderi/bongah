@@ -6,11 +6,13 @@ import {
   GEOCODER_USER_AGENT,
 } from '../config';
 import {
+  ALL_PROVINCES,
   matchProvince,
-  PROVINCES,
+  provincesFor,
   type Province,
 } from '../constants/provinces';
-import { isInsideAfghanistan, type Coordinate } from './geo';
+import { DEFAULT_MARKET, MARKET_CONFIG, type Market } from '@bongah/shared-types';
+import { isInsideMarket, type Coordinate } from './geo';
 
 /** What a spot on the map says about where it is. Anything the service did not know is an empty string. */
 export interface PlaceGuess {
@@ -30,13 +32,17 @@ export interface PlaceGuess {
   answered: boolean;
 }
 
-/** The province whose capital is closest to a point. A fallback for when no service can be asked. */
-export function nearestProvince(point: Coordinate): Province {
+/**
+ * The province whose capital is closest to a point. A fallback for when no service can be asked. With a market, only
+ * that country's provinces are looked at; without one, the closest capital of either country (the point says which).
+ */
+export function nearestProvince(point: Coordinate, market?: Market): Province {
+  const list = market ? provincesFor(market) : ALL_PROVINCES;
   // Longitude degrees shrink with latitude; this is plenty accurate for ranking 34 places.
   const scale = Math.cos((point.latitude * Math.PI) / 180);
-  let best = PROVINCES[0];
+  let best = list[0];
   let bestDistance = Infinity;
-  for (const province of PROVINCES) {
+  for (const province of list) {
     const dLat = province.lat - point.latitude;
     const dLng = (province.lng - point.longitude) * scale;
     const distance = dLat * dLat + dLng * dLng;
@@ -92,12 +98,44 @@ const ISO_PROVINCE_IDS: Readonly<Record<string, string>> = {
   'AF-HEL': 'helmand',
   'AF-NIM': 'nimroz',
   'AF-FRA': 'farah',
+  // Iran (ISO 3166-2:IR)
+  'IR-01': 'east-azerbaijan',
+  'IR-02': 'west-azerbaijan',
+  'IR-03': 'ardabil',
+  'IR-04': 'isfahan',
+  'IR-05': 'ilam',
+  'IR-06': 'bushehr',
+  'IR-07': 'tehran',
+  'IR-08': 'chaharmahal',
+  'IR-10': 'khuzestan',
+  'IR-11': 'zanjan',
+  'IR-12': 'semnan',
+  'IR-13': 'sistan-baluchestan',
+  'IR-14': 'fars',
+  'IR-15': 'kerman',
+  'IR-16': 'kurdistan',
+  'IR-17': 'kermanshah',
+  'IR-18': 'kohgiluyeh',
+  'IR-19': 'gilan',
+  'IR-20': 'lorestan',
+  'IR-21': 'mazandaran',
+  'IR-22': 'markazi',
+  'IR-23': 'hormozgan',
+  'IR-24': 'hamadan',
+  'IR-25': 'yazd',
+  'IR-26': 'qom',
+  'IR-27': 'golestan',
+  'IR-28': 'qazvin',
+  'IR-29': 'south-khorasan',
+  'IR-30': 'khorasan-razavi',
+  'IR-31': 'north-khorasan',
+  'IR-32': 'alborz',
 };
 
 /** The province an ISO 3166-2 code ("AF-KAB", any case) names, or null. */
 export function provinceFromIsoCode(code: string | undefined): Province | null {
   const id = code ? ISO_PROVINCE_IDS[code.trim().toUpperCase()] : undefined;
-  return PROVINCES.find(p => p.id === id) ?? null;
+  return ALL_PROVINCES.find(p => p.id === id) ?? null;
 }
 
 /**
@@ -127,12 +165,13 @@ const first = (address: NominatimAddress, keys: readonly string[]): string => {
 export function placeFromAddress(
   address: NominatimAddress | undefined,
   point: Coordinate,
+  market?: Market,
 ): PlaceGuess {
-  if (!address) return fallback(point);
+  if (!address) return fallback(point, market);
   const matched = provinceOf(address);
   return {
     answered: true,
-    province: matched ?? nearestProvince(point),
+    province: matched ?? nearestProvince(point, market),
     provinceApproximate: matched === null,
     district: first(address, [
       'county',
@@ -160,9 +199,9 @@ export function placeFromAddress(
 const isDescriptive = (place: PlaceGuess): boolean =>
   Boolean(place.district || place.neighborhood || place.street);
 
-const fallback = (point: Coordinate): PlaceGuess => ({
+const fallback = (point: Coordinate, market?: Market): PlaceGuess => ({
   answered: false,
-  province: nearestProvince(point),
+  province: nearestProvince(point, market),
   provinceApproximate: true,
   district: '',
   neighborhood: '',
@@ -222,6 +261,7 @@ async function ask(url: string, signal?: AbortSignal): Promise<unknown | null> {
 export async function lookUpPlace(
   point: Coordinate,
   signal?: AbortSignal,
+  market?: Market,
 ): Promise<PlaceGuess> {
   let best: PlaceGuess | null = null;
   for (const zoom of REVERSE_ZOOMS) {
@@ -236,13 +276,13 @@ export async function lookUpPlace(
       address?: NominatimAddress;
     } | null;
     // Could not be asked: nothing a second question would change.
-    if (body === null) return best ?? fallback(point);
-    const place = placeFromAddress(body.address, point);
+    if (body === null) return best ?? fallback(point, market);
+    const place = placeFromAddress(body.address, point, market);
     if (!best || (place.answered && (!best.answered || isDescriptive(place))))
       best = place;
     if (isDescriptive(best)) break;
   }
-  return best ?? fallback(point);
+  return best ?? fallback(point, market);
 }
 
 // ───────────────────── the other way round: a written address → a spot on the map ─────────────────────
@@ -278,15 +318,18 @@ interface SearchHit {
   boundingbox?: string[];
 }
 
-/** The first usable hit of a Nominatim search answer: inside Afghanistan, with a zoom that fits its box. */
-export function addressFromHits(body: unknown): AddressSearch {
+/** The first usable hit of a Nominatim search answer: inside the market's country, with a zoom that fits its box. */
+export function addressFromHits(
+  body: unknown,
+  market: Market = DEFAULT_MARKET,
+): AddressSearch {
   if (!Array.isArray(body)) return { status: 'failed' };
   for (const hit of body as SearchHit[]) {
     const latitude = Number(hit?.lat);
     const longitude = Number(hit?.lon);
     if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) continue;
     const coordinate = { latitude, longitude };
-    if (!isInsideAfghanistan(coordinate)) continue;
+    if (!isInsideMarket(coordinate, market)) continue;
     const box = hit.boundingbox?.map(Number);
     const span =
       box && box.length === 4 && box.every(Number.isFinite)
@@ -298,7 +341,7 @@ export function addressFromHits(body: unknown): AddressSearch {
 }
 
 /**
- * Asks where a written address is (for example "زرنج، ناحیه ۵، پهلوی شفاخانه"), only inside Afghanistan, and takes the
+ * Asks where a written address is (for example "زرنج، ناحیه ۵، پهلوی شفاخانه"), only inside the market's country, and takes the
  * best answer. Never throws: a slow or missing network or a bad answer is `failed`, told apart from `none` ("the
  * service has never heard of it") so the form can say the right thing.
  *
@@ -308,14 +351,15 @@ export function addressFromHits(body: unknown): AddressSearch {
 export async function findAddress(
   query: string,
   signal?: AbortSignal,
+  market: Market = DEFAULT_MARKET,
 ): Promise<AddressSearch> {
   const text = query.trim();
   if (!text) return { status: 'none' };
   const url =
-    `${GEOCODER_SEARCH_URL}?format=jsonv2&addressdetails=0&countrycodes=af&limit=3` +
+    `${GEOCODER_SEARCH_URL}?format=jsonv2&addressdetails=0&countrycodes=${MARKET_CONFIG[market].country.toLowerCase()}&limit=3` +
     `&accept-language=fa,ps,en&q=${encodeURIComponent(text)}`;
   const body = await ask(url, signal);
-  return body === null ? { status: 'failed' } : addressFromHits(body);
+  return body === null ? { status: 'failed' } : addressFromHits(body, market);
 }
 
 // ───────────────── a written address that is more than the map knows: ask for less and less ─────────────────
@@ -373,6 +417,7 @@ export async function findAddressLoosely(
   text: string,
   provinceName?: string | null,
   signal?: AbortSignal,
+  market: Market = DEFAULT_MARKET,
 ): Promise<LooseAddressSearch> {
   const queries = addressQueries(text, provinceName);
   for (let index = 0; index < queries.length; index++) {
@@ -380,7 +425,7 @@ export async function findAddressLoosely(
       await pause(GEOCODER_GAP_MS, signal);
     }
     if (signal?.aborted) return { status: 'failed' };
-    const result = await findAddress(queries[index], signal);
+    const result = await findAddress(queries[index], signal, market);
     if (result.status === 'failed') return result;
     if (result.status === 'found') return { ...result, exact: index === 0 };
   }

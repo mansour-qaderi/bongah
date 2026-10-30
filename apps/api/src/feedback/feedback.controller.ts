@@ -1,6 +1,6 @@
-import { Body, Controller, HttpCode, HttpStatus, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Header, HttpCode, HttpStatus, Post, UseGuards } from '@nestjs/common';
 import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
-import type { FeedbackReceived } from '@bongah/shared-types';
+import type { FeedbackReceived, MyFeedbackItem } from '@bongah/shared-types';
 import { createFeedbackSchema, type CreateFeedbackInput } from '@bongah/validation';
 import type { AuthenticatedUser } from '../auth/auth.types.js';
 import { CurrentUser } from '../auth/decorators/current-user.decorator.js';
@@ -22,5 +22,13 @@ export class FeedbackController {
     @Body(new ZodValidationPipe(createFeedbackSchema)) body: CreateFeedbackInput,
   ): Promise<FeedbackReceived> {
     return this.feedback.create(user.id, body);
+  }
+
+  /** What I wrote and what the team answered. */
+  @Get('mine')
+  @Header('Cache-Control', 'no-store')
+  @UseGuards(JwtAuthGuard)
+  mine(@CurrentUser() user: AuthenticatedUser): Promise<MyFeedbackItem[]> {
+    return this.feedback.mine(user.id);
   }
 }

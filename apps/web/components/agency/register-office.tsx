@@ -8,6 +8,7 @@ import type { Agency } from '@bongah/shared-types';
 import { api, ApiError, errorMessage } from '@/lib/api';
 import { tNow } from '@/i18n/active';
 import { useT } from '@/i18n/provider';
+import { useMarketT } from '@/i18n/use-labels';
 import { Button } from '@/components/ui/button';
 import { Field, Input, Textarea } from '@/components/ui/field';
 
@@ -64,6 +65,7 @@ function fieldErrorsFrom(error: ApiError): { fields: Errors; other: string[] } {
  */
 export function RegisterOffice() {
   const t = useT();
+  const tm = useMarketT();
   const [name, setName] = useState('');
   const [address, setAddress] = useState('');
   const [description, setDescription] = useState('');
@@ -175,7 +177,7 @@ export function RegisterOffice() {
                 setAddress(e.target.value);
                 clearError('address');
               }}
-              placeholder={t('setup.address.placeholder')}
+              placeholder={tm('setup.address.placeholder')}
               data-testid="setup-address"
             />
           )}

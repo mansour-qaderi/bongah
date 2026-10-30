@@ -37,7 +37,8 @@ export class UsersService {
   }
 
   /**
-   * Changes the signed-in user's own settings. The welcome flag can only be raised (the schema refuses `false`),
+   * Changes the signed-in user's own settings, the market they work in among them (it only changes what the apps offer
+   * and list next; listings already published keep the market they were published in). The welcome flag can only be raised (the schema refuses `false`),
    * and raising it twice is harmless, so the app may retry freely.
    */
   async updatePreferences(userId: string, input: UpdatePreferencesDto): Promise<User> {
@@ -49,6 +50,7 @@ export class UsersService {
       data: {
         enableDailyMotivation: input.enable_daily_motivation,
         hasSeenWelcome: input.has_seen_welcome,
+        market: input.market,
       },
     });
     return toUser(row);

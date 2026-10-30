@@ -6,10 +6,12 @@ import {
   View,
 } from 'react-native';
 import { useTranslation } from 'react-i18next';
-import { DEAL_TYPES, type DealType } from '@bongah/shared-types';
+import { MARKET_CONFIG, type DealType, type Market } from '@bongah/shared-types';
 import AppText from '../../components/AppText';
 import Icon, { type IconName } from '../../components/Icon';
 import MapLoader from '../../components/MapLoader';
+import { dealTypeLabel } from '../../i18n/market';
+import { useActiveMarket } from '../../market/marketStore';
 import {
   inkBetween,
   SelectionFill,
@@ -102,6 +104,13 @@ export function RoundButton({
   );
 }
 
+/**
+ * The deals the quick filter offers: every deal of the market except the daily rental, which has too few listings to
+ * earn a place in the capsule (it is still in the filter sheet, and its markers keep their colour on the map).
+ */
+export const quickDeals = (market: Market): readonly DealType[] =>
+  MARKET_CONFIG[market].dealTypes.filter(deal => deal !== 'DAILY_RENT');
+
 interface DealFilterProps {
   value: DealType | undefined;
   /** undefined: show every deal. */
@@ -114,9 +123,10 @@ interface DealFilterProps {
  */
 export function DealFilter({ value, onChange }: DealFilterProps) {
   const { t } = useTranslation();
+  const market = useActiveMarket();
   return (
     <View style={styles.capsule} testID="deal-filter">
-      {DEAL_TYPES.map(deal => {
+      {quickDeals(market).map(deal => {
         const selected = value === deal;
         const tone = dealColors[deal];
         return (
@@ -143,7 +153,7 @@ export function DealFilter({ value, onChange }: DealFilterProps) {
               numberOfLines={1}
               style={styles.segmentText}
             >
-              {t(`dealType.${deal}`)}
+              {dealTypeLabel(deal, market, t)}
             </AppText>
           </Pressable>
         );

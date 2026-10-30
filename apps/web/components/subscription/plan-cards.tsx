@@ -7,6 +7,7 @@ import { SUBSCRIPTION_PACKAGES, type Pricing, type SubscriptionPackage, type Wal
 import { errorMessage } from '@/lib/api';
 import { useT } from '@/i18n/provider';
 import { useLabels } from '@/i18n/use-labels';
+import { useActiveMarket } from '@/hooks/use-active-market';
 import { formatMoney, formatNumber } from '@/lib/format';
 import { announcePaid, startPayment } from '@/lib/payments';
 import { cn } from '@/lib/cn';
@@ -19,6 +20,7 @@ const MONTHS: Record<SubscriptionPackage, number> = { MONTHLY: 1, QUARTERLY: 3, 
 export function PlanCards({ pricing, wallet }: { pricing: Pricing; wallet: Wallet | undefined }) {
   const t = useT();
   const labels = useLabels();
+  const market = useActiveMarket();
   const [busy, setBusy] = useState<SubscriptionPackage | null>(null);
   const current = wallet?.subscription?.is_active ? wallet.subscription.package_type : null;
 
@@ -102,7 +104,7 @@ export function PlanCards({ pricing, wallet }: { pricing: Pricing; wallet: Walle
           );
         })}
       </div>
-      <p className="px-5 pb-5 text-xs text-muted">{t('sub.plans.footer')}</p>
+      <p className="px-5 pb-5 text-xs text-muted">{t(market === 'IR' ? 'sub.pay.IR' : 'sub.plans.footer')}</p>
     </Card>
   );
 }

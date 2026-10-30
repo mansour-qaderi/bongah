@@ -282,7 +282,7 @@ describe.skipIf(!hasDb)('Properties (e2e)', () => {
       await bad({ price: 10.123 }, 'price');
       await bad({ price: 0 }, 'price');
       await bad({ price: -5 }, 'price');
-      await bad({ price: 1e12 }, 'price');
+      await bad({ price: 1e14 }, 'price');
     });
     it('rejects unknown enum values and the wrong currency spelling', async () => {
       await bad({ type: 'CASTLE' }, 'type');

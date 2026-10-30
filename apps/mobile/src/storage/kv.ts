@@ -36,6 +36,12 @@ export const kv = {
 
 export const KV_KEYS = {
   language: 'language',
+  /** The country the person works in, 'AF' or 'IR' (see market/marketStore.ts). Followed by the account's own setting once signed in. */
+  market: 'market',
+  /** Left over from versions that let the person pick a country in Settings; the store removes it on load (market/marketStore.ts). */
+  marketManual: 'market_manual',
+  /** '1' once the location prompt was shown for finding the country, so it is asked for once, not at every start. */
+  marketAsked: 'market_asked',
   /** The ids of the listings this person has bookmarked, as a JSON array (see favorites/store.ts). */
   favorites: 'favorites',
   /** Which base map the person looks at, 'street' or 'satellite' (see map/mapStyleStore.ts). */

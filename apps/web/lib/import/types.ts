@@ -1,4 +1,4 @@
-import type { Currency, DealType, PriceTerms, PropertyType } from '@bongah/shared-types';
+import type { Currency, DealType, DeedType, Market, PriceTerms, PropertyFeature, PropertyType } from '@bongah/shared-types';
 
 /**
  * A listing being prepared: every field is the text as it sits in the table cell, so half-typed values survive.
@@ -6,11 +6,19 @@ import type { Currency, DealType, PriceTerms, PropertyType } from '@bongah/share
  */
 export interface DraftRow {
   key: string;
+  /**
+   * The market (Afghanistan or Iran) the listing is for. Absent from drafts saved before markets existed, and for rows
+   * that never chose one: those take the account's market when they are checked and sent.
+   */
+  market?: Market;
   title: string;
   description: string;
   type: PropertyType | '';
   deal_type: DealType | '';
+  /** The price; for a mortgage-and-rent (رهن و اجاره) it is the deposit. */
   price: string;
+  /** The rent every month, only for a mortgage-and-rent. Optional because drafts saved before it existed do not have it. */
+  monthly_rent?: string;
   currency: Currency | '';
   price_terms: PriceTerms | '';
   area_sqm: string;
@@ -21,6 +29,10 @@ export interface DraftRow {
    * goes into the generated title and description. Optional because drafts saved before it existed do not have it.
    */
   floors?: string;
+  /** The tags ticked (Iran: elevator, parking…). Optional because drafts saved before they existed do not have them. */
+  features?: PropertyFeature[];
+  /** Afghan ownership paper: قباله شرعی / عرفی. */
+  deed_type?: DeedType | '';
   /** The contact number the text carried, as +93XXXXXXXXX. Kept for the agent to see; the API gets no phone (callers go through the app). */
   phone?: string;
   province: string;
@@ -38,6 +50,8 @@ export interface DraftRow {
 
 /** Values the agent keeps pinned while entering many listings: they fill whatever an import could not read. */
 export interface PinnedDefaults {
+  /** The market the listings are for. Left out: the account's market. */
+  market?: Market;
   province: string;
   district: string;
   deal_type: DealType | '';
@@ -60,12 +74,15 @@ export function emptyDraft(source: DraftRow['source'], defaults: Partial<DraftRo
     type: '',
     deal_type: '',
     price: '',
+    monthly_rent: '',
     currency: '',
     price_terms: '',
     area_sqm: '',
     bedrooms: '',
     bathrooms: '',
     floors: '',
+    features: [],
+    deed_type: '',
     phone: '',
     province: '',
     district: '',

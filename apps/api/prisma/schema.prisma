@@ -29,16 +29,34 @@ enum Role {
   @@map("role")
 }
 
+/// The two markets the platform serves. A user works in one (users.market); a listing belongs to one (properties.market);
+/// a payment is made in the payer's (transactions.market). Must match MARKETS in @bongah/shared-types.
+enum Market {
+  AF
+  IR
+
+  @@map("market")
+}
+
 /// One kind each (a shop and an office are two types, a garden and a villa are two, a garage and "other" are two).
 /// Must match PROPERTY_TYPES in @bongah/shared-types.
 enum PropertyType {
   APARTMENT
+  /// Legacy as a type: in the Iran form «دوبلکس» is now a feature tag (PropertyFeature.DUPLEX). Old rows keep it.
+  DUPLEX
+  COMMERCIAL
   HOUSE_HAWILI
   LAND
+  /// زمین و کلنگی (Iran): a plot, or a plot with an old building to pull down.
+  LAND_OLD
   SHOP
   OFFICE
+  /// گدام (Afghanistan).
+  WAREHOUSE
   GARDEN
   VILLA
+  /// باغ و ویلا (Iran): one type, where Afghanistan lists a garden and a villa apart.
+  VILLA_GARDEN
   GARAGE
   OTHER
 
@@ -78,17 +96,46 @@ enum PriceTerms {
   @@map("price_terms")
 }
 
+/// MORTGAGE_GROWI is one deal with two names: گروی in Afghanistan, رهن کامل in Iran. DAILY_RENT is اجاره روزانه (a villa or
+/// a garden let by the day).
 enum DealType {
   SALE
   RENT
   MORTGAGE_GROWI
+  /// رهن و اجاره (Iran): `price` is the deposit and `monthly_rent` the rent every month.
+  MORTGAGE_RENT
+  DAILY_RENT
 
   @@map("deal_type")
+}
+
+/// A tag on a listing (Iran): the things a buyer filters by that are not a property type.
+enum PropertyFeature {
+  DUPLEX
+  PENTHOUSE
+  SINGLE_DEED
+  MASTER_ROOM
+  ELEVATOR
+  PARKING
+  STORAGE
+
+  @@map("property_feature")
+}
+
+/// The ownership paper of an Afghan property: قباله شرعی (SHARI) or عرفی (ORFI).
+enum DeedType {
+  SHARI
+  ORFI
+
+  @@map("deed_type")
 }
 
 enum Currency {
   AFGHANI
   USD
+  /// Iran: prices are said in toman (1 toman = 10 rials); banks count in rials.
+  TOMAN
+  RIAL
 
   @@map("currency")
 }
@@ -317,6 +364,9 @@ model User {
   phoneNumber String   @unique @map("phone_number")
   fullName    String?  @map("full_name")
   role        Role     @default(USER)
+  /// The market this account works in (see Market). Chosen in the settings; it decides the currencies, kinds of deal and
+  /// property, places and payment details the apps offer, and which listings they list.
+  market      Market   @default(AF)
   avatar      String?
   /// The code this user shares to invite friends. Filled by the database (generate_referral_code(),
   /// see the referrals migration) so every way of creating a user gets one.
@@ -445,6 +495,8 @@ model Property {
   title         String
   description   String
   type          PropertyType
+  /// The market the listing belongs to. Fixed at creation (it is the owner's market unless they chose the other).
+  market        Market         @default(AF)
   /// Which unit of a building ("واحد ۳"), free text the owner writes. Null when not given.
   unit          String?        @db.VarChar(40)
   /// LEGACY, unused (see PropertyUnit).
@@ -454,8 +506,15 @@ model Property {
   mortgageMonths Int?          @map("mortgage_months")
   /// Fixed (مقطوع) or negotiable (جورآمد) price. Null when the owner said neither.
   priceTerms    PriceTerms?    @map("price_terms")
-  price         Decimal        @db.Decimal(14, 2)
+  /// 16 digits before the point: a villa priced in rials is in the trillions.
+  price         Decimal        @db.Decimal(18, 2)
+  /// The rent every month of a MORTGAGE_RENT listing (`price` is then the deposit). Null on every other deal.
+  monthlyRent   Decimal?       @map("monthly_rent") @db.Decimal(18, 2)
   currency      Currency
+  /// Tags ticked on the form (elevator, parking…). Empty when none.
+  features      PropertyFeature[] @default([])
+  /// قباله شرعی / عرفی. Null when not given (and always in the Iran market).
+  deedType      DeedType?      @map("deed_type")
   areaSqm       Float          @map("area_sqm")
   bedrooms      Int?
   bathrooms     Int?
@@ -515,6 +574,8 @@ model Property {
   @@index([userId, createdAt]) // "1 free listing per month" quota check
   @@index([agencyId])
   @@index([status, province, district]) // main browse filter
+  @@index([market, status]) // every list and map is one market's
+  @@index([features], type: Gin) // "has all of these tags" filters
   @@index([lat, lng]) // map bounding-box search (PostGIS later, see README note)
   @@map("properties")
 }
@@ -547,6 +608,8 @@ model Transaction {
   userId       String             @map("user_id") @db.Uuid
   amount       Decimal            @db.Decimal(14, 2)
   currency     String
+  /// The payer's market when the payment was started: it decides the currency, the prices and where the money is sent.
+  market       Market             @default(AF)
   hesabpayTxId String             @unique @map("hesabpay_tx_id")
   purpose      TransactionPurpose
   status       TransactionStatus  @default(PENDING)
@@ -886,6 +949,11 @@ model Feedback {
   /// The app version it was sent from, so a problem report says which build it concerns.
   appVersion String?          @map("app_version")
   createdAt  DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
+  /// What an admin wrote back (the person is told by a push and sees it under the feedback form). Null: not answered yet.
+  adminReply   String?   @map("admin_reply")
+  repliedAt    DateTime? @map("replied_at") @db.Timestamptz(3)
+  /// The admin who answered (kept as a plain id: the audit log has the full trail).
+  repliedById  String?   @map("replied_by_id") @db.Uuid
 
   user User @relation(fields: [userId], references: [id], onDelete: Restrict)
 
@@ -943,7 +1011,8 @@ model Banner {
 
 /// An admin's price for one paid product. No row = the HESABPAY_* environment default applies.
 /// `quantity` is the number of featured days (FEATURED_AD) or credits per pack (CONTACT_CREDITS); null = the
-/// environment default. The currency is not stored here: it is the one currency of the HesabPay account.
+/// environment default. The currency is not stored here: it is the one currency of the HesabPay account, so these prices
+/// are the Afghan market's; Iran's prices come from the IR_PRICE_* environment settings only.
 model PricingOverride {
   key         PricingKey @id
   price       Decimal    @db.Decimal(14, 2)

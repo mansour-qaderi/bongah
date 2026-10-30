@@ -70,15 +70,15 @@ describe('a marker label', () => {
 });
 
 describe('which listings have rooms', () => {
-  it('has no bedrooms or bathrooms for a shop, an office, land, a garage, a garden or other', () => {
-    for (const type of ['SHOP', 'OFFICE', 'LAND', 'GARAGE', 'GARDEN', 'OTHER'] as const) {
+  it('has no bedrooms or bathrooms for a shop, an office, a commercial unit, a godam, land (with or without an old building), a garage, a garden or other', () => {
+    for (const type of ['SHOP', 'OFFICE', 'COMMERCIAL', 'WAREHOUSE', 'LAND', 'LAND_OLD', 'GARAGE', 'GARDEN', 'OTHER'] as const) {
       expect(hasRoomsFor(type)).toBe(false);
     }
-    expect(NO_ROOMS).toHaveLength(6);
+    expect(NO_ROOMS).toHaveLength(9);
   });
 
-  it('has them for a house, an apartment and a villa', () => {
-    for (const type of ['HOUSE_HAWILI', 'APARTMENT', 'VILLA'] as const) {
+  it('has them for a house, an apartment, a duplex and a villa', () => {
+    for (const type of ['HOUSE_HAWILI', 'APARTMENT', 'DUPLEX', 'VILLA'] as const) {
       expect(hasRoomsFor(type)).toBe(true);
     }
   });

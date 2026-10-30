@@ -1,8 +1,10 @@
 import { normalizePlaceName } from '@bongah/validation';
-import type { Language } from '@bongah/shared-types';
+import type { Language, Market } from '@bongah/shared-types';
 
 export interface Province {
   id: string;
+  /** The country the province is in. Absent on the Afghan list: Afghanistan. */
+  market?: Market;
   /** The Dari name. Its normalised form is what is stored on listings and sent as the `province` filter. */
   name: Record<Language, string>;
   /** Provincial capital, when its name differs from the province's. Shown next to the name. */
@@ -169,7 +171,264 @@ export const PROVINCES: readonly Province[] = [
   { id: 'farah', name: { prs: 'فراه', ps: 'فراه' }, lat: 32.37, lng: 62.11 },
 ];
 
-/** Shortcuts shown above the list: the big cities the product launches in. */
+/**
+ * Iran's 31 provinces, with the provincial capital's position (for moving the map and for naming a pin when no
+ * geocoder can be asked). The Dari spelling is what a listing stores; Pashto readers see the Pashto name where there is
+ * one. Written from general knowledge: the Pashto wording needs a native-speaker check, like the Afghan list above.
+ */
+export const IRAN_PROVINCES: readonly Province[] = [
+  {
+    id: 'tehran',
+    market: 'IR',
+    name: { prs: 'تهران', ps: 'تهران' },
+    lat: 35.69,
+    lng: 51.39,
+  },
+  {
+    id: 'alborz',
+    market: 'IR',
+    name: { prs: 'البرز', ps: 'البرز' },
+    capital: { prs: 'کرج', ps: 'کرج' },
+    lat: 35.84,
+    lng: 50.94,
+  },
+  {
+    id: 'isfahan',
+    market: 'IR',
+    name: { prs: 'اصفهان', ps: 'اصفهان' },
+    lat: 32.65,
+    lng: 51.67,
+  },
+  {
+    id: 'fars',
+    market: 'IR',
+    name: { prs: 'فارس', ps: 'فارس' },
+    capital: { prs: 'شیراز', ps: 'شیراز' },
+    lat: 29.59,
+    lng: 52.58,
+  },
+  {
+    id: 'khorasan-razavi',
+    market: 'IR',
+    name: { prs: 'خراسان رضوی', ps: 'خراسان رضوي' },
+    capital: { prs: 'مشهد', ps: 'مشهد' },
+    lat: 36.3,
+    lng: 59.6,
+  },
+  {
+    id: 'east-azerbaijan',
+    market: 'IR',
+    name: { prs: 'آذربایجان شرقی', ps: 'ختیځ آذربایجان' },
+    capital: { prs: 'تبریز', ps: 'تبریز' },
+    lat: 38.08,
+    lng: 46.29,
+  },
+  {
+    id: 'west-azerbaijan',
+    market: 'IR',
+    name: { prs: 'آذربایجان غربی', ps: 'لوېدیځ آذربایجان' },
+    capital: { prs: 'ارومیه', ps: 'ارومیه' },
+    lat: 37.55,
+    lng: 45.07,
+  },
+  {
+    id: 'gilan',
+    market: 'IR',
+    name: { prs: 'گیلان', ps: 'ګیلان' },
+    capital: { prs: 'رشت', ps: 'رشت' },
+    lat: 37.28,
+    lng: 49.58,
+  },
+  {
+    id: 'mazandaran',
+    market: 'IR',
+    name: { prs: 'مازندران', ps: 'مازندران' },
+    capital: { prs: 'ساری', ps: 'ساري' },
+    lat: 36.57,
+    lng: 53.06,
+  },
+  {
+    id: 'golestan',
+    market: 'IR',
+    name: { prs: 'گلستان', ps: 'ګلستان' },
+    capital: { prs: 'گرگان', ps: 'ګرګان' },
+    lat: 36.84,
+    lng: 54.43,
+  },
+  {
+    id: 'qom',
+    market: 'IR',
+    name: { prs: 'قم', ps: 'قم' },
+    lat: 34.64,
+    lng: 50.88,
+  },
+  {
+    id: 'qazvin',
+    market: 'IR',
+    name: { prs: 'قزوین', ps: 'قزوین' },
+    lat: 36.27,
+    lng: 50.0,
+  },
+  {
+    id: 'markazi',
+    market: 'IR',
+    name: { prs: 'مرکزی', ps: 'مرکزي' },
+    capital: { prs: 'اراک', ps: 'اراک' },
+    lat: 34.09,
+    lng: 49.69,
+  },
+  {
+    id: 'hamadan',
+    market: 'IR',
+    name: { prs: 'همدان', ps: 'همدان' },
+    lat: 34.8,
+    lng: 48.51,
+  },
+  {
+    id: 'kermanshah',
+    market: 'IR',
+    name: { prs: 'کرمانشاه', ps: 'کرمانشاه' },
+    lat: 34.31,
+    lng: 47.07,
+  },
+  {
+    id: 'kurdistan',
+    market: 'IR',
+    name: { prs: 'کردستان', ps: 'کردستان' },
+    capital: { prs: 'سنندج', ps: 'سنندج' },
+    lat: 35.31,
+    lng: 46.0,
+  },
+  {
+    id: 'lorestan',
+    market: 'IR',
+    name: { prs: 'لرستان', ps: 'لرستان' },
+    capital: { prs: 'خرم‌آباد', ps: 'خرم‌اباد' },
+    lat: 33.49,
+    lng: 48.35,
+  },
+  {
+    id: 'ilam',
+    market: 'IR',
+    name: { prs: 'ایلام', ps: 'ایلام' },
+    lat: 33.64,
+    lng: 46.42,
+  },
+  {
+    id: 'khuzestan',
+    market: 'IR',
+    name: { prs: 'خوزستان', ps: 'خوزستان' },
+    capital: { prs: 'اهواز', ps: 'اهواز' },
+    lat: 31.32,
+    lng: 48.67,
+  },
+  {
+    id: 'bushehr',
+    market: 'IR',
+    name: { prs: 'بوشهر', ps: 'بوشهر' },
+    lat: 28.92,
+    lng: 50.84,
+  },
+  {
+    id: 'hormozgan',
+    market: 'IR',
+    name: { prs: 'هرمزگان', ps: 'هرمزګان' },
+    capital: { prs: 'بندرعباس', ps: 'بندرعباس' },
+    lat: 27.19,
+    lng: 56.27,
+  },
+  {
+    id: 'kerman',
+    market: 'IR',
+    name: { prs: 'کرمان', ps: 'کرمان' },
+    lat: 30.28,
+    lng: 57.08,
+  },
+  {
+    id: 'sistan-baluchestan',
+    market: 'IR',
+    name: { prs: 'سیستان و بلوچستان', ps: 'سیستان او بلوچستان' },
+    capital: { prs: 'زاهدان', ps: 'زاهدان' },
+    lat: 29.5,
+    lng: 60.86,
+  },
+  {
+    id: 'yazd',
+    market: 'IR',
+    name: { prs: 'یزد', ps: 'یزد' },
+    lat: 31.9,
+    lng: 54.37,
+  },
+  {
+    id: 'semnan',
+    market: 'IR',
+    name: { prs: 'سمنان', ps: 'سمنان' },
+    lat: 35.58,
+    lng: 53.39,
+  },
+  {
+    id: 'north-khorasan',
+    market: 'IR',
+    name: { prs: 'خراسان شمالی', ps: 'شمالي خراسان' },
+    capital: { prs: 'بجنورد', ps: 'بجنورد' },
+    lat: 37.47,
+    lng: 57.33,
+  },
+  {
+    id: 'south-khorasan',
+    market: 'IR',
+    name: { prs: 'خراسان جنوبی', ps: 'سویلي خراسان' },
+    capital: { prs: 'بیرجند', ps: 'بیرجند' },
+    lat: 32.87,
+    lng: 59.22,
+  },
+  {
+    id: 'ardabil',
+    market: 'IR',
+    name: { prs: 'اردبیل', ps: 'اردبیل' },
+    lat: 38.25,
+    lng: 48.3,
+  },
+  {
+    id: 'zanjan',
+    market: 'IR',
+    name: { prs: 'زنجان', ps: 'زنجان' },
+    lat: 36.68,
+    lng: 48.5,
+  },
+  {
+    id: 'chaharmahal',
+    market: 'IR',
+    name: { prs: 'چهارمحال و بختیاری', ps: 'چهارمحال او بختیاري' },
+    capital: { prs: 'شهرکرد', ps: 'شهرکرد' },
+    lat: 32.33,
+    lng: 50.86,
+  },
+  {
+    id: 'kohgiluyeh',
+    market: 'IR',
+    name: { prs: 'کهگیلویه و بویراحمد', ps: 'کهګیلویه او بویراحمد' },
+    capital: { prs: 'یاسوج', ps: 'یاسوج' },
+    lat: 30.67,
+    lng: 51.59,
+  },
+];
+
+/** The provinces of a market, in the order the pickers show them. */
+export const provincesFor = (market: Market): readonly Province[] =>
+  market === 'IR' ? IRAN_PROVINCES : PROVINCES;
+
+/** Every province of both countries: for reading a stored or geocoded name whichever country it is in. */
+export const ALL_PROVINCES: readonly Province[] = [
+  ...PROVINCES,
+  ...IRAN_PROVINCES,
+];
+
+/** The country a province is in. */
+export const marketOfProvince = (province: Province): Market =>
+  province.market ?? 'AF';
+
+/** Shortcuts shown above the list: the big cities each market launches in. */
 export const QUICK_PROVINCE_IDS = [
   'kabul',
   'herat',
@@ -177,6 +436,10 @@ export const QUICK_PROVINCE_IDS = [
   'kandahar',
   'nangarhar',
 ] as const;
+export const QUICK_PROVINCE_IDS_BY_MARKET: Record<Market, readonly string[]> = {
+  AF: QUICK_PROVINCE_IDS,
+  IR: ['tehran', 'khorasan-razavi', 'isfahan', 'fars', 'alborz'],
+};
 
 /** The exact string stored on a listing / sent as `province` for this province. */
 export const provinceValue = (province: Province): string =>
@@ -188,7 +451,7 @@ export function findProvince(
 ): Province | undefined {
   if (!value) return undefined;
   const wanted = normalizePlaceName(value);
-  return PROVINCES.find(
+  return ALL_PROVINCES.find(
     p =>
       normalizePlaceName(p.name.prs) === wanted ||
       normalizePlaceName(p.name.ps) === wanted,
@@ -222,7 +485,7 @@ export function matchProvince(
   const same = (candidate: string | undefined) =>
     candidate !== undefined && letters(candidate) === wanted;
   return (
-    PROVINCES.find(
+    ALL_PROVINCES.find(
       p =>
         same(p.id) ||
         same(p.name.prs) ||

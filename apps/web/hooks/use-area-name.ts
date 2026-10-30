@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { Language, PlaceDetails } from '@bongah/shared-types';
 import { ApiError, fetcher } from '@/lib/api';
-import { AREA_MIN_ZOOM, areaKey, areaLabel, insideAfghanistan } from '@/lib/area-name';
+import { AREA_MIN_ZOOM, areaKey, areaLabel, insideMarket } from '@/lib/area-name';
 import { nearestProvince, provinceLabel } from '@/lib/provinces';
 
 export interface AreaView {
@@ -33,7 +33,7 @@ export function useAreaName(view: AreaView | null, language: Language): string |
   const [detail, setDetail] = useState<{ key: string; language: Language; at: { lat: number; lng: number }; details: PlaceDetails | null } | null>(null);
   const asked = useRef(0);
 
-  const wanted = !!view && view.zoom >= AREA_MIN_ZOOM && insideAfghanistan(view.lat, view.lng);
+  const wanted = !!view && view.zoom >= AREA_MIN_ZOOM && insideMarket(view.lat, view.lng);
   const key = view && wanted ? areaKey(view.lat, view.lng, language) : null;
   // The question is about the square, not the exact point (every point in it gets the same answer): asked at the
   // square's middle, so a nudge within the square neither restarts the wait nor drops an answer already on its way.

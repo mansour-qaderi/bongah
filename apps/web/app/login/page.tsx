@@ -1,14 +1,15 @@
 import type { Metadata } from 'next';
 import { Suspense } from 'react';
-import { getRequestLanguage } from '@/i18n/server';
-import { translate, type MessageKey } from '@/i18n/translate';
-import { LanguageSwitcher } from '@/components/ui/language-switcher';
+import { getRequestLanguage, getRequestMarket } from '@/i18n/server';
+import { translateFor, type MessageKey } from '@/i18n/translate';
+import { CountryLanguageSwitcher } from '@/components/ui/country-language-switcher';
 import { LoginForm } from './login-form';
 import { LogoMark } from '@/components/ui/logo';
 import { Building2, ListChecks, MapPinned, RefreshCw } from 'lucide-react';
 
 export async function generateMetadata(): Promise<Metadata> {
-  return { title: translate(await getRequestLanguage(), 'login.pageTitle') };
+  const [language, market] = await Promise.all([getRequestLanguage(), getRequestMarket()]);
+  return { title: translateFor(language, 'login.pageTitle', market) };
 }
 
 const POINTS: { icon: typeof ListChecks; key: MessageKey }[] = [
@@ -19,8 +20,8 @@ const POINTS: { icon: typeof ListChecks; key: MessageKey }[] = [
 ];
 
 export default async function LoginPage() {
-  const language = await getRequestLanguage();
-  const t = (key: MessageKey) => translate(language, key);
+  const [language, market] = await Promise.all([getRequestLanguage(), getRequestMarket()]);
+  const t = (key: MessageKey) => translateFor(language, key, market);
   return (
     <div className="grid min-h-dvh lg:grid-cols-2">
       <section className="flex flex-col justify-between bg-primary-dark p-8 text-white max-lg:hidden xl:p-14">
@@ -53,7 +54,7 @@ export default async function LoginPage() {
       <section className="flex items-center justify-center p-6">
         <div className="w-full max-w-sm">
           <div className="mb-6 flex justify-end">
-            <LanguageSwitcher />
+            <CountryLanguageSwitcher />
           </div>
           <div className="mb-8 flex items-center gap-3 lg:hidden">
             <LogoMark size={44} />

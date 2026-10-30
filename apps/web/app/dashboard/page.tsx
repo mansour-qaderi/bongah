@@ -15,11 +15,13 @@ import { ChartSkeleton, StatCardSkeleton } from '@/components/ui/skeleton';
 import { StatCard } from '@/components/ui/stat-card';
 import { cn } from '@/lib/cn';
 import { useT } from '@/i18n/provider';
+import { useMarketT } from '@/i18n/use-labels';
 
 const RANGES = [7, 30, 90] as const;
 
 export default function OverviewPage() {
   const t = useT();
+  const tm = useMarketT();
   const [days, setDays] = useState<(typeof RANGES)[number]>(30);
   const dashboard = useDashboard();
   const wallet = useWallet();
@@ -92,7 +94,7 @@ export default function OverviewPage() {
         <Card className="xl:col-span-2">
           <CardHeader
             title={t('dash.perf.title')}
-            description={t('dash.perf.desc')}
+            description={tm('dash.perf.desc')}
             action={
               <div role="group" aria-label={t('dash.perf.range')} className="flex rounded-xl bg-soft p-1">
                 {RANGES.map((r) => (

@@ -1,21 +1,38 @@
 import { toAsciiDigits } from '@bongah/validation';
-import type { Currency } from '@bongah/shared-types';
+import type { Currency, Market } from '@bongah/shared-types';
 import { tNow } from '@/i18n/active';
-import type { MessageKey } from '@/i18n/translate';
+import { marketKey, type MessageKey } from '@/i18n/translate';
+import { activeMarket } from './market';
 import { toPersianDigits } from './persian-input';
 
 export { toAsciiDigits };
 
 const numberFormat = new Intl.NumberFormat('fa-AF-u-nu-arabext', { maximumFractionDigits: 2 });
 
-/** The Solar Hijri (Jalali) calendar day of a moment, as numbers; Kabul's clock, because that is where the API's days are. */
-const solarParts = new Intl.DateTimeFormat('en-US-u-ca-persian-nu-latn', {
-  year: 'numeric',
-  month: 'numeric',
-  day: 'numeric',
-  timeZone: 'Asia/Kabul',
-});
-const clockParts = new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit', hourCycle: 'h23', timeZone: 'Asia/Kabul' });
+/**
+ * The clock a day is counted on: Kabul's in Afghanistan (that is where the API's days are), Tehran's in Iran. The Solar Hijri
+ * (Jalali) calendar day of a moment is read from it.
+ */
+const TIME_ZONE: Record<Market, string> = { AF: 'Asia/Kabul', IR: 'Asia/Tehran' };
+
+const solarFormats = new Map<Market, Intl.DateTimeFormat>();
+const clockFormats = new Map<Market, Intl.DateTimeFormat>();
+const solarPartsFor = (market: Market): Intl.DateTimeFormat => {
+  let f = solarFormats.get(market);
+  if (!f) {
+    f = new Intl.DateTimeFormat('en-US-u-ca-persian-nu-latn', { year: 'numeric', month: 'numeric', day: 'numeric', timeZone: TIME_ZONE[market] });
+    solarFormats.set(market, f);
+  }
+  return f;
+};
+const clockPartsFor = (market: Market): Intl.DateTimeFormat => {
+  let f = clockFormats.get(market);
+  if (!f) {
+    f = new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit', hourCycle: 'h23', timeZone: TIME_ZONE[market] });
+    clockFormats.set(market, f);
+  }
+  return f;
+};
 
 interface SolarDay {
   year: number;
@@ -23,9 +40,9 @@ interface SolarDay {
   day: number;
 }
 
-function solarDay(d: Date): SolarDay | null {
+function solarDay(d: Date, market: Market): SolarDay | null {
   const out: Partial<SolarDay> = {};
-  for (const part of solarParts.formatToParts(d)) {
+  for (const part of solarPartsFor(market).formatToParts(d)) {
     if (part.type === 'year' || part.type === 'month' || part.type === 'day') out[part.type] = Number(part.value);
   }
   return out.year && out.month && out.day ? (out as SolarDay) : null;
@@ -33,12 +50,14 @@ function solarDay(d: Date): SolarDay | null {
 
 /**
  * Built from the numbers instead of the browser's own wording: the month names are ours (the same ones the phone app
- * shows, Dari or Pashto), and the browser's Pashto date adds an era ("AP") and its own digits.
+ * shows: Dari or Pashto in Afghanistan, the Iranian names «فروردین»… in Iran), and the browser's Pashto date adds an era
+ * ("AP") and its own digits.
  */
 function solarText(d: Date, withYear: boolean): string {
-  const s = solarDay(d);
+  const market = activeMarket();
+  const s = solarDay(d, market);
   if (!s) return '—';
-  const month = tNow(`date.month.${s.month}` as MessageKey);
+  const month = tNow(marketKey(`date.month.${s.month}` as MessageKey, market));
   return toPersianDigits(withYear ? `${s.day} ${month} ${s.year}` : `${s.day} ${month}`);
 }
 
@@ -92,11 +111,11 @@ export function formatShortDate(iso: string | null | undefined): string {
   return d ? solarText(d, false) : '—';
 }
 
-/** ۱۰ عقرب ۱۴۰۵، ۱۶:۳۰ (Kabul time) */
+/** ۱۰ عقرب ۱۴۰۵، ۱۶:۳۰ (Kabul time; Tehran time in Iran) */
 export function formatDateTime(iso: string | null | undefined): string {
   const d = validDate(iso);
   if (!d) return '—';
-  const clock = clockParts
+  const clock = clockPartsFor(activeMarket())
     .formatToParts(d)
     .filter((p) => p.type === 'hour' || p.type === 'minute' || p.type === 'literal')
     .map((p) => p.value)

@@ -1,10 +1,12 @@
-import type { Currency, DealType, PriceTerms, PropertyType } from '@bongah/shared-types';
-import { normalizeAfghanMobile } from '@bongah/validation';
-import { PROVINCES, provinceNameLabel } from '../provinces';
+import type { Currency, DealType, DeedType, Market, PriceTerms, PropertyFeature, PropertyType } from '@bongah/shared-types';
+import { MARKET_CONFIG, RIALS_PER_TOMAN } from '@bongah/shared-types';
+import { MAX_MONEY, normalizeAfghanMobile } from '@bongah/validation';
+import { IRAN_PROVINCES, PROVINCES, provinceNameLabel } from '../provinces';
+import { activeMarket, startCurrency } from '../market';
 import { addressFrom } from '../address';
 import { currencyName, formatNumber } from '../format';
 import { hasRoomsFor, labelsFor, labelsNow } from '../labels';
-import { activeLanguage, tNow } from '@/i18n/active';
+import { activeLanguage, tNow, tNowFor } from '@/i18n/active';
 import { translate } from '@/i18n/translate';
 import type { Language } from '@/i18n/config';
 import { cutAt, flatten, isSeparatorLine, stripDecoration, whole, WORD } from './text-utils';
@@ -66,10 +68,16 @@ const ANY_NUMBER = `(?:${DIGITS}|${WORD_NUMBER})`;
 const typeWord = (source: string) => whole(`(?:${source})(?:\\s?ی)?`);
 
 const TYPE_PATTERNS: [PropertyType, RegExp][] = [
+  // The compound names first: on a tie in position the first of the list wins («باغ و ویلا» before «باغ», «زمین کلنگی» before «زمین»).
+  ['VILLA_GARDEN', new RegExp(whole('باغ ?و ?ویلا|باغ ?ویلا|ویلا ?و ?باغ|ویلا ?باغ|باغ‌ویلا|باغ و ویلای'), 'u')],
+  ['LAND_OLD', new RegExp(whole('زمین ?و ?کلنگی|زمین کلنگی|ساختمان کلنگی|خانه کلنگی|منزل کلنگی|ملک کلنگی|کلنگی'), 'u')],
+  ['WAREHOUSE', new RegExp(whole('گدام|ګدام|گودام|ګودام|سوله|انبار صنعتی'), 'u')],
   ['APARTMENT', new RegExp(typeWord('آپارتمان|اپارتمان|آپارتمنت|اپارتمنت|اپارتمانت|فلت|فلټ'), 'u')],
+  ['DUPLEX', new RegExp(typeWord('دوبلکس|دوپلکس|دو بلکس|دو پلکس|duplex'), 'u')],
   ['VILLA', new RegExp(typeWord('ویلا|ویلایی'), 'u')],
   ['GARDEN', new RegExp(typeWord('باغ'), 'u')],
   ['SHOP', new RegExp(typeWord('دکان|دوکان|مغازه|دکانچه|دکان تجارتی|مارکیت|مارکت|سرای تجارتی'), 'u')],
+  ['COMMERCIAL', new RegExp(typeWord('تجاری|تجاري|واحد تجاری|مجتمع تجاری'), 'u')],
   ['OFFICE', new RegExp(`(?<![${WORD}])(?:دفتر|آفیس|دفتر کار)(?!\\s*(?:املاک|بنگاه|معاملات|ملکی))(?![${WORD}])`, 'u')],
   ['LAND', new RegExp(typeWord('زمین|پلاٹ|پلات|پلاټ|ځمکه|ځمکې'), 'u')],
   ['GARAGE', new RegExp(typeWord('گاراژ|ګاراژ|ګراج'), 'u')],
@@ -91,8 +99,12 @@ export function detectType(flat: string): PropertyType | null {
 }
 
 const DEAL_PATTERNS: [DealType, RegExp][] = [
+  // First, so «اجاره روزانه» (same start as «اجاره») is the daily rental, not a plain rent.
+  ['DAILY_RENT', new RegExp(whole('اجاره روزانه|اجاره‌ی روزانه|اجارهٔ روزانه|اجاره ی روزانه|کرایه روزانه|کرایهٔ روزانه|اجاره (?:ویلا|باغ|ویلا و باغ|باغ و ویلا) روزانه|اجاره کوتاه ?مدت|ورځنۍ کرایه|ورځنی کرایه|ورځنۍ اجاره'), 'u')],
+  // «رهن و اجاره» (Iran): a deposit and a rent every month. Before «رهن» and «اجاره», which start at the same place.
+  ['MORTGAGE_RENT', new RegExp(whole('(?:رهن|ودیعه|پیش ?پرداخت) ?(?:و|\\+|/|،|-|او)? ?(?:اجاره|کرایه)(?:ی)?|(?:اجاره|کرایه) ?(?:و|\\+|/|،|-|او)? ?(?:رهن|ودیعه)|رهن (?:و|او) اجاره'), 'u')],
   ['RENT', new RegExp(whole('کرایه|کرایی|کرایې|کرایه‌ای|اجاره|اجاره ای|اجاره‌ای|کرایه ای|کرائی'), 'u')],
-  ['MORTGAGE_GROWI', new RegExp(whole('گروی|گرو|گیروی|گیرو|گیرویی|گرویی|گیروئی|گروئی|گرو داده|گیرو داده|رهن|رهنی|ګروی|ګرو'), 'u')],
+  ['MORTGAGE_GROWI', new RegExp(whole('گروی|گرو|گیروی|گیرو|گیرویی|گرویی|گیروئی|گروئی|گرو داده|گیرو داده|رهن کامل|رهن|رهنی|ودیعه|ګروی|ګرو'), 'u')],
   ['SALE', new RegExp(whole('فروش|فروشی|به فروش|بفروش|برای فروش|می‌فروشم|میفروشم|میفروشیم|پلور|پلورنه|پلورنې'), 'u')],
 ];
 
@@ -103,6 +115,42 @@ export function detectDeal(flat: string): DealType | null {
     if (m && (!best || m.index < best.at)) best = { deal, at: m.index };
   }
   return best?.deal ?? null;
+}
+
+/** The tags an Iranian ad names, as keywords. «انباری» (storage) is a tag; «انبار» alone is not looked for (a warehouse is «گدام»). */
+const FEATURE_PATTERNS: [PropertyFeature, RegExp][] = [
+  ['DUPLEX', new RegExp(whole('دوبلکس|دوپلکس|دو بلکس|دو پلکس|duplex'), 'iu')],
+  ['PENTHOUSE', new RegExp(whole('پنت ?هاوس|پنت‌هاوس|پنتهاوس|penthouse'), 'iu')],
+  ['SINGLE_DEED', new RegExp(whole('سند تک ?برگ|سند تک‌برگ|تک ?برگ|تک‌برگ|سند تکبرگ|تک پاڼې سند'), 'u')],
+  ['MASTER_ROOM', new RegExp(whole('مستر ?روم|مستر|ماستر ?روم|اتاق مستر|master'), 'iu')],
+  ['ELEVATOR', new RegExp(whole('آسانسور|اسانسور|لیفت|لفټ|elevator|lift'), 'iu')],
+  ['PARKING', new RegExp(whole('پارکینگ|پارکینګ|پارکنگ|parking'), 'iu')],
+  ['STORAGE', new RegExp(whole('انباری|انبار|گدامچه|storage'), 'iu')],
+];
+
+/** Every tag the text names, once each, in the order of the list. (Mentions that say the thing is missing — «بدون آسانسور» — do not count.) */
+export function detectFeatures(flat: string): PropertyFeature[] {
+  const found: PropertyFeature[] = [];
+  for (const [feature, re] of FEATURE_PATTERNS) {
+    const global = new RegExp(re.source, re.flags.includes('g') ? re.flags : `${re.flags}g`);
+    for (const m of flat.matchAll(global)) {
+      const before = flat.slice(Math.max(0, m.index! - 10), m.index!);
+      if (/(?:بدون|بی|نداره|ندارد|ندارند|بې)\s*$/u.test(before)) continue;
+      const after = flat.slice(m.index! + m[0].length, m.index! + m[0].length + 8);
+      if (/^\s*(?:ندارد|ندارد|نیست|نداره|نلري)/u.test(after)) continue;
+      found.push(feature);
+      break;
+    }
+  }
+  return found;
+}
+
+/** The Afghan ownership paper the text names: «قباله شرعی» (SHARI) or «عرفی» (ORFI). */
+export function detectDeed(flat: string): DeedType | null {
+  const shari = /(?<![\p{L}])(?:قباله\s*شرعی|قباله\s*شرعي|شرعي\s*قباله|سند\s*شرعی|شرعی)(?![\p{L}])/u.exec(flat);
+  const orfi = /(?<![\p{L}])(?:قباله\s*عرفی|عرفي\s*قباله|سند\s*عرفی|عرفی|عرفي)(?![\p{L}])/u.exec(flat);
+  if (shari && orfi) return shari.index <= orfi.index ? 'SHARI' : 'ORFI';
+  return shari ? 'SHARI' : orfi ? 'ORFI' : null;
 }
 
 // ───────────── Price ─────────────
@@ -116,14 +164,14 @@ const PRICE_RE = new RegExp(
   `(?<![\\d.,])(?<num>${ANY_NUMBER})(?<half1>${HALF})?(?:\\s*(?<unit>${UNIT})(?![${WORD}]))?(?<half2>${HALF})?(?:\\s*(?:و|او)\\s*(?<n2>${DIGITS})\\s*(?<u2>${UNIT})(?![${WORD}]))?`,
   'gu',
 );
-const CURRENCY_AFTER = /^\s*[:：]?\s*(افغانی|افغانیه|افغانیها|افغانی ها|افغانی‌ها|افغانۍ|افغانیو|afn|afs|؋|دالر|دلار|دالری|دالره|ډالر|ډالره|ډالرو|usd|\$)/iu;
-const CURRENCY_BEFORE = /(\$|usd|دالر|دلار|ډالر|؋|افغانی|افغانۍ)\s*[:：]?\s*$/iu;
+const CURRENCY_AFTER = /^\s*[:：]?\s*(تومان|تومن|تومان‌|ریال|ریالی|افغانی|افغانیه|افغانیها|افغانی ها|افغانی‌ها|افغانۍ|افغانیو|afn|afs|؋|دالر|دلار|دالری|دالره|ډالر|ډالره|ډالرو|usd|\$)/iu;
+const CURRENCY_BEFORE = /(\$|usd|دالر|دلار|ډالر|؋|افغانی|افغانۍ|تومان|ریال)\s*[:：]?\s*$/iu;
 /**
  * What can stand right before a price: «قیمت:», «قیمت فروش:», «قیمت نهایی ماهانه =», «کرایه -», «مبلغ گروی», or a deal word
  * used as the label («فروش: ...»).
  */
-const PRICE_WORD = 'قیمت|بها|بیه|بیې|مبلغ|فی|کرایه|کرایی|کرایې|اجاره|گیروی|گیرو|گروی|گرو|ګروی|ګرو|رهن|price|نرخ|پول';
-const PRICE_QUALIFIER = 'فروش|فروشی|کرایه|کرایی|اجاره|گروی|رهن|ماهانه|ماهیانه|سالانه|نهایی|قطعی|کل|کلی|تقریبی|پیشنهادی|ملک|خانه|حویلی|آپارتمان|زمین|دکان|پلور|پلورنې|میاشتنۍ|کلنۍ|افغانی|دالر';
+const PRICE_WORD = 'قیمت|بها|بیه|بیې|مبلغ|فی|کرایه|کرایی|کرایې|اجاره|گیروی|گیرو|گروی|گرو|ګروی|ګرو|رهن|ودیعه|پیش ?پرداخت|price|نرخ|پول';
+const PRICE_QUALIFIER = 'فروش|فروشی|کرایه|کرایی|اجاره|گروی|رهن|ماهانه|ماهیانه|سالانه|روزانه|کامل|نهایی|قطعی|کل|کلی|تقریبی|پیشنهادی|ملک|خانه|حویلی|آپارتمان|زمین|دکان|پلور|پلورنې|میاشتنۍ|کلنۍ|افغانی|دالر|تومان|ریال';
 const PRICE_KEYWORD = new RegExp(
   `(?<![${WORD}])(?:(?:${PRICE_WORD})(?:\\s+(?:${PRICE_QUALIFIER})){0,2}|(?:فروش|فروشی|پلور|پلورنه)(?=\\s*[:：=]))\\s*(?:[:：=]|[-–—]+|است|می‌باشد|میباشد)?\\s*(?:[:：=]|[-–—]+)?\\s*$`,
   'iu',
@@ -164,6 +212,14 @@ export function findPhones(text: string): string[] {
   return found;
 }
 
+/** The currency a word after or before a price stands for (انگلیسی و فارسی): dollars, tomans, rials, else afghanis. */
+function currencyFromWord(word: string): Currency {
+  if (/دالر|دلار|ډالر|usd|\$/i.test(word)) return 'USD';
+  if (/تومان|تومن/.test(word)) return 'TOMAN';
+  if (/ریال/.test(word)) return 'RIAL';
+  return 'AFGHANI';
+}
+
 export interface PriceResult {
   value: number;
   currency: Currency | null;
@@ -196,10 +252,10 @@ export function findPrice(flat: string): PriceResult | null {
 
     let currency: Currency | null = null;
     const ca = CURRENCY_AFTER.exec(after);
-    if (ca) currency = /دالر|دلار|ډالر|usd|\$/i.test(ca[1]!) ? 'USD' : 'AFGHANI';
+    if (ca) currency = currencyFromWord(ca[1]!);
     else {
       const cb = CURRENCY_BEFORE.exec(lineBefore);
-      if (cb) currency = /دالر|دلار|ډالر|usd|\$/i.test(cb[1]!) ? 'USD' : 'AFGHANI';
+      if (cb) currency = currencyFromWord(cb[1]!);
     }
     const keyword = PRICE_KEYWORD.test(lineBefore);
     // A bare number is a price only when it is plainly one: written with a keyword, a unit or a currency, or so large
@@ -212,7 +268,7 @@ export function findPrice(flat: string): PriceResult | null {
     if (g.half1 || g.half2) value += 0.5 * (unit ? UNIT_VALUE[unit]! : 1);
     if (unit && g.n2 && g.u2 && UNIT_VALUE[g.u2]! < UNIT_VALUE[unit]!) value += Number(g.n2.replace(/,/g, '')) * UNIT_VALUE[g.u2]!;
     value = Math.round(value * 100) / 100;
-    if (!(value > 0) || value > 999_999_999_999) continue;
+    if (!(value > 0) || value > MAX_MONEY) continue;
 
     const score = (currency ? 3 : 0) + (unit ? 2 : 0) + (keyword ? 3 : 0) + (value >= 1000 ? 1 : 0);
     found.push({ value, currency, unit, candidates: 0, assumedKarur: unit === 'کرور', score, at: start });
@@ -221,6 +277,94 @@ export function findPrice(flat: string): PriceResult | null {
   found.sort((a, b) => b.score - a.score || a.at - b.at);
   const best = found[0]!;
   return { value: best.value, currency: best.currency, unit: best.unit, candidates: new Set(found.map((f) => f.value)).size, assumedKarur: best.assumedKarur };
+}
+
+/**
+ * The two amounts of a «رهن و اجاره» ad: the deposit (after «رهن», «ودیعه», «پیش‌پرداخت») and the rent every month (after
+ * «اجاره», «کرایه», «ماهی»). Each is read from the words that follow its keyword, on the same line.
+ */
+const DEPOSIT_KEYWORD = new RegExp(`(?<![${WORD}])(?:رهن|ودیعه|پیش ?پرداخت)(?:\\s+(?:کامل|اولیه))?(?![${WORD}])`, 'gu');
+const RENT_KEYWORD = new RegExp(`(?<![${WORD}])(?:اجاره|کرایه|ماهی|ماهانه|ماهیانه|ماهیانه)(?:\\s+(?:ماهانه|ماهیانه|ماهی))?(?![${WORD}])`, 'gu');
+
+function amountAfter(flat: string, keyword: RegExp): PriceResult | null {
+  for (const m of flat.matchAll(keyword)) {
+    const from = m.index!;
+    const lineEnd = flat.indexOf('\n', from);
+    const slice = flat.slice(from, lineEnd === -1 ? undefined : lineEnd);
+    // The next keyword ends the amount: «رهن ۲۰۰ میلیون اجاره ۸ میلیون» → «رهن ۲۰۰ میلیون».
+    const other = keyword === DEPOSIT_KEYWORD ? RENT_KEYWORD : DEPOSIT_KEYWORD;
+    const after = slice.slice(m[0].length);
+    const next = after.search(new RegExp(other.source, 'u'));
+    const part = next === -1 ? slice : slice.slice(0, m[0].length + next);
+    const price = findPrice(part);
+    if (price) return price;
+  }
+  return null;
+}
+
+export interface RentPrices {
+  deposit: PriceResult | null;
+  monthly: PriceResult | null;
+}
+
+export function findRentPrices(flat: string): RentPrices {
+  return { deposit: amountAfter(flat, DEPOSIT_KEYWORD), monthly: amountAfter(flat, RENT_KEYWORD) };
+}
+
+/**
+ * Makes what the text said fit the market the listing is for. Iran's form has four kinds of property and no plain
+ * «اجاره» (it is «رهن و اجاره»); Afghanistan's has no tags and Iran's has no deed. A kind that has an obvious home in
+ * the market is moved there (a duplex becomes an apartment with the «دوبلکس» tag, a villa or garden «باغ و ویلا», a shop,
+ * an office or a warehouse «تجاری و اداری»), one that does not (a garage in Iran) is left empty for the person to choose,
+ * with a note. A price in a currency the market does not use is dealt with the same way: Iran's rials become tomans (a tenth
+ * of the number), any other currency is left for the person to choose.
+ */
+export function adaptToMarket(row: DraftRow, market: Market, notes: string[]): void {
+  const config = MARKET_CONFIG[market];
+  const labels = labelsFor(activeLanguage(), market);
+  if (row.type && !config.propertyTypes.includes(row.type)) {
+    const from = row.type;
+    let to: PropertyType | '' = '';
+    if (market === 'IR') {
+      if (from === 'DUPLEX') {
+        to = 'APARTMENT';
+        if (!(row.features ?? []).includes('DUPLEX')) row.features = [...(row.features ?? []), 'DUPLEX'];
+      } else if (from === 'VILLA' || from === 'GARDEN') to = 'VILLA_GARDEN';
+      else if (from === 'SHOP' || from === 'OFFICE' || from === 'WAREHOUSE') to = 'COMMERCIAL';
+    } else if (from === 'COMMERCIAL') to = 'SHOP';
+    else if (from === 'LAND_OLD') to = 'LAND';
+    else if (from === 'VILLA_GARDEN') to = 'VILLA';
+    const fromName = labelsFor(activeLanguage(), 'AF').type[from];
+    if (to) {
+      row.type = to;
+      notes.push(tNow('import.note.typeAdapted', { from: fromName, to: labels.type[to], market: tNow(`market.${market}`) }));
+    } else {
+      row.type = '';
+      notes.push(tNow('import.note.typeNotInMarket', { from: fromName, market: tNow(`market.${market}`) }));
+    }
+  }
+  if (market === 'IR' && row.deal_type === 'RENT') {
+    row.deal_type = 'MORTGAGE_RENT';
+    notes.push(tNow('import.note.rentAsMortgageRent'));
+  }
+  if (row.currency && !config.currencies.includes(row.currency)) {
+    const from = row.currency;
+    if (market === 'IR' && from === 'RIAL') {
+      // One toman is ten rials: «۲۰۰٬۰۰۰٬۰۰۰ ریال» is «۲۰٬۰۰۰٬۰۰۰ تومان».
+      for (const field of ['price', 'monthly_rent'] as const) {
+        const n = Number(row[field]);
+        if (row[field] && Number.isFinite(n)) row[field] = String(n / RIALS_PER_TOMAN);
+      }
+      row.currency = 'TOMAN';
+      notes.push(tNow('import.note.rialToToman'));
+    } else {
+      row.currency = '';
+      notes.push(tNow('import.note.currencyNotInMarket', { from: currencyName(from), market: tNow(`market.${market}`) }));
+    }
+  }
+  // Only this market's tags, in the order its form lists them.
+  row.features = config.features.filter((feature) => (row.features ?? []).includes(feature));
+  if (row.deed_type && !config.deedTypes.includes(row.deed_type)) row.deed_type = '';
 }
 
 /** What the price is said to be: «قابل معامله نیست», «مقطوع», «بې چانې»: not to be bargained over. Checked first, because it often contains the words of the other kind. */
@@ -350,6 +494,11 @@ const PROVINCE_ENTRIES: { needle: string; province: string }[] = [
     ...(p.capital ? [{ needle: p.capital, province: p.name }] : []),
     { needle: p.name_ps, province: p.name },
     ...(p.capital_ps ? [{ needle: p.capital_ps, province: p.name }] : []),
+  ]),
+  // Iran: the province's name and its capital's. «مرکزی» (the province of Markazi) is also the common word «central».
+  ...IRAN_PROVINCES.flatMap((p) => [
+    ...(p.name === 'مرکزی' ? [] : [{ needle: p.name, province: p.name }]),
+    ...(p.capital ? [{ needle: p.capital, province: p.name }] : []),
   ]),
   ...Object.entries(PROVINCE_ALIASES).map(([needle, province]) => ({ needle, province })),
 ].map((e) => ({ needle: flatten(e.needle), province: e.province }));
@@ -496,7 +645,7 @@ export function stripPhoneNumbers(text: string): { text: string; removed: number
 
 /** Lines that give one fact under a label — «قیمت فروش: ...», «آدرس: ...», «نوع ملک: خانه» — and so are never a listing's start or title. */
 const STRONG_LABEL = new RegExp(`^(?:قیمت|بها|بیه|مبلغ|نرخ|آدرس|ادرس|نشانی|پته|مساحت|متراژ|رقبه|تماس|تلفن|تلیفون|شماره تماس|موبایل|واتساپ|واتس اپ|اړیکه|توضیحات|تشریحات|مشخصات|امکانات|جزئیات|شرایط معامله)(?![${WORD}])`, 'iu');
-const WEAK_LABEL = new RegExp(`^(?:موقعیت|محل|نوعیت|نوع|کد|کود|آی دی|ایدی|id|تعداد|اتاق|حمام|طبقه|منزل|سند|نوع سند|وضعیت|پرداخت|سال ساخت|زیربنا|جهت|نما|اندازه|ساحه|نوت|نوټ|نکته|نکات|ملاحظه|ملاحظات|یادداشت|توجه|تذکر|هشدار|شرایط|شرط|شروط|معلومات|قابل توجه)(?:\\s+[${WORD}]+){0,2}\\s*[:：=]`, 'iu');
+const WEAK_LABEL = new RegExp(`^(?:موقعیت|محل|نوعیت|نوع|کد|کود|آی دی|ایدی|id|تعداد|اتاق|حمام|طبقه|منزل|سند|نوع سند|رهن|ودیعه|پیش ?پرداخت|اجاره|کرایه|وضعیت|پرداخت|سال ساخت|زیربنا|جهت|نما|اندازه|ساحه|نوت|نوټ|نکته|نکات|ملاحظه|ملاحظات|یادداشت|توجه|تذکر|هشدار|شرایط|شرط|شروط|معلومات|قابل توجه)(?:\\s+[${WORD}]+){0,2}\\s*[:：=]`, 'iu');
 export const isDetailLine = (flatLine: string) => STRONG_LABEL.test(flatLine) || WEAK_LABEL.test(flatLine);
 
 /** «کد: 245», «VIP», «#فوری», «شماره آگهی ۱۲»: the tag line above a post, not the post. */
@@ -573,17 +722,17 @@ function titleLine(raw: string): string | null {
  * language explicitly when this runs while rendering, where the browser-wide one is not available (the server).
  */
 export function composeTitle(
-  f: { type?: PropertyType | ''; deal?: DealType | ''; bedrooms?: number | null; floors?: number | null; area?: number | null; district?: string; province?: string },
+  f: { market?: Market; type?: PropertyType | ''; deal?: DealType | ''; bedrooms?: number | null; floors?: number | null; area?: number | null; district?: string; province?: string },
   language: Language = activeLanguage(),
 ): string {
   const t = (key: Parameters<typeof translate>[1], params?: Record<string, string | number>) => translate(language, key, params);
-  const labels = labelsFor(language);
+  const labels = labelsFor(language, f.market);
   const parts: string[] = [];
   parts.push(f.type ? (labels.type[f.type].split(' / ')[0] ?? labels.type[f.type]) : t('title.property'));
   if (f.floors && f.floors > 1) parts.push(t('title.floors', { n: formatNumber(f.floors) }));
   if (f.bedrooms && f.type && hasRoomsFor(f.type)) parts.push(t('title.rooms', { n: formatNumber(f.bedrooms) }));
   if (f.area) parts.push(t('title.area', { n: formatNumber(f.area) }));
-  if (f.deal) parts.push(t(f.deal === 'SALE' ? 'title.SALE' : f.deal === 'RENT' ? 'title.RENT' : 'title.MORTGAGE_GROWI'));
+  if (f.deal) parts.push(t(f.market === 'IR' && f.deal !== 'SALE' ? (`title.IR.${f.deal}` as Parameters<typeof translate>[1]) : (`title.${f.deal}` as Parameters<typeof translate>[1])));
   const place = [f.district, f.province ? provinceNameLabel(f.province, language) : ''].filter(Boolean).join(' ');
   if (place) parts.push(t('title.in', { place }));
   return cutAt(parts.join(' '), 150);
@@ -596,9 +745,15 @@ export function parseListing(block: string, options: ParseOptions = {}): DraftRo
   const flat = flatten(block);
   const notes: string[] = [];
   const row = emptyDraft('text');
+  const market = defaults.market ?? activeMarket();
+  row.market = market;
 
   const type = detectType(flat);
   if (type) row.type = type;
+  const tags = detectFeatures(flat);
+  if (tags.length) row.features = tags;
+  const deed = detectDeed(flat);
+  if (deed) row.deed_type = deed;
 
   const deal = detectDeal(flat);
   if (deal) row.deal_type = deal;
@@ -610,23 +765,37 @@ export function parseListing(block: string, options: ParseOptions = {}): DraftRo
     notes.push(tNow('import.note.dealAssumed', { deal: labelsNow().deal.SALE }));
   }
 
-  const price = findPrice(flat);
-  if (price) {
-    row.price = String(price.value);
+  // Iran's «اجاره» is «رهن و اجاره» (see adaptToMarket); a listing of that deal has two amounts, read from their own words.
+  if (market === 'IR' && row.deal_type === 'RENT') {
+    row.deal_type = 'MORTGAGE_RENT';
+    notes.push(tNow('import.note.rentAsMortgageRent'));
+  }
+  const rents = row.deal_type === 'MORTGAGE_RENT' ? findRentPrices(flat) : null;
+  // For a mortgage-and-rent the price is the deposit; without one the rent still tells the currency.
+  const price = rents ? rents.deposit : findPrice(flat);
+  const money = price ?? rents?.monthly ?? null;
+  if (rents) {
+    if (rents.monthly) row.monthly_rent = String(rents.monthly.value);
+    else notes.push(tNow('import.note.rentMissing'));
+    if (!rents.deposit) notes.push(tNow('import.note.depositMissing'));
+  }
+  if (money) {
+    if (price) row.price = String(price.value);
     // «لک» and «کرور» are Afghani words: a pinned default of dollars must not turn «۱۰ لک» into dollars.
-    if (price.currency) row.currency = price.currency;
-    else if (price.unit && AFGHANI_UNITS.has(price.unit)) row.currency = 'AFGHANI';
+    if (money.currency) row.currency = money.currency;
+    else if (money.unit && AFGHANI_UNITS.has(money.unit)) row.currency = 'AFGHANI';
     else {
-      const guess: Currency = defaults.currency || 'AFGHANI';
+      const guess: Currency = defaults.currency || startCurrency(market);
       row.currency = guess;
       notes.push(tNow(defaults.currency ? 'import.note.currencyDefault' : 'import.note.currencyGuess', { currency: currencyName(guess) }));
     }
-    if (price.assumedKarur) notes.push(tNow('import.note.karur'));
-    if (price.candidates > 1) notes.push(tNow('import.note.manyPrices'));
+    if (money.assumedKarur) notes.push(tNow('import.note.karur'));
+    if (money.candidates > 1) notes.push(tNow('import.note.manyPrices'));
   } else if (defaults.currency) row.currency = defaults.currency;
 
   const terms = detectPriceTerms(flat);
   if (terms) row.price_terms = terms;
+  adaptToMarket(row, market, notes);
 
   const area = findArea(flat);
   if (area.value !== null) {
@@ -653,7 +822,7 @@ export function parseListing(block: string, options: ParseOptions = {}): DraftRo
 
   const province = findProvince(flat);
   row.province = province ?? defaults.province;
-  if (!province && defaults.province) notes.push(tNow('import.note.provincePinned', { province: defaults.province }));
+  if (!province && defaults.province) notes.push(tNowFor('import.note.provincePinned', market, { province: defaults.province }));
 
   const district = findDistrict(flat);
   row.district = district ?? defaults.district;
@@ -668,7 +837,7 @@ export function parseListing(block: string, options: ParseOptions = {}): DraftRo
     row.address = addressFrom({ province: row.province, district: row.district, neighborhood: row.neighborhood, street });
   } else {
     row.address = addressFrom({ province: row.province, district: row.district, neighborhood: row.neighborhood, street: '' });
-    if (row.address && row.address !== row.province) notes.push(tNow('import.note.addressBuilt'));
+    if (row.address && row.address !== row.province) notes.push(tNowFor('import.note.addressBuilt', market));
   }
   if (written && row.province && !written.includes(row.province)) {
     row.address = addressFrom({ province: row.province, district: '', neighborhood: '', street: written });
@@ -698,6 +867,7 @@ export function parseListing(block: string, options: ParseOptions = {}): DraftRo
 
   const title = titleLine(description) ?? composeTitle({
     type: row.type,
+    market,
     deal: row.deal_type,
     bedrooms: row.bedrooms ? Number(row.bedrooms) : null,
     floors: row.floors ? Number(row.floors) : null,

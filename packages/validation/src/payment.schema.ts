@@ -1,6 +1,10 @@
 import { z } from 'zod';
-import { FEATURED_BUNDLE_SIZES, SUBSCRIPTION_PACKAGES } from '@bongah/shared-types';
+import { FEATURED_BUNDLE_SIZES, MARKETS, SUBSCRIPTION_PACKAGES } from '@bongah/shared-types';
 import { toAsciiDigits } from './common';
+
+/** GET /hesabpay/pricing: which market's prices (Afghanistan's when left out). */
+export const pricingQuerySchema = z.strictObject({ market: z.enum(MARKETS).optional() });
+export type PricingQuery = z.output<typeof pricingQuerySchema>;
 
 /**
  * POST /hesabpay/payments. There is deliberately no `amount` or `currency`: what something

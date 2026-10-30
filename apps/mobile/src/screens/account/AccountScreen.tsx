@@ -26,6 +26,7 @@ import { APP_VERSION } from '../../appInfo';
 import { LANGUAGE_META, changeLanguage } from '../../i18n';
 import { formatPhone, toPersianDigits } from '../../i18n/format';
 import { useFormat } from '../../i18n/useFormat';
+import { useActiveMarket } from '../../market/marketStore';
 import type { RootStackParamList, TabParamList } from '../../navigation/types';
 import { colors, radius, spacing, surfaces } from '../../theme';
 import MorningMessagesCard from './MorningMessagesCard';
@@ -192,6 +193,7 @@ export default function AccountScreen({ navigation }: Props) {
   const { t } = useTranslation();
   const { language } = useFormat();
   const { user, signOut } = useAuth();
+  const market = useActiveMarket();
   const [editing, setEditing] = useState(false);
   const [feedbackOpen, setFeedbackOpen] = useState(false);
 
@@ -316,23 +318,27 @@ export default function AccountScreen({ navigation }: Props) {
 
       <MenuGroup title={t('account.settings')} testID="settings-group">
         {user ? <MorningMessagesCard embedded /> : null}
-        <View style={styles.languageRow}>
-          <IconTile name="globe" />
-          <AppText variant="label" style={styles.menuText}>
-            {t('account.language')}
-          </AppText>
-          <View style={styles.languages}>
-            {LANGUAGES.map(code => (
-              <Chip
-                compact
-                key={code}
-                label={LANGUAGE_META[code].nativeName}
-                selected={language === code}
-                onPress={() => changeLanguage(code)}
-              />
-            ))}
+        {/* In Iran the app is in Persian and offers no choice; Dari / Pashto are chosen only where the phone is in
+            Afghanistan. The country itself is not a setting: it is found from the phone (market/useMarket.ts). */}
+        {market === 'IR' ? null : (
+          <View style={styles.languageRow} testID="language-setting">
+            <IconTile name="globe" />
+            <AppText variant="label" style={styles.menuText}>
+              {t('account.language')}
+            </AppText>
+            <View style={styles.languages}>
+              {LANGUAGES.map(code => (
+                <Chip
+                  compact
+                  key={code}
+                  label={LANGUAGE_META[code].nativeName}
+                  selected={language === code}
+                  onPress={() => changeLanguage(code)}
+                />
+              ))}
+            </View>
           </View>
-        </View>
+        )}
       </MenuGroup>
 
       {user?.role === 'AGENCY' ? (
