@@ -20,7 +20,7 @@ export interface PublishResult {
   errors?: DraftErrors;
 }
 
-const FIELDS: DraftField[] = ['title', 'description', 'type', 'deal_type', 'price', 'currency', 'area_sqm', 'bedrooms', 'bathrooms', 'province', 'district', 'neighborhood', 'address', 'images'];
+const FIELDS: DraftField[] = ['title', 'description', 'type', 'deal_type', 'price', 'monthly_rent', 'currency', 'features', 'deed_type', 'area_sqm', 'bedrooms', 'bathrooms', 'province', 'district', 'neighborhood', 'address', 'images'];
 
 function fieldErrors(list: { field: string; message: string }[] | undefined): DraftErrors | undefined {
   if (!list?.length) return undefined;

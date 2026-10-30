@@ -3,6 +3,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { usePathname } from 'next/navigation';
 import { useLocalStorage } from '@/hooks/use-local-storage';
+import { useMarketSync } from '@/hooks/use-market';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { Header } from './header';
 import { Sidebar } from './sidebar';
@@ -24,6 +25,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const [collapsed, setCollapsed] = useLocalStorage<boolean>('bongah.sidebar.collapsed', false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const pathname = usePathname();
+  useMarketSync();
 
   // Close the drawer after navigating, and on Escape.
   useEffect(() => setMobileOpen(false), [pathname]);

@@ -1,6 +1,6 @@
 import type { Language } from '@bongah/shared-types';
 import type { Province } from '../constants/provinces';
-import { isInsideAfghanistan, type Coordinate } from './geo';
+import { isInsideSupportedArea, type Coordinate } from './geo';
 import { nearestProvince } from './geocode';
 
 /** Below this zoom the view spans a province or more: the province is the honest name, and no geocoder is asked. */
@@ -37,4 +37,4 @@ export function areaLabel(guess: AreaGuess | null, at: Coordinate, language: Lan
 }
 
 /** The map's middle is only named inside the country: out at sea or abroad there is nothing honest to say. */
-export const nameable = (point: Coordinate): boolean => isInsideAfghanistan(point);
+export const nameable = (point: Coordinate): boolean => isInsideSupportedArea(point);

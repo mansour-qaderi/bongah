@@ -19,6 +19,8 @@ import type {
   AbuseReportItem,
   AdminAgencyItem,
   AdminAuditEntry,
+  AdminFeedbackItem,
+  AdminFeedbackReplyResult,
   AdminOverview,
   AdminPropertyItem,
   AdminTransactionItem,
@@ -34,6 +36,8 @@ import type {
 import {
   adminAgenciesQuerySchema,
   adminAuditQuerySchema,
+  adminFeedbackQuerySchema,
+  adminFeedbackReplySchema,
   adminPropertiesQuerySchema,
   adminQuotesQuerySchema,
   adminReportsQuerySchema,
@@ -42,6 +46,7 @@ import {
   adminUsersQuerySchema,
   analyticsQuerySchema,
   banUserSchema,
+  giftUserSchema,
   createBannerSchema,
   createQuoteSchema,
   featureListingSchema,
@@ -58,12 +63,15 @@ import {
   type AdminReportsQuery,
   type AdminPaymentDecisionInput,
   type AdminTransactionsQuery,
+  type AdminFeedbackQuery,
+  type AdminFeedbackReplyInput,
   type AdminUsersQuery,
   type AnalyticsQuery,
   type BanUserInput,
   type CreateBannerInput,
   type CreateQuoteInput,
   type FeatureListingInput,
+  type GiftUserInput,
   type RemoveListingInput,
   type ResolveReportInput,
   type ReviewAgencyInput,
@@ -84,6 +92,7 @@ import { MorningPushService } from '../notification/morning-push.service.js';
 import { QuotesService } from '../notification/quotes.service.js';
 import { AdminAgenciesService } from './admin-agencies.service.js';
 import { AdminAnalyticsService } from './admin-analytics.service.js';
+import { AdminFeedbackService } from './admin-feedback.service.js';
 import { AdminOnly } from './admin-only.decorator.js';
 import { AdminPropertiesService } from './admin-properties.service.js';
 import { AdminTransactionsService } from './admin-transactions.service.js';
@@ -134,11 +143,45 @@ export class AdminUsersController {
     return this.users.get(id);
   }
 
+  /** Gives the account free listings and/or featured frames (the gift is audited). */
+  @Post(':id/gift')
+  @HttpCode(HttpStatus.OK)
+  gift(
+    @CurrentUser() admin: AuthenticatedUser,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body(new ZodValidationPipe(giftUserSchema)) body: GiftUserInput,
+  ): Promise<AdminUserDetail> {
+    return this.users.gift(admin.id, id, body);
+  }
+
   @Post(':id/unban')
   @HttpCode(HttpStatus.OK)
   async unban(@CurrentUser() admin: AuthenticatedUser, @Param('id', ParseUUIDPipe) id: string): Promise<AdminUserDetail> {
     await this.bans.unban(admin.id, id);
     return this.users.get(id);
+  }
+}
+
+@Controller('admin/feedback')
+@AdminOnly()
+export class AdminFeedbackController {
+  constructor(private readonly feedback: AdminFeedbackService) {}
+
+  /** What people wrote in the app's feedback form (suggestions, problems, thanks), newest first. */
+  @Get()
+  list(@Query(new ZodValidationPipe(adminFeedbackQuerySchema)) query: AdminFeedbackQuery): Promise<Paginated<AdminFeedbackItem>> {
+    return this.feedback.list(query);
+  }
+
+  /** Writes back to the person: the answer is kept, shown under their feedback form and pushed to their phones. */
+  @Post(':id/reply')
+  @HttpCode(HttpStatus.OK)
+  reply(
+    @CurrentUser() admin: AuthenticatedUser,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body(new ZodValidationPipe(adminFeedbackReplySchema)) body: AdminFeedbackReplyInput,
+  ): Promise<AdminFeedbackReplyResult> {
+    return this.feedback.reply(admin.id, id, body);
   }
 }
 

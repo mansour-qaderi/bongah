@@ -1,8 +1,9 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import type { AdminUserDetail, AdminUserItem, Paginated } from '@bongah/shared-types';
-import { normalizeAfghanMobile, type AdminUsersQuery } from '@bongah/validation';
+import { normalizeAfghanMobile, type AdminUsersQuery, type GiftUserInput } from '@bongah/validation';
+import { recordAudit } from '../audit/admin-audit.js';
 import { toAdminPerson } from '../common/admin-person.js';
-import { AbuseReportStatus, Prisma, PropertyStatus } from '../generated/prisma/client.js';
+import { AbuseReportStatus, Prisma, PropertyStatus, Role } from '../generated/prisma/client.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 
 const userInclude = {
@@ -60,6 +61,38 @@ export class AdminUsersService {
     };
   }
 
+  /**
+   * Gives an account free listings and/or featured frames. A person's extra listings are the welcome credits, an office's
+   * are its bonus listings (the same counters the sign-up gift and the ladder unlock use), so the quota code spends them
+   * as it spends those. The audit line says how many, never why in more than the short note.
+   */
+  async gift(adminId: string, id: string, input: GiftUserInput): Promise<AdminUserDetail> {
+    await this.prisma.$transaction(async (tx) => {
+      const user = await tx.user.findUnique({ where: { id }, select: { id: true, role: true } });
+      if (!user) throw new NotFoundException('User not found.');
+      const listingField = user.role === Role.AGENCY ? 'bonusListingCredits' : 'welcomeListingCredits';
+      await tx.user.update({
+        where: { id },
+        data: {
+          ...(input.listing_credits > 0 ? { [listingField]: { increment: input.listing_credits } } : {}),
+          ...(input.featured_credits > 0 ? { featuredCredits: { increment: input.featured_credits } } : {}),
+        },
+      });
+      await recordAudit(tx, {
+        actorId: adminId,
+        action: 'USER_GIFTED',
+        targetType: 'user',
+        targetId: id,
+        metadata: {
+          listing_credits: input.listing_credits,
+          featured_credits: input.featured_credits,
+          ...(input.note ? { note: input.note } : {}),
+        },
+      });
+    });
+    return this.get(id);
+  }
+
   private async openReportCounts(userIds: string[]): Promise<Map<string, number>> {
     if (userIds.length === 0) return new Map();
     const groups = await this.prisma.abuseReport.groupBy({
@@ -86,6 +119,8 @@ function toItem(row: UserRow, openReportsAgainst: number): AdminUserItem {
   return {
     ...toAdminPerson(row),
     role: row.role,
+    listing_credits: row.role === Role.AGENCY ? row.bonusListingCredits : row.welcomeListingCredits,
+    featured_credits: row.featuredCredits,
     ban_reason: row.banReason,
     last_login_at: row.lastLoginAt?.toISOString() ?? null,
     created_at: row.createdAt.toISOString(),

@@ -1,5 +1,8 @@
 import type { TFunction } from 'i18next';
+import type { Market } from '@bongah/shared-types';
+import { getMarket } from '../market/marketStore';
 import { KABUL_OFFSET_MS, toPersianDigits } from './format';
+import { marketText } from './market';
 
 /** 1 is the first month (حمل / وری), 12 the last (حوت / کب). */
 export type SolarMonth = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12;
@@ -73,6 +76,8 @@ interface Options {
   year?: 'auto' | 'always' | 'never';
   /** What "now" is, for the 'auto' year. Tests pass it; the app uses the clock. */
   now?: number;
+  /** Whose month names to use: the market in use unless told otherwise. */
+  market?: Market;
 }
 
 /**
@@ -82,14 +87,16 @@ interface Options {
 export function formatSolarDate(
   iso: string | number,
   t: TFunction,
-  { year = 'auto', now = Date.now() }: Options = {},
+  { year = 'auto', now = Date.now(), market = getMarket() }: Options = {},
 ): string {
   const date = solarDateOf(iso);
   if (!date) return '';
   const current = solarDateOf(now);
   const withYear =
     year === 'always' || (year === 'auto' && current?.year !== date.year);
-  const text = `${date.day} ${t(`date.months.${date.month}`)}${
+  // The same calendar, said in the months of the country: Iran says فروردین… where Afghanistan says حمل….
+  const month = marketText(t, `date.months.${date.month}`, market);
+  const text = `${date.day} ${month}${
     withYear ? ` ${date.year}` : ''
   }`;
   return toPersianDigits(text);

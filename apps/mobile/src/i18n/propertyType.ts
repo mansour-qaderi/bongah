@@ -1,14 +1,18 @@
 import type { TFunction } from 'i18next';
-import type { PropertyType } from '@bongah/shared-types';
+import type { Market, PropertyType } from '@bongah/shared-types';
 import prs from './locales/prs.json';
 
 type Current = keyof typeof prs.propertyType;
+type IranType = keyof typeof prs.propertyTypeIR;
 type Legacy = keyof typeof prs.propertyTypeLegacy;
 
 const isCurrent = (type: string): type is Current =>
   Object.prototype.hasOwnProperty.call(prs.propertyType, type);
 const isLegacy = (type: string): type is Legacy =>
   Object.prototype.hasOwnProperty.call(prs.propertyTypeLegacy, type);
+
+const isIranType = (type: string): type is IranType =>
+  Object.prototype.hasOwnProperty.call(prs.propertyTypeIR, type);
 
 /**
  * The name of a property type in the person's language. Every screen words a type through here, so a type is
@@ -18,11 +22,15 @@ const isLegacy = (type: string): type is Legacy =>
  * - the names an older server or app build may still send (HOUSE, OFFICE_SHOP, GARDEN_VILLA, GARAGE_OTHER), which
  *   read as "خانه", "دکان و دفتر", "باغ و ویلا" and "پارکینگ / گراج / غیره";
  * - anything else (or nothing), which reads as "غیره".
+ * Iran words its own six kinds its own way («خانه / ویلایی», «خانه کلنگی», «تجاری و اداری»): pass the market of the
+ * listing (or of the list being shown) and those read that way; without one, or for Afghanistan, they read as before.
  */
 export function propertyTypeLabel(
   type: string | null | undefined,
   t: TFunction,
+  market?: Market,
 ): string {
+  if (market === 'IR' && type && isIranType(type)) return t(`propertyTypeIR.${type}`);
   if (type && isCurrent(type)) return t(`propertyType.${type}`);
   if (type && isLegacy(type)) return t(`propertyTypeLegacy.${type}`);
   return t('propertyType.OTHER');

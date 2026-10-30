@@ -70,3 +70,34 @@ export function DropdownLabel({ children }: { children: ReactNode }) {
 export function DropdownSeparator() {
   return <Menu.Separator className="my-1 h-px bg-line" />;
 }
+
+/** An item with a tick that toggles without closing the menu, for choosing several things from one list. */
+export function DropdownCheckItem({
+  checked,
+  onChange,
+  children,
+}: {
+  checked: boolean;
+  onChange: (next: boolean) => void;
+  children: ReactNode;
+}) {
+  return (
+    <Menu.CheckboxItem
+      checked={checked}
+      onCheckedChange={onChange}
+      onSelect={(event) => event.preventDefault()}
+      className="flex cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-ink-2 outline-none data-[highlighted]:bg-soft"
+    >
+      <span
+        aria-hidden
+        className={cn(
+          'grid h-[18px] w-[18px] shrink-0 place-items-center rounded-[6px] border text-[11px] font-bold leading-none transition-colors',
+          checked ? 'border-primary bg-primary text-white' : 'border-line-strong bg-surface text-transparent',
+        )}
+      >
+        ✓
+      </span>
+      {children}
+    </Menu.CheckboxItem>
+  );
+}

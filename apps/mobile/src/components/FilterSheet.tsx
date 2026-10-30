@@ -2,11 +2,12 @@ import React, { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import {
-  CURRENCIES,
-  DEAL_TYPES,
-  PROPERTY_TYPES,
+  MARKET_CONFIG,
+  defaultCurrency,
   type Currency,
   type DealType,
+  type DeedType,
+  type PropertyFeature,
   type PropertyType,
 } from '@bongah/shared-types';
 import type { PropertyFilters } from '../api/endpoints';
@@ -15,7 +16,10 @@ import {
   provinceValue,
   type Province,
 } from '../constants/provinces';
+import { MAX_MONEY } from '@bongah/validation';
 import { formatCurrency, formatNumber, parseNumberInput } from '../i18n/format';
+import { dealTypeLabel, placeText } from '../i18n/market';
+import { useActiveMarket } from '../market/marketStore';
 import { priceStops } from '../constants/priceStops';
 import { useFormat } from '../i18n/useFormat';
 import { colors, radius, spacing } from '../theme';
@@ -39,7 +43,16 @@ interface Props {
   onClose: () => void;
 }
 
-const MAX_PRICE_INPUT = 999_999_999_999;
+/** The largest amount a listing may be priced at (rials run to trillions). */
+const MAX_PRICE_INPUT = MAX_MONEY;
+
+/** What the empty price boxes hint at, per currency: a clean round figure of the size people quote in it. */
+const EXAMPLES: Record<Currency, { min: number; max: number }> = {
+  AFGHANI: { min: 1_000, max: 1_000_000 },
+  USD: { min: 1_000, max: 10_000 },
+  TOMAN: { min: 1_000_000, max: 5_000_000_000 },
+  RIAL: { min: 10_000_000, max: 50_000_000_000 },
+};
 
 /** Reads a price box: '' → undefined (no limit), unreadable → null (error). */
 function readPrice(text: string): number | undefined | null {
@@ -56,13 +69,18 @@ export default function FilterSheet({
 }: Props) {
   const { t } = useTranslation();
   const { language } = useFormat();
+  const market = useActiveMarket();
+  const config = MARKET_CONFIG[market];
 
   const [province, setProvince] = useState<Province | null>(null);
   const [district, setDistrict] = useState('');
   // Any number of kinds at once; none means all of them.
   const [types, setTypes] = useState<PropertyType[]>([]);
   const [deal, setDeal] = useState<DealType | undefined>();
-  const [currency, setCurrency] = useState<Currency>('AFGHANI');
+  // Iran's tags (all must be there) and Afghanistan's deed; the market offers one of them.
+  const [features, setFeatures] = useState<PropertyFeature[]>([]);
+  const [deed, setDeed] = useState<DeedType | undefined>();
+  const [currency, setCurrency] = useState<Currency>(defaultCurrency(market));
   const [minText, setMinText] = useState('');
   const [maxText, setMaxText] = useState('');
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -75,7 +93,19 @@ export default function FilterSheet({
     setDistrict(value.district ?? '');
     setTypes(value.types ?? []);
     setDeal(value.deal_type);
-    setCurrency(value.currency ?? 'AFGHANI');
+    setFeatures(
+      (value.features ?? []).filter(f => config.features.includes(f)),
+    );
+    setDeed(
+      value.deed_type && config.deedTypes.includes(value.deed_type)
+        ? value.deed_type
+        : undefined,
+    );
+    setCurrency(
+      value.currency && config.currencies.includes(value.currency)
+        ? value.currency
+        : defaultCurrency(market),
+    );
     setMinText(
       value.min_price !== undefined ? formatNumber(value.min_price) : '',
     );
@@ -83,7 +113,7 @@ export default function FilterSheet({
       value.max_price !== undefined ? formatNumber(value.max_price) : '',
     );
     setError(false);
-  }, [visible, value]);
+  }, [visible, value, market, config]);
 
   const apply = () => {
     const min = readPrice(minText);
@@ -102,6 +132,9 @@ export default function FilterSheet({
       district: district.trim() || undefined,
       types: types.length > 0 ? types : undefined,
       deal_type: deal,
+      // In the market's own order, so the same choice always makes the same request.
+      features: features.length > 0 ? features : undefined,
+      deed_type: deed,
       min_price: min,
       max_price: max,
       currency: hasPrice ? currency : undefined,
@@ -113,6 +146,8 @@ export default function FilterSheet({
     setDistrict('');
     setTypes([]);
     setDeal(undefined);
+    setFeatures([]);
+    setDeed(undefined);
     setMinText('');
     setMaxText('');
     setError(false);
@@ -141,13 +176,14 @@ export default function FilterSheet({
   // «حداکثر ۱۰,۰۰۰»). Never a bare zero; the lighter placeholder colour (not a "for example" word) is what tells it
   // from a typed amount. The currency is not in the hint: it is written inside the box (`unit`), so it stays in
   // sight once an amount is typed or the slider has filled the box.
-  const examples =
-    currency === 'USD'
-      ? { min: 1_000, max: 10_000 }
-      : { min: 1_000, max: 1_000_000 };
+  const examples = EXAMPLES[currency];
   const hint = (word: string, amount: number) =>
     `${word} ${formatNumber(amount, 0)}`;
-  const unit = t(`currency.${currency}`);
+  // A market with one currency (Iran: toman only) has nothing to choose and nothing to say beside each box: the pills and
+  // the word «تومان» inside the boxes would only repeat what is already known. Afghanistan (afghani | dollar) keeps both,
+  // because there the unit is what the person is picking.
+  const oneCurrency = config.currencies.length === 1;
+  const unit = oneCurrency ? undefined : t(`currency.${currency}`);
 
   return (
     <>
@@ -175,21 +211,23 @@ export default function FilterSheet({
       >
         <KeyboardAwareScrollView contentContainerStyle={styles.content}>
           <Card>
-            <AppText variant="label">{t('home.province')}</AppText>
+            <AppText variant="label">{placeText('province', market, t)}</AppText>
             <Pressable
               accessibilityRole="button"
               onPress={() => setPickerOpen(true)}
               style={styles.select}
             >
               <AppText color={province ? colors.text : colors.placeholder}>
-                {province ? province.name[language] : t('home.allProvinces')}
+                {province
+                  ? province.name[language]
+                  : placeText('allProvinces', market, t)}
               </AppText>
             </Pressable>
             <TextField
               label={t('home.district')}
               value={district}
               onChangeText={setDistrict}
-              placeholder={t('home.districtPlaceholder')}
+              placeholder={placeText('districtPlaceholder', market, t)}
               style={styles.field}
             />
           </Card>
@@ -204,9 +242,9 @@ export default function FilterSheet({
               allLabel={t('home.allTypes')}
               values={types}
               onChange={setTypes}
-              options={PROPERTY_TYPES.map(p => ({
+              options={config.propertyTypes.map(p => ({
                 value: p,
-                label: propertyTypeLabel(p, t),
+                label: propertyTypeLabel(p, t, market),
                 icon: propertyLineIcon(p),
               }))}
               flush
@@ -220,33 +258,83 @@ export default function FilterSheet({
                 selected={!deal}
                 onPress={() => setDeal(undefined)}
               />
-              {DEAL_TYPES.map(d => (
+              {config.dealTypes.map(d => (
                 <Chip
                   compact
                   key={d}
-                  label={t(`dealType.${d}`)}
+                  label={dealTypeLabel(d, market, t)}
                   selected={deal === d}
                   onPress={() => setDeal(d)}
                 />
               ))}
             </View>
+
+            {config.features.length > 0 ? (
+              <View testID="filter-features" style={styles.group}>
+                <AppText variant="label">{t('listingFeature.label')}</AppText>
+                <View style={styles.wrap}>
+                  {config.features.map(f => (
+                    <Chip
+                      compact
+                      key={f}
+                      testID={`filter-feature-${f}`}
+                      label={t(`listingFeature.${f}`)}
+                      selected={features.includes(f)}
+                      onPress={() =>
+                        setFeatures(current =>
+                          config.features.filter(x =>
+                            x === f ? !current.includes(f) : current.includes(x),
+                          ),
+                        )
+                      }
+                    />
+                  ))}
+                </View>
+              </View>
+            ) : null}
+
+            {config.deedTypes.length > 0 ? (
+              <View testID="filter-deed" style={styles.group}>
+                <AppText variant="label">{t('deed.label')}</AppText>
+                <View style={styles.wrap}>
+                  <Chip
+                    compact
+                    label={t('deed.all')}
+                    selected={!deed}
+                    onPress={() => setDeed(undefined)}
+                  />
+                  {config.deedTypes.map(d => (
+                    <Chip
+                      compact
+                      key={d}
+                      testID={`filter-deed-${d}`}
+                      label={t(`deed.${d}`)}
+                      selected={deed === d}
+                      onPress={() => setDeed(d)}
+                    />
+                  ))}
+                </View>
+              </View>
+            ) : null}
           </Card>
 
           <Card>
             <View style={styles.priceHead}>
               <AppText variant="label">{t('home.priceRange')}</AppText>
               {/* The same pills as under the price in the listing form. */}
-              <View style={styles.wrap} testID="filter-currency">
-                {CURRENCIES.map(c => (
-                  <Chip
-                    compact
-                    key={c}
-                    label={t(`currency.${c}`)}
-                    selected={currency === c}
-                    onPress={() => setCurrency(c)}
-                  />
-                ))}
-              </View>
+              {oneCurrency ? null : (
+                <View style={styles.wrap} testID="filter-currency">
+                  {config.currencies.map(c => (
+                    <Chip
+                      compact
+                      key={c}
+                      label={t(`currency.${c}`)}
+                      selected={currency === c}
+                      onPress={() => setCurrency(c)}
+                    />
+                  ))}
+                </View>
+              )}
             </View>
             {summary ? (
               <AppText variant="label" color={colors.primaryDark}>
@@ -334,6 +422,7 @@ const styles = StyleSheet.create({
   // The cards already space their content; a field needs no margin of its own inside one.
   field: { marginBottom: 0 },
   wrap: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
+  group: { gap: spacing.sm },
   priceHead: {
     gap: spacing.md,
   },

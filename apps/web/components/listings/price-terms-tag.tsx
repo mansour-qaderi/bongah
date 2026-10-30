@@ -1,15 +1,28 @@
 'use client';
 
-import type { PriceTerms } from '@bongah/shared-types';
-import { useLabels } from '@/i18n/use-labels';
+import type { Market, PriceTerms } from '@bongah/shared-types';
+import { useLanguage } from '@/i18n/provider';
+import { labelsFor } from '@/lib/labels';
+import { useActiveMarket } from '@/hooks/use-active-market';
 import { cn } from '@/lib/cn';
 
 /**
- * «جورآمد» / «مقطوع» beside a price: the word the owner gave for whether the price can be talked down. Shows nothing
- * when the owner did not say (a missing tag is better than a guessed one).
+ * «جورآمد» (in Iran «قابل توافق») / «مقطوع» beside a price: the word the owner gave for whether the price can be talked
+ * down, in the words of the listing's own market. Shows nothing when the owner did not say (a missing tag is better
+ * than a guessed one).
  */
-export function PriceTermsTag({ terms, className }: { terms: PriceTerms | null | undefined; className?: string }) {
-  const labels = useLabels();
+export function PriceTermsTag({
+  terms,
+  market,
+  className,
+}: {
+  terms: PriceTerms | null | undefined;
+  market?: Market;
+  className?: string;
+}) {
+  const { language } = useLanguage();
+  const active = useActiveMarket();
+  const labels = labelsFor(language, market ?? active);
   if (!terms) return null;
   return (
     <span

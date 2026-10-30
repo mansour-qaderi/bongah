@@ -2,8 +2,8 @@
 
 import { Crosshair, MapPin, Star } from 'lucide-react';
 import type { AgencyListingPin } from '@bongah/shared-types';
-import { formatMoney } from '@/lib/format';
 import { DEAL_COLOR } from '@/lib/labels';
+import { listingPrice } from '@/lib/price';
 import { provinceNameLabel } from '@/lib/provinces';
 import { useLanguage, useT } from '@/i18n/provider';
 import { useLabels } from '@/i18n/use-labels';
@@ -69,7 +69,7 @@ export function MapListingCard({
             ) : null}
           </div>
         </div>
-        <div className="tabular mt-2 text-base font-extrabold text-ink">{formatMoney(listing.price, listing.currency)}</div>
+        <div className="tabular mt-2 text-base font-extrabold text-ink">{listingPrice(listing)}</div>
         <div className="mt-0.5 line-clamp-2 text-[13px] font-semibold leading-6 text-ink-2">{listing.title}</div>
         <div className="mt-1 flex items-center gap-1 text-xs text-muted">
           <MapPin aria-hidden className="h-3.5 w-3.5 shrink-0" />

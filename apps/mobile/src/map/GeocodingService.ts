@@ -4,7 +4,7 @@ import type {
   PlaceDetails,
   PlaceSuggestion,
 } from '@bongah/shared-types';
-import { AFGHANISTAN_BOUNDS } from '@bongah/shared-types';
+import { SUPPORTED_BOUNDS } from '@bongah/shared-types';
 import { getAuthToken } from '../api/client';
 import { geoAutocomplete, geoPlace, geoReverse } from '../api/endpoints';
 import {
@@ -13,7 +13,7 @@ import {
   PHOTON_URL,
 } from '../config';
 import { matchProvince, type Province } from '../constants/provinces';
-import { isInsideAfghanistan, type Coordinate } from './geo';
+import { isInsideSupportedArea, type Coordinate } from './geo';
 import { lookUpPlace, nearestProvince, type PlaceGuess } from './geocode';
 
 /** Where a suggestion came from: one of the server's providers, or OpenStreetMap asked directly. */
@@ -119,7 +119,7 @@ interface PhotonFeature {
 const textOf = (value: unknown) =>
   typeof value === 'string' ? value.trim() : '';
 
-/** Photon's answer as dropdown rows: inside Afghanistan, named, no repeats, wide parts of the address as the subtitle. */
+/** Photon's answer as dropdown rows: inside Afghanistan or Iran, named, no repeats, wide parts of the address as the subtitle. */
 export function optionsFromPhoton(body: unknown): PlaceOption[] {
   const features = (body as { features?: PhotonFeature[] } | null)?.features;
   if (!Array.isArray(features)) return [];
@@ -131,7 +131,7 @@ export function optionsFromPhoton(body: unknown): PlaceOption[] {
     const [longitude, latitude] = coordinates as unknown[];
     if (typeof latitude !== 'number' || typeof longitude !== 'number') continue;
     const coordinate = { latitude, longitude };
-    if (!isInsideAfghanistan(coordinate)) continue;
+    if (!isInsideSupportedArea(coordinate)) continue;
     const p = feature.properties ?? {};
     const street = [textOf(p.street), textOf(p.housenumber)]
       .filter(Boolean)
@@ -202,7 +202,7 @@ async function photonSuggest(
   near: Coordinate | undefined,
   signal?: AbortSignal,
 ): Promise<PlaceOption[] | null> {
-  const b = AFGHANISTAN_BOUNDS;
+  const b = SUPPORTED_BOUNDS;
   let url =
     `${PHOTON_URL}?q=${encodeURIComponent(query)}&limit=${
       MAX_SUGGESTIONS + 4
@@ -319,7 +319,7 @@ export async function resolvePlace(
 ): Promise<ResolvedPlace | null> {
   const zoom = zoomForCategory(option.category);
   if (option.coordinate) {
-    if (!isInsideAfghanistan(option.coordinate)) return null;
+    if (!isInsideSupportedArea(option.coordinate)) return null;
     // The subtitle ends with the widest part Photon knew, usually the province ("…، نیمروز").
     const parts = option.subtitle.split('، ');
     const { province, approximate } = provinceFor(
@@ -346,7 +346,7 @@ export async function resolvePlace(
       signal,
     );
     const coordinate = { latitude: details.lat, longitude: details.lng };
-    if (!isInsideAfghanistan(coordinate)) return null;
+    if (!isInsideSupportedArea(coordinate)) return null;
     return fromDetails(details, zoom, option.title);
   } catch {
     return null;

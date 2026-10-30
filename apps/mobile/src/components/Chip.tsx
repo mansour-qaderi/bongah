@@ -15,6 +15,7 @@ import { inkBetween, SelectionFill, useSelection } from './selection';
 
 interface ChipProps {
   label: string;
+  testID?: string;
   selected?: boolean;
   onPress: () => void;
   /** A smaller chip for dense groups (the filter sheet), still a 34-point target. */
@@ -35,6 +36,7 @@ export function Chip(props: ChipProps) {
 /** The tab form of a chip: an edge, a pill that fills in, and the label on top. */
 function AnimatedChip({
   label,
+  testID,
   selected = false,
   onPress,
   compact = false,
@@ -57,6 +59,7 @@ function AnimatedChip({
     >
       <SelectionFill value={value} radius={height / 2} />
       <Pressable
+        testID={testID}
         accessibilityRole="button"
         accessibilityState={{ selected }}
         onPress={onPress}
@@ -106,6 +109,7 @@ function AnimatedChip({
 
 function PlainChip({
   label,
+  testID,
   selected = false,
   onPress,
   compact = false,
@@ -113,6 +117,7 @@ function PlainChip({
 }: ChipProps) {
   return (
     <Pressable
+      testID={testID}
       accessibilityRole="button"
       accessibilityState={{ selected }}
       onPress={onPress}

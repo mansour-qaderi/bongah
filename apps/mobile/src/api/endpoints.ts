@@ -22,11 +22,15 @@ import type {
   ContactAccess,
   Currency,
   DealType,
+  DeedType,
+  PropertyFeature,
   FeaturedCreditUsed,
   SpendLaddersResponse,
   FeedbackReceived,
+  MyFeedbackItem,
   GeoProvider,
   Language,
+  Market,
   Paginated,
   PaymentInitiated,
   PlaceDetails,
@@ -136,6 +140,8 @@ export const removePushDevice = (token: string) =>
 // ───────────── Properties ─────────────
 
 export interface PropertyFilters {
+  /** Only this country's listings. Left out: Afghanistan's (what the API answers without it). */
+  market?: Market;
   province?: string;
   district?: string;
   /**
@@ -144,6 +150,10 @@ export interface PropertyFilters {
    */
   types?: PropertyType[];
   deal_type?: DealType;
+  /** Iran's tags: a listing must have ALL of these. Sent as one comma-separated `features` parameter. */
+  features?: PropertyFeature[];
+  /** Afghanistan's ownership paper (قباله شرعی / عرفی). */
+  deed_type?: DeedType;
   min_price?: number;
   max_price?: number;
   /** Required by the API whenever min_price/max_price is set. */
@@ -173,6 +183,7 @@ export const listProperties = (
     query: {
       ...filters,
       types: filters.types?.length ? filters.types.join(',') : undefined,
+      features: filters.features?.length ? filters.features.join(',') : undefined,
       min_lat: degrees(filters.min_lat),
       max_lat: degrees(filters.max_lat),
       min_lng: degrees(filters.min_lng),
@@ -327,7 +338,9 @@ export const deleteTemplate = (id: string) =>
 
 // ───────────── Payments ─────────────
 
-export const getPricing = () => request<Pricing>('GET', '/hesabpay/pricing');
+/** The price list in a market's money (Afghanistan's in afghani, Iran's in toman). Without a market: Afghanistan's. */
+export const getPricing = (market?: Market) =>
+  request<Pricing>('GET', '/hesabpay/pricing', { query: { market } });
 
 export const initiatePayment = (input: InitiatePaymentInput) =>
   request<PaymentInitiated>('POST', '/hesabpay/payments', {
@@ -392,6 +405,10 @@ export async function uploadPaymentProof(
 /** A suggestion, a problem or a thank-you for the Bongah team, from the Account tab. Needs a signed-in account. */
 export const sendFeedback = (input: CreateFeedbackInput) =>
   request<FeedbackReceived>('POST', '/feedback', { auth: true, body: input });
+
+/** What I wrote to the team and what the team answered, newest first. Needs a signed-in account. */
+export const getMyFeedback = () =>
+  request<MyFeedbackItem[]>('GET', '/feedback/mine', { auth: true });
 
 // ───────────── Places and routes (Google / Mapbox through the server; see map/GeocodingService.ts) ─────────────
 

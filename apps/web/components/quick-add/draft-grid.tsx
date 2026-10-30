@@ -4,7 +4,7 @@ import { memo, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { toast } from 'sonner';
 import { ClipboardList, CircleHelp, Info, LayoutGrid, Send, Table2, Trash2, Wand2 } from 'lucide-react';
-import { CURRENCIES, DEAL_TYPES, PRICE_TERMS, PROPERTY_TYPES } from '@bongah/shared-types';
+import { marketOfCurrency, MARKETS, PRICE_TERMS } from '@bongah/shared-types';
 import { checkDraft } from '@/lib/import/draft-validation';
 import { useDrafts } from '@/lib/import/drafts-store';
 import type { ImportField } from '@/lib/import/parse-file';
@@ -13,10 +13,14 @@ import type { DraftRow } from '@/lib/import/types';
 import { formatNumber } from '@/lib/format';
 import { refreshListingData } from '@/lib/listing-actions';
 import { summarizeQuota } from '@/lib/quota';
-import { PROVINCES, provinceLabel, provinceNameLabel } from '@/lib/provinces';
+import { provincesFor, provinceLabel, provinceNameLabel } from '@/lib/provinces';
+import { currenciesFor, dealsFor, deedsFor, marketName, reconcileDraft, typesFor, typesForDeal } from '@/lib/market';
+import { useBatchMarket } from '@/hooks/use-pinned';
+import { useLabelsFor, useRowMarket } from '@/hooks/use-market';
 import { tNow } from '@/i18n/active';
 import type { MessageKey } from '@/i18n/translate';
 import { useLanguage, useT } from '@/i18n/provider';
+import { marketKey } from '@/i18n/translate';
 import { useLabels } from '@/i18n/use-labels';
 import { useWallet } from '@/hooks/use-api';
 import { useLocalStorage } from '@/hooks/use-local-storage';
@@ -30,6 +34,7 @@ import { Tip } from '@/components/ui/tooltip';
 import { ProgressDialog, type RunState } from '@/components/listings/progress-dialog';
 import { DraftCard } from './draft-card';
 import { fieldName, StatusPill, useRowReport, type RowState } from './draft-shared';
+import { FeaturesCell } from './features-cell';
 
 const PAGE = 50;
 const PAGE_CARDS = 10;
@@ -107,13 +112,17 @@ type TextField = 'title' | 'price' | 'area_sqm' | 'bedrooms' | 'bathrooms' | 'di
 const GridRow = memo(function GridRow({ row, index, serverError, attempted, onChange, onRemove }: RowProps) {
   const t = useT();
   const { language } = useLanguage();
-  const labels = useLabels();
+  const market = useRowMarket(row);
+  const labels = useLabelsFor(market);
   const cellAria = (field: ImportField) => t('grid.cellAria', { field: t(`import.field.${field}`), n: formatNumber(index + 1) });
   const { missing, state, fixes, hasProblem, touch, bad } = useRowReport(row, serverError, attempted);
   const change = (key: string, patch: Partial<DraftRow>) => {
     touch();
     onChange(key, patch);
   };
+  /** Another country: what does not exist there is cleared, and the row keeps the country from then on. */
+  const switchMarket = (next: typeof market, keep: Partial<DraftRow> = {}) =>
+    change(row.key, { ...keep, ...reconcileDraft({ ...row, ...keep }, next), market: next });
   const text = (field: TextField, cls: string, extra?: { ltr?: boolean; mode?: 'decimal' | 'numeric' }) => (
     <Input
       aria-label={cellAria(field)}
@@ -131,11 +140,20 @@ const GridRow = memo(function GridRow({ row, index, serverError, attempted, onCh
         <td className="px-1 py-1.5">
           <StatusPill state={state} />
         </td>
+        <td className="px-1 py-1.5">
+          <Select aria-label={t('market.field')} value={market} onChange={(e) => switchMarket(e.target.value as typeof market)} className={cn(CELL, 'w-24')}>
+            {MARKETS.map((m) => (
+              <option key={m} value={m}>
+                {marketName(m)}
+              </option>
+            ))}
+          </Select>
+        </td>
         <td className="px-1 py-1.5">{text('title', 'w-56')}</td>
         <td className="px-1 py-1.5">
           <Select aria-label={cellAria('type')} invalid={bad('type')} value={row.type} onChange={(e) => change(row.key, { type: e.target.value as DraftRow['type'] })} className={cn(CELL, 'w-32')}>
             <option value="">—</option>
-            {PROPERTY_TYPES.map((type) => (
+            {typesForDeal(market, row.deal_type).map((type) => (
               <option key={type} value={type}>
                 {labels.type[type]}
               </option>
@@ -143,9 +161,16 @@ const GridRow = memo(function GridRow({ row, index, serverError, attempted, onCh
           </Select>
         </td>
         <td className="px-1 py-1.5">
-          <Select aria-label={cellAria('deal_type')} invalid={bad('deal_type')} value={row.deal_type} onChange={(e) => change(row.key, { deal_type: e.target.value as DraftRow['deal_type'] })} className={cn(CELL, 'w-24')}>
+          <Select aria-label={cellAria('deal_type')} invalid={bad('deal_type')} value={row.deal_type} onChange={(e) => {
+              const deal_type = e.target.value as DraftRow['deal_type'];
+              change(row.key, {
+                deal_type,
+                ...(row.type && !typesForDeal(market, deal_type).includes(row.type) ? { type: '' as const } : {}),
+                ...(deal_type !== 'MORTGAGE_RENT' && row.monthly_rent ? { monthly_rent: '' } : {}),
+              });
+            }} className={cn(CELL, 'w-28')}>
             <option value="">—</option>
-            {DEAL_TYPES.map((d) => (
+            {dealsFor(market).map((d) => (
               <option key={d} value={d}>
                 {labels.deal[d]}
               </option>
@@ -154,9 +179,26 @@ const GridRow = memo(function GridRow({ row, index, serverError, attempted, onCh
         </td>
         <td className="px-1 py-1.5">{text('price', 'w-28', { ltr: true, mode: 'decimal' })}</td>
         <td className="px-1 py-1.5">
-          <Select aria-label={cellAria('currency')} invalid={bad('currency')} value={row.currency} onChange={(e) => change(row.key, { currency: e.target.value as DraftRow['currency'] })} className={cn(CELL, 'w-24')}>
+          <Input
+            aria-label={cellAria('monthly_rent')}
+            value={row.monthly_rent ?? ''}
+            invalid={bad('monthly_rent')}
+            inputMode="decimal"
+            disabled={row.deal_type !== 'MORTGAGE_RENT'}
+            placeholder={row.deal_type === 'MORTGAGE_RENT' ? '' : '—'}
+            onChange={(e) => change(row.key, { monthly_rent: e.target.value })}
+            className={cn(CELL, 'ltr w-28 text-start')}
+          />
+        </td>
+        <td className="px-1 py-1.5">
+          <Select aria-label={cellAria('currency')} invalid={bad('currency')} value={row.currency} onChange={(e) => {
+              const currency = e.target.value as DraftRow['currency'];
+              const owner = currency ? marketOfCurrency(currency) : null;
+              if (owner && owner !== market) switchMarket(owner, { currency });
+              else change(row.key, { currency });
+            }} className={cn(CELL, 'w-24')}>
             <option value="">—</option>
-            {CURRENCIES.map((c) => (
+            {currenciesFor(market).map((c) => (
               <option key={c} value={c}>
                 {labels.currency[c]}
               </option>
@@ -177,10 +219,27 @@ const GridRow = memo(function GridRow({ row, index, serverError, attempted, onCh
         <td className="px-1 py-1.5">{text('bedrooms', 'w-14', { ltr: true, mode: 'numeric' })}</td>
         <td className="px-1 py-1.5">{text('bathrooms', 'w-14', { ltr: true, mode: 'numeric' })}</td>
         <td className="px-1 py-1.5">
+          <FeaturesCell market={market} value={row.features ?? []} onChange={(features) => change(row.key, { features })} label={cellAria('features')} invalid={bad('features')} className="w-36" />
+        </td>
+        <td className="px-1 py-1.5">
+          {deedsFor(market).length ? (
+            <Select aria-label={cellAria('deed_type')} invalid={bad('deed_type')} value={row.deed_type ?? ''} onChange={(e) => change(row.key, { deed_type: e.target.value as DraftRow['deed_type'] })} className={cn(CELL, 'w-28')}>
+              <option value="">—</option>
+              {deedsFor(market).map((deed) => (
+                <option key={deed} value={deed}>
+                  {labels.deed[deed]}
+                </option>
+              ))}
+            </Select>
+          ) : (
+            <span className="px-2 text-muted">—</span>
+          )}
+        </td>
+        <td className="px-1 py-1.5">
           <Select aria-label={cellAria('province')} invalid={bad('province')} value={row.province} onChange={(e) => change(row.key, { province: e.target.value })} className={cn(CELL, 'w-28')}>
             <option value="">—</option>
-            {row.province && !PROVINCES.some((p) => p.name === row.province) ? <option value={row.province}>{provinceNameLabel(row.province, language)}</option> : null}
-            {PROVINCES.map((p) => (
+            {row.province && !provincesFor(market).some((p) => p.name === row.province) ? <option value={row.province}>{provinceNameLabel(row.province, language)}</option> : null}
+            {provincesFor(market).map((p) => (
               <option key={p.id} value={p.name}>
                 {provinceLabel(p, language)}
               </option>
@@ -198,7 +257,7 @@ const GridRow = memo(function GridRow({ row, index, serverError, attempted, onCh
       {hasProblem || row.notes.length || missing.length ? (
         <tr className={hasProblem ? 'bg-danger-tint/30' : ''}>
           <td />
-          <td colSpan={14} className="px-1 pb-2">
+          <td colSpan={18} className="px-1 pb-2">
             <div className="space-y-1 text-xs">
               {serverError ? (
                 <p role="alert" className="font-semibold text-danger">
@@ -244,6 +303,8 @@ export function DraftGrid() {
   const t = useT();
   const { language } = useLanguage();
   const labels = useLabels();
+  const [batchMarket] = useBatchMarket();
+  const batchLabels = useLabelsFor(batchMarket);
   const { drafts, actions, saveFailed } = useDrafts();
   const { data: wallet } = useWallet();
   const [page, setPage] = useState(1);
@@ -310,12 +371,12 @@ export function DraftGrid() {
   }
 
   const fillOptions: Record<typeof fill.field, { label: string; options?: { value: string; label: string }[] }> = {
-    province: { label: t('import.field.province'), options: PROVINCES.map((p) => ({ value: p.name, label: provinceLabel(p, language) })) },
-    district: { label: t('grid.fill.district') },
-    deal_type: { label: t('grid.fill.deal'), options: DEAL_TYPES.map((d) => ({ value: d, label: labels.deal[d] })) },
-    currency: { label: t('import.field.currency'), options: CURRENCIES.map((c) => ({ value: c, label: labels.currency[c] })) },
+    province: { label: t(marketKey('import.field.province', batchMarket)), options: provincesFor(batchMarket).map((p) => ({ value: p.name, label: provinceLabel(p, language) })) },
+    district: { label: t(marketKey('grid.fill.district', batchMarket)) },
+    deal_type: { label: t('grid.fill.deal'), options: dealsFor(batchMarket).map((d) => ({ value: d, label: batchLabels.deal[d] })) },
+    currency: { label: t('import.field.currency'), options: currenciesFor(batchMarket).map((c) => ({ value: c, label: labels.currency[c] })) },
     price_terms: { label: t('import.field.price_terms'), options: PRICE_TERMS.map((term) => ({ value: term, label: labels.terms[term] })) },
-    type: { label: t('import.field.type'), options: PROPERTY_TYPES.map((type) => ({ value: type, label: labels.type[type] })) },
+    type: { label: t('import.field.type'), options: typesFor(batchMarket).map((type) => ({ value: type, label: labels.type[type] })) },
   };
   const spec = fillOptions[fill.field];
 
@@ -377,7 +438,7 @@ export function DraftGrid() {
             ))}
           </Select>
         ) : (
-          <Input aria-label={t('grid.valueAria')} value={fill.value} onChange={(e) => setFill({ ...fill, value: e.target.value })} className="h-8 w-36 text-[13px]" placeholder={t('form.districtPlaceholder')} />
+          <Input aria-label={t('grid.valueAria')} value={fill.value} onChange={(e) => setFill({ ...fill, value: e.target.value })} className="h-8 w-36 text-[13px]" placeholder={t(marketKey('form.districtPlaceholder', batchMarket))} />
         )}
         <Button variant="secondary" size="sm" onClick={applyFill} disabled={!fill.value}>
           {t('grid.apply')}
@@ -437,23 +498,27 @@ export function DraftGrid() {
         </div>
       ) : (
         <div className="scrollbar-thin overflow-x-auto">
-          <table className="w-full min-w-[1640px] border-collapse text-start">
+          <table className="w-full min-w-[2200px] border-collapse text-start">
             <thead className="bg-soft/60 text-xs text-muted">
               <tr>
                 {[
                   { text: '#' },
                   { text: t('grid.status') },
+                  { text: t('market.field') },
                   { text: t('grid.h.title') },
                   { text: t('grid.h.type') },
                   { text: t('grid.h.deal') },
                   { text: t('grid.h.price'), hint: t('grid.hint.price') },
+                  { text: t('import.field.monthly_rent') },
                   { text: t('grid.h.currency') },
                   { text: t('grid.h.terms') },
                   { text: t('grid.h.area'), hint: t('grid.hint.area') },
                   { text: t('grid.h.beds'), hint: t('grid.hint.rooms') },
                   { text: t('grid.h.baths'), hint: t('grid.hint.rooms') },
-                  { text: t('grid.h.province') },
-                  { text: t('grid.h.district') },
+                  { text: t('import.field.features') },
+                  { text: t('import.field.deed_type') },
+                  { text: t(marketKey('grid.h.province', batchMarket)) },
+                  { text: t(marketKey('grid.h.district', batchMarket)) },
                   { text: t('grid.h.address'), hint: t('grid.hint.address') },
                   { text: '' },
                 ].map((h, i) => (

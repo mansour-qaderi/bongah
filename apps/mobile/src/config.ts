@@ -10,10 +10,10 @@ import { Platform } from 'react-native';
  * renamed or moved behind a custom domain.
  */
 
-const DEV_API_HOST: string | null = 'http://192.168.0.105:3000';
+const DEV_API_HOST: string | null = 'http://192.168.0.106:3000';
 const PRODUCTION_API_URL = 'https://bongah.onrender.com';
 
-export const API_BASE_URL = PRODUCTION_API_URL;
+export const API_BASE_URL = DEV_API_HOST;
 
 /**
  * Base map: Mapbox Streets, vector tiles drawn by the Mapbox Maps SDK (through @rnmapbox/maps). Vector tiles are
@@ -50,7 +50,8 @@ export const MAP_STYLE_API_URL =
  * is a blur of roofs, the roads and names still read. Vector on top means the labels are drawn at the screen's own
  * density, whatever the age or resolution of the photographs under them. Needs the same token as the street map.
  */
-export const SATELLITE_STYLE_URL = 'mapbox://styles/mapbox/satellite-streets-v12';
+export const SATELLITE_STYLE_URL =
+  'mapbox://styles/mapbox/satellite-streets-v12';
 /** The same style over HTTPS, downloaded once so its labels can be put in the local language (map/streetStyle.ts). */
 export const SATELLITE_STYLE_API_URL =
   'https://api.mapbox.com/styles/v1/mapbox/satellite-streets-v12';
@@ -59,7 +60,8 @@ export const SATELLITE_STYLE_API_URL =
  * OpenStreetMap raster tiles, which need no key either but may be blocked and are meant for light use. (The satellite
  * view has no key-free stand-in: without Mapbox it shows this street map.)
  */
-export const MAP_FALLBACK_TILE_URL = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
+export const MAP_FALLBACK_TILE_URL =
+  'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
 /** Highest zoom the fallback tiles are asked for (OpenStreetMap: 19). */
 export const MAP_FALLBACK_TILE_MAX_ZOOM = 19;
 /** How far in the person can zoom. Vector tiles have no picture to run out of; this is street-block detail and more. */
@@ -76,7 +78,7 @@ export const GEOCODER_URL = 'https://nominatim.openstreetmap.org/reverse';
 /** The same service, asked the other way round: a name or landmark in, places with coordinates out (the map's search bar). */
 export const GEOCODER_SEARCH_URL = 'https://nominatim.openstreetmap.org/search';
 export const GEOCODER_USER_AGENT =
-  'Bongah/1.2.4 (real-estate app, Afghanistan)';
+  'Bongah/2.1.4 (real-estate app, Afghanistan)';
 /** The place lookup is a convenience: after this long the person types the address themselves. */
 export const GEOCODER_TIMEOUT_MS = 8_000;
 /** The shared geocoder asks for about one request a second: this long between two questions about the same thing. */

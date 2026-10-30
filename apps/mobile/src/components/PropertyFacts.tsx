@@ -11,6 +11,7 @@ import { startsWithProvince } from '../utils/addressLine';
 import { colors, radius, spacing } from '../theme';
 import AppText from './AppText';
 import Icon, { type IconName } from './Icon';
+import { priceTermsLabel } from '../i18n/market';
 import { FACT_TILE } from './layoutSizes';
 
 /**
@@ -122,7 +123,7 @@ export default function PropertyFacts({
     facts.push({
       key: 'type',
       icon: propertyLineIcon(property.type),
-      text: propertyTypeLabel(property.type, t),
+      text: propertyTypeLabel(property.type, t, property.market),
     });
     if (withUnit && property.unit) {
       facts.push({ key: 'unit', icon: 'apartment', text: property.unit });
@@ -154,7 +155,7 @@ export default function PropertyFacts({
     facts.push({
       key: 'priceTerms',
       icon: 'coin',
-      text: t(`priceTerms.${property.price_terms}`),
+      text: priceTermsLabel(property.price_terms, property.market, t),
     });
   }
 

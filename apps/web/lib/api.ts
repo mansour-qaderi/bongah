@@ -56,6 +56,8 @@ const KNOWN_CODES = [
   'API_BAD_RESPONSE',
   'NOT_FOUND',
   'UNAUTHORIZED',
+  'MARKET_MISMATCH',
+  'MARKET_PAYMENTS_UNAVAILABLE',
 ] as const;
 
 /** The wording for an API error code in the language shown now, when there is one. */

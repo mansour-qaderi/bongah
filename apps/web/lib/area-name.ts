@@ -1,13 +1,23 @@
-import type { Language, PlaceDetails } from '@bongah/shared-types';
-import { AFGHANISTAN_BOUNDS } from '@bongah/shared-types';
+import type { Language, Market, PlaceDetails } from '@bongah/shared-types';
+import { AFGHANISTAN_BOUNDS, MARKET_CONFIG, MARKETS } from '@bongah/shared-types';
 import { normalizePlaceName } from '@bongah/validation';
-import { nearestProvince, PROVINCES, provinceLabel, type Province } from './provinces';
+import { IRAN_PROVINCES, nearestProvince, PROVINCES, provinceLabel, type Province } from './provinces';
 
 /** Below this zoom the view spans a province or more: the province is the honest name, and no geocoder is asked. */
 export const AREA_MIN_ZOOM = 11;
 
 export const insideAfghanistan = (lat: number, lng: number) =>
   lat >= AFGHANISTAN_BOUNDS.minLat && lat <= AFGHANISTAN_BOUNDS.maxLat && lng >= AFGHANISTAN_BOUNDS.minLng && lng <= AFGHANISTAN_BOUNDS.maxLng;
+
+const inBox = (b: { minLat: number; maxLat: number; minLng: number; maxLng: number }, lat: number, lng: number) =>
+  lat >= b.minLat && lat <= b.maxLat && lng >= b.minLng && lng <= b.maxLng;
+
+/**
+ * Whether a point is inside a market's country, or inside either country when no market is given (a map view, a
+ * geocoder answer: the point itself says which market it is in).
+ */
+export const insideMarket = (lat: number, lng: number, market?: Market): boolean =>
+  market ? inBox(MARKET_CONFIG[market].bounds, lat, lng) : MARKETS.some((m) => inBox(MARKET_CONFIG[m].bounds, lat, lng));
 
 /** One place in the cache and one question to the geocoder: about a kilometre, the size of a neighbourhood. */
 export function areaKey(lat: number, lng: number, language: Language): string {
@@ -24,7 +34,7 @@ export function matchProvince(raw: string | null | undefined): Province | null {
     .toLowerCase();
   if (!text) return null;
   return (
-    PROVINCES.find((p) =>
+    [...PROVINCES, ...IRAN_PROVINCES].find((p) =>
       [p.name, p.name_ps, p.capital, p.capital_ps, p.id].some((candidate) => candidate && normalizePlaceName(candidate).toLowerCase() === text),
     ) ?? null
   );

@@ -57,11 +57,16 @@ describe('property type labels', () => {
     expect(PROPERTY_TYPES.map(type => propertyTypeLabel(type, t))).toEqual([
       'خانه',
       'آپارتمان',
+      'دوبلکس',
       'دکان',
       'دفتر',
+      'تجاری',
+      'گدام',
       'زمین',
+      'خانه کلنگی',
       'باغ',
       'ویلا',
+      'باغ و ویلا',
       'گاراج',
       'غیره',
     ]);

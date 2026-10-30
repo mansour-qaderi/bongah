@@ -134,6 +134,7 @@ describe.skipIf(!hasDb)('HesabPay (e2e)', () => {
     it('is public and reports the configured prices', async () => {
       const res = await ctx.get('/hesabpay/pricing').expect(200);
       expect(res.body).toEqual({
+        market: 'AF',
         currency: 'AFGHANI',
         subscription: { MONTHLY: 900, QUARTERLY: 2400, SEMIANNUAL: 3900, YEARLY: 6000 },
         subscription_list: { MONTHLY: 1000, QUARTERLY: 3000, SEMIANNUAL: 6000, YEARLY: 12000 },

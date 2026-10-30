@@ -2,7 +2,7 @@ import { UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { describe, expect, it } from 'vitest';
 import { ManualHesabPayGateway } from './gateway/manual-hesabpay.gateway.js';
-import { readHesabPaySettings } from './hesabpay.config.js';
+import { isValidCardNumber, isValidSheba, paymentSettingsFor, readHesabPaySettings, settlesByHand } from './hesabpay.config.js';
 
 const config = (env: Record<string, string>) => new ConfigService(env);
 
@@ -77,5 +77,85 @@ describe('ManualHesabPayGateway', () => {
 
   it('refuses every webhook', async () => {
     await expect(gateway.verifyWebhook()).rejects.toBeInstanceOf(UnauthorizedException);
+  });
+});
+
+describe('Iranian payment settings', () => {
+  const CARD = '6037 9912 3456 7893';
+  const SHEBA = 'IR27 0170 0000 0010 0324 2000 01';
+  const IR = {
+    ...PRICES,
+    HESABPAY_MODE: 'mock',
+    HESABPAY_WEBHOOK_SECRET: 'a-webhook-secret-of-16+',
+    MANUAL_PAY_IR_CARD_NUMBER: CARD,
+    MANUAL_PAY_IR_CARD_HOLDER: 'Bongah Co',
+    MANUAL_PAY_IR_CARD_BANK: 'Melli',
+    MANUAL_PAY_IR_SHEBA: SHEBA,
+  };
+
+  it('is off (null) without an Iranian account, and Afghanistan is unchanged', () => {
+    const settings = readHesabPaySettings(config({ ...PRICES, HESABPAY_MODE: 'mock', HESABPAY_WEBHOOK_SECRET: 'a-webhook-secret-of-16+' }));
+    expect(settings.iran).toBeNull();
+    expect(paymentSettingsFor(settings, 'IR')).toBeNull();
+    expect(paymentSettingsFor(settings, 'AF')).toMatchObject({ currency: 'AFGHANI' });
+  });
+
+  it('reads a card and a Sheba, in toman by default, with placeholder prices in mock mode', () => {
+    const iran = readHesabPaySettings(config(IR)).iran!;
+    expect(iran.currency).toBe('TOMAN');
+    expect(iran.manual.accounts).toEqual([
+      { kind: 'CARD', number: '6037 9912 3456 7893', holder: 'Bongah Co', bank: 'Melli' },
+      { kind: 'SHEBA', number: 'IR270170000000100324200001', holder: 'Bongah Co', bank: 'Melli' },
+    ]);
+    expect(iran.prices.ladder).toBe('50000');
+    expect(iran.prices.subscription.MONTHLY).toBe('1800000'); // 10% off a 2,000,000 list month
+  });
+
+  it('prices in rial when asked, from its own settings', () => {
+    const iran = readHesabPaySettings(
+      config({ ...IR, IR_CURRENCY: 'RIAL', IR_PRICE_SUBSCRIPTION_LIST_MONTHLY: '20000000', IR_PRICE_LADDER: '500000' }),
+    ).iran!;
+    expect(iran.currency).toBe('RIAL');
+    expect(iran.prices.subscription.YEARLY).toBe('120000000');
+    expect(iran.prices.ladder).toBe('500000');
+  });
+
+  it('settles Iranian payments by hand whatever the mode, Afghan ones as the mode says', () => {
+    const mock = readHesabPaySettings(config(IR));
+    expect(settlesByHand(mock, 'AF')).toBe(false);
+    expect(settlesByHand(mock, 'IR')).toBe(true);
+    expect(settlesByHand(readHesabPaySettings(config(MANUAL)), 'AF')).toBe(true);
+  });
+
+  it('refuses a mistyped card or Sheba at startup, not at the first payment', () => {
+    expect(() => readHesabPaySettings(config({ ...IR, MANUAL_PAY_IR_CARD_NUMBER: '6037 9912 3456 7894' }))).toThrow(/16-digit/);
+    expect(() => readHesabPaySettings(config({ ...IR, MANUAL_PAY_IR_SHEBA: 'IR27 0170 0000 0010 0324 2000 02' }))).toThrow(/Sheba|IR/);
+    expect(() => readHesabPaySettings(config({ ...IR, MANUAL_PAY_IR_CARD_HOLDER: '' }))).toThrow(/CARD_HOLDER/);
+    expect(() => readHesabPaySettings(config({ ...IR, IR_CURRENCY: 'USD' }))).toThrow(/TOMAN or RIAL/);
+  });
+
+  it('needs explicit prices when real money is taken', () => {
+    const live = { ...IR, HESABPAY_MODE: 'manual', MANUAL_PAY_HESABPAY_PHONE: '+93 785 000 000', MANUAL_PAY_HESABPAY_HOLDER: 'H' };
+    expect(() => readHesabPaySettings(config(live))).toThrow(/IR_PRICE_SUBSCRIPTION_LIST_MONTHLY must be set/);
+    const priced = readHesabPaySettings(
+      config({
+        ...live,
+        IR_PRICE_SUBSCRIPTION_LIST_MONTHLY: '2000000',
+        IR_PRICE_LADDER: '50000',
+        IR_PRICE_FEATURED_AD: '100000',
+        IR_PRICE_MAP_LOCATION: '30000',
+        IR_PRICE_CONTACT_CREDITS: '40000',
+      }),
+    );
+    expect(priced.iran?.prices.featuredAd).toBe('100000');
+  });
+
+  it('checks card numbers (Luhn) and Sheba numbers (IBAN mod 97)', () => {
+    expect(isValidCardNumber('6037991234567893')).toBe(true);
+    expect(isValidCardNumber('6037991234567890')).toBe(false);
+    expect(isValidCardNumber('603799123456789')).toBe(false);
+    expect(isValidSheba('IR270170000000100324200001')).toBe(true);
+    expect(isValidSheba('IR280170000000100324200001')).toBe(false);
+    expect(isValidSheba('IR27017000000010032420000')).toBe(false);
   });
 });

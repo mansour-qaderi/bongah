@@ -1,7 +1,7 @@
 'use client';
 
 import { useRouter, useSearchParams } from 'next/navigation';
-import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { ArrowRight } from 'lucide-react';
 import { mutate } from 'swr';
 import { normalizeAfghanMobile, normalizeReferralCode, OTP_LENGTH, toAsciiDigits } from '@bongah/validation';
@@ -13,6 +13,7 @@ import { toPersianDigits } from '@/lib/persian-input';
 import { NameForm } from '@/components/auth/name-form';
 import { Button } from '@/components/ui/button';
 import { Field, Input } from '@/components/ui/field';
+import { OtpBoxes } from '@/components/ui/otp-boxes';
 import { PersianDigitInput } from '@/components/ui/persian-input';
 
 /** Only a path inside the panel is a valid place to return to (never another site). */
@@ -40,7 +41,6 @@ export function LoginForm() {
   const [busy, setBusy] = useState(false);
   const [resendIn, setResendIn] = useState(0);
   const [devCode, setDevCode] = useState<string | null>(null);
-  const codeRef = useRef<HTMLInputElement>(null);
 
   const phone = normalizeAfghanMobile(phoneInput);
 
@@ -49,10 +49,6 @@ export function LoginForm() {
     const timer = setTimeout(() => setResendIn((s) => s - 1), 1000);
     return () => clearTimeout(timer);
   }, [resendIn]);
-
-  useEffect(() => {
-    if (step === 'code') codeRef.current?.focus();
-  }, [step]);
 
   function finish() {
     router.replace(safeNext(params.get('next')));
@@ -153,16 +149,18 @@ export function LoginForm() {
         </div>
         <Field label={t('login.codeLabel')} error={error}>
           {(props) => (
-            <PersianDigitInput
-              {...props}
-              ref={codeRef}
-              kind="digits"
-              maxLength={OTP_LENGTH}
-              autoComplete="one-time-code"
+            <OtpBoxes
+              id={props.id}
+              aria-describedby={props['aria-describedby']}
+              invalid={props.invalid}
+              disabled={busy}
+              length={OTP_LENGTH}
+              label={t('login.codeLabel')}
               value={code}
-              onValueChange={setCode}
-              className="h-12 text-center text-lg tracking-[0.5em]"
-              placeholder="۰۰۰۰۰۰"
+              onValueChange={(next) => {
+                setCode(next);
+                setError(null);
+              }}
             />
           )}
         </Field>

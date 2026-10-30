@@ -2,21 +2,27 @@
 
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
-import { CURRENCIES, PRICE_TERMS, type Currency, type PriceTerms, type Property } from '@bongah/shared-types';
+import { marketOf, PRICE_TERMS, type Currency, type DeedType, type PriceTerms, type Property, type PropertyFeature } from '@bongah/shared-types';
+import { currenciesFor, deedsFor, featuresFor } from '@/lib/market';
+import { cn } from '@/lib/cn';
 import { moneyAmount } from '@bongah/validation';
 import { errorMessage } from '@/lib/api';
 import { parseLooseNumber } from '@/lib/format';
 import { patchCachedListings, refreshListingData, updateListing, type ListingPatch } from '@/lib/listing-actions';
 import { useT } from '@/i18n/provider';
+import { marketKey } from '@/i18n/translate';
 import { useLabels } from '@/i18n/use-labels';
 import { Button } from '@/components/ui/button';
 import { Dialog } from '@/components/ui/dialog';
-import { Field, Input, Select, Textarea } from '@/components/ui/field';
+import { Checkbox, Field, Input, Select, Textarea } from '@/components/ui/field';
 
 interface Form {
   title: string;
   description: string;
   price: string;
+  monthly_rent: string;
+  features: PropertyFeature[];
+  deed_type: DeedType | '';
   currency: Currency;
   price_terms: PriceTerms | '';
   area: string;
@@ -31,6 +37,9 @@ const fromProperty = (p: Property): Form => ({
   title: p.title,
   description: p.description ?? '',
   price: String(p.price),
+  monthly_rent: p.monthly_rent == null ? '' : String(p.monthly_rent),
+  features: p.features ?? [],
+  deed_type: p.deed_type ?? '',
   currency: p.currency,
   price_terms: p.price_terms ?? '',
   area: String(p.area_sqm),
@@ -42,6 +51,8 @@ const fromProperty = (p: Property): Form => ({
 });
 
 type Errors = Partial<Record<keyof Form, string>>;
+
+const sameSet = (a: readonly string[], b: readonly string[]) => a.length === b.length && a.every((x) => b.includes(x));
 
 /** Whole-number field that may be left empty (null). */
 function count(raw: string): number | null | 'bad' {
@@ -67,6 +78,9 @@ export function EditListingDialog({ listing, onClose }: { listing: Property | nu
   }, [listing]);
 
   if (!listing || !form) return null;
+  // Only the tags and deeds the listing's own market has are offered (an old listing keeps whatever it already has).
+  const tags = featuresFor(marketOf(listing.market));
+  const deeds = deedsFor(marketOf(listing.market));
   const set = <K extends keyof Form>(key: K, value: Form[K]) => setForm((f) => (f ? { ...f, [key]: value } : f));
 
   async function save() {
@@ -89,7 +103,16 @@ export function EditListingDialog({ listing, onClose }: { listing: Property | nu
     if (price === null || price <= 0) next.price = t('list.col.priceNumber');
     else if (!moneyAmount.safeParse(price).success) next.price = t('list.col.priceInvalid');
     else if (price !== listing.price) patch.price = price;
+    // The deal cannot be changed here, so the monthly rent is asked for exactly when the listing already is a mortgage-and-rent.
+    if (listing.deal_type === 'MORTGAGE_RENT') {
+      const rent = parseLooseNumber(form.monthly_rent);
+      if (rent === null || rent <= 0) next.monthly_rent = t('v.monthlyRent.required');
+      else if (!moneyAmount.safeParse(rent).success) next.monthly_rent = t('list.col.priceInvalid');
+      else if (rent !== listing.monthly_rent) patch.monthly_rent = rent;
+    }
     if (form.currency !== listing.currency) patch.currency = form.currency;
+    if (!sameSet(form.features, before.features)) patch.features = form.features;
+    if (form.deed_type !== before.deed_type) patch.deed_type = form.deed_type || null;
     if (form.price_terms !== before.price_terms) patch.price_terms = form.price_terms || null;
 
     const area = parseLooseNumber(form.area);
@@ -154,13 +177,14 @@ export function EditListingDialog({ listing, onClose }: { listing: Property | nu
           {(p) => <Textarea {...p} rows={6} value={form.description} onChange={(e) => set('description', e.target.value)} />}
         </Field>
         <div className="grid grid-cols-[1fr_8rem] gap-3">
-          <Field label={t('list.col.price')} error={errors.price} required>
+          <Field label={listing.deal_type === 'MORTGAGE_RENT' ? t('form.deposit') : t('list.col.price')} error={errors.price} required>
             {(p) => <Input {...p} className="ltr text-start" inputMode="decimal" value={form.price} onChange={(e) => set('price', e.target.value)} />}
           </Field>
           <Field label={t('list.edit.currency')}>
             {(p) => (
               <Select {...p} value={form.currency} onChange={(e) => set('currency', e.target.value as Currency)}>
-                {CURRENCIES.map((c) => (
+                {/* The listing's own market's currencies (and always the one it already has, whatever it is). */}
+                {[...new Set([...currenciesFor(marketOf(listing.market)), form.currency])].map((c) => (
                   <option key={c} value={c}>
                     {labels.currency[c]}
                   </option>
@@ -169,6 +193,11 @@ export function EditListingDialog({ listing, onClose }: { listing: Property | nu
             )}
           </Field>
         </div>
+        {listing.deal_type === 'MORTGAGE_RENT' ? (
+          <Field label={t('form.monthlyRent')} error={errors.monthly_rent} required>
+            {(p) => <Input {...p} className="ltr text-start" inputMode="decimal" value={form.monthly_rent} onChange={(e) => set('monthly_rent', e.target.value)} data-testid="edit-monthly-rent" />}
+          </Field>
+        ) : null}
         <div className="grid grid-cols-2 gap-3">
           <Field label={t('import.field.price_terms')}>
             {(p) => (
@@ -195,13 +224,48 @@ export function EditListingDialog({ listing, onClose }: { listing: Property | nu
           </Field>
         </div>
         <div className="grid grid-cols-2 gap-3">
-          <Field label={t('list.edit.district')} error={errors.district}>
+          <Field label={t(marketKey('list.edit.district', marketOf(listing.market)))} error={errors.district}>
             {(p) => <Input {...p} value={form.district} onChange={(e) => set('district', e.target.value)} />}
           </Field>
           <Field label={t('list.edit.neighborhood')} error={errors.neighborhood}>
             {(p) => <Input {...p} value={form.neighborhood} onChange={(e) => set('neighborhood', e.target.value)} />}
           </Field>
         </div>
+        {deeds.length > 0 ? (
+          <Field label={t('form.deed')}>
+            {(p) => (
+              <Select {...p} value={form.deed_type} onChange={(e) => set('deed_type', e.target.value as Form['deed_type'])}>
+                <option value="">{t('form.unspecified')}</option>
+                {deeds.map((deed) => (
+                  <option key={deed} value={deed}>
+                    {labels.deed[deed]}
+                  </option>
+                ))}
+              </Select>
+            )}
+          </Field>
+        ) : null}
+        {tags.length > 0 ? (
+          <div>
+            <div className="mb-1.5 text-[13px] font-semibold text-ink-2">{t('form.features')}</div>
+            <div role="group" aria-label={t('form.features')} className="flex flex-wrap gap-2">
+              {tags.map((feature) => {
+                const on = form.features.includes(feature);
+                return (
+                  <Checkbox
+                    key={feature}
+                    checked={on}
+                    label={labels.feature[feature]}
+                    onChange={(next) => set('features', tags.filter((x) => (x === feature ? next : form.features.includes(x))))}
+                    className={cn('rounded-xl border px-3 py-1.5', on ? 'border-primary bg-primary-tint text-primary' : 'border-line bg-surface')}
+                  >
+                    {labels.feature[feature]}
+                  </Checkbox>
+                );
+              })}
+            </div>
+          </div>
+        ) : null}
         <Field label={t('list.edit.address')} error={errors.address}>
           {(p) => <Input {...p} value={form.address} onChange={(e) => set('address', e.target.value)} maxLength={300} />}
         </Field>

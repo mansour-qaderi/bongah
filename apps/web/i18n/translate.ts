@@ -1,3 +1,4 @@
+import type { Market } from '@bongah/shared-types';
 import type { Language } from './config';
 import { DEFAULT_LANGUAGE } from './config';
 import { prs } from './messages/prs';
@@ -24,3 +25,20 @@ export const translatorFor =
   (language: Language): Translator =>
   (key, params) =>
     translate(language, key, params);
+
+/**
+ * The key to use for a text in a market. Iran has its own wording for what Afghanistan says differently («مغازه» for
+ * «دکان», «استان» for «ولایت», «منطقه» for «ناحیه»…), kept beside the shared text under the same key with «IR» added:
+ * `form.districtPlaceholder` → `form.districtPlaceholderIR`. In Iran the Iranian text is used when there is one, the
+ * shared text otherwise; everywhere else it is the shared text. Use it for every text that can reach an Iranian eye and
+ * says something Afghan.
+ */
+export function marketKey(key: MessageKey, market: Market | undefined): MessageKey {
+  if (market !== 'IR') return key;
+  const sibling = `${key}IR`;
+  return sibling in prs ? (sibling as MessageKey) : key;
+}
+
+/** `translate`, worded for a market (see `marketKey`). */
+export const translateFor = (language: Language, key: MessageKey, market: Market | undefined, params?: MessageParams): string =>
+  translate(language, marketKey(key, market), params);

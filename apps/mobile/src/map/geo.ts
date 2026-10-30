@@ -1,4 +1,9 @@
-import { AFGHANISTAN_BOUNDS, type Property } from '@bongah/shared-types';
+import {
+  DEFAULT_MARKET,
+  MARKET_CONFIG,
+  type Market,
+  type Property,
+} from '@bongah/shared-types';
 import type { Province } from '../constants/provinces';
 
 /** A point as the app and the API think of it. (The map wants [longitude, latitude]; see toLngLat.) */
@@ -49,6 +54,16 @@ export const AFGHANISTAN_CAMERA: MapCamera = {
   center: [67.7, 33.9],
   zoom: 4.8,
 };
+
+/** The whole of Iran on a phone-sized map. */
+export const IRAN_CAMERA: MapCamera = {
+  center: [53.7, 32.4],
+  zoom: 3.9,
+};
+
+/** The whole of a market's country on a phone-sized map. */
+export const marketCamera = (market: Market): MapCamera =>
+  market === 'IR' ? IRAN_CAMERA : AFGHANISTAN_CAMERA;
 
 /** A city-sized view around a province's centre. */
 export const provinceCamera = (province: Province): MapCamera => ({
@@ -105,12 +120,32 @@ export function cameraFitting(
  * around Afghanistan, not its border), so a pin the app lets through is never refused for its position.
  */
 export function isInsideAfghanistan(c: Coordinate): boolean {
+  return isInsideMarket(c, 'AF');
+}
+
+/**
+ * The same for either country: the API checks a listing's pin against the box of the listing's own market, so the
+ * form checks it against the market the person has chosen.
+ */
+export function isInsideMarket(
+  c: Coordinate,
+  market: Market = DEFAULT_MARKET,
+): boolean {
+  const box = MARKET_CONFIG[market].bounds;
   return (
-    c.latitude >= AFGHANISTAN_BOUNDS.minLat &&
-    c.latitude <= AFGHANISTAN_BOUNDS.maxLat &&
-    c.longitude >= AFGHANISTAN_BOUNDS.minLng &&
-    c.longitude <= AFGHANISTAN_BOUNDS.maxLng
+    c.latitude >= box.minLat &&
+    c.latitude <= box.maxLat &&
+    c.longitude >= box.minLng &&
+    c.longitude <= box.maxLng
   );
+}
+
+/**
+ * Whether a point is somewhere a listing could be in either country: for what is not tied to one listing's market
+ * (the phone's position, a place search, the name over the map).
+ */
+export function isInsideSupportedArea(c: Coordinate): boolean {
+  return isInsideMarket(c, 'AF') || isInsideMarket(c, 'IR');
 }
 
 export type PinnedProperty = Property & { lat: number; lng: number };

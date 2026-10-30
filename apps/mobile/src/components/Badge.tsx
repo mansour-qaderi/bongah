@@ -1,7 +1,8 @@
 import React from 'react';
 import { StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 import { useTranslation } from 'react-i18next';
-import type { DealType } from '@bongah/shared-types';
+import type { DealType, Market } from '@bongah/shared-types';
+import { dealTypeLabel } from '../i18n/market';
 import { colors, dealColors, radius, spacing } from '../theme';
 import AppText from './AppText';
 
@@ -70,10 +71,13 @@ interface Props {
  */
 export function DealBadge({
   deal,
+  market,
   style,
   dot = true,
 }: {
   deal: DealType;
+  /** The listing's own market: it words the deal (گروی or رهن کامل). Absent: Afghanistan's wording. */
+  market?: Market;
   style?: StyleProp<ViewStyle>;
   /** The small dot before the word. On by default; a card that wants a plain tag turns it off. */
   dot?: boolean;
@@ -82,7 +86,7 @@ export function DealBadge({
   return (
     <Badge
       dot={dot}
-      label={t(`dealType.${deal}`)}
+      label={dealTypeLabel(deal, market, t)}
       tone={dealTone(deal)}
       style={style}
     />

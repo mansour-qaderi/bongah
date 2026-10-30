@@ -24,8 +24,10 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard.js';
 import type { Paginated, PaymentSummary, Receipt } from '@bongah/shared-types';
 import {
   paginationQuerySchema,
+  pricingQuerySchema,
   submitPaymentReferenceSchema,
   type PaginationQuery,
+  type PricingQuery,
   type SubmitPaymentReferenceInput,
 } from '@bongah/validation';
 import { ZodValidationPipe } from '../common/pipes/zod-validation.pipe.js';
@@ -81,10 +83,10 @@ export class HesabpayController {
     return this.hesabpay.useFeaturedCredit(user.id, body);
   }
 
-  /** Current prices (public). */
+  /** Current prices (public). `?market=IR` for Iran's (409 MARKET_PAYMENTS_UNAVAILABLE when none are set); Afghanistan's otherwise. */
   @Get('pricing')
-  pricing(): Promise<PricingDto> {
-    return this.hesabpay.getPricing();
+  pricing(@Query(new ZodValidationPipe(pricingQuerySchema)) query: PricingQuery): Promise<PricingDto> {
+    return this.hesabpay.getPricing(query.market);
   }
 
   /** My payments, newest first (the wallet's payment history). */

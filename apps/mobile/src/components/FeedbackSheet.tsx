@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import {
   FEEDBACK_CATEGORIES,
@@ -9,12 +9,14 @@ import {
   type FeedbackCategory,
 } from '@bongah/shared-types';
 import { createFeedbackSchema } from '@bongah/validation';
-import { sendFeedback } from '../api/endpoints';
+import { getMyFeedback, sendFeedback } from '../api/endpoints';
+import { queryKeys } from '../api/hooks';
 import { errorMessage } from '../api/errors';
 import { APP_VERSION } from '../appInfo';
 import { useAuth } from '../auth/AuthContext';
 import { formatNumber } from '../i18n/format';
-import { colors, spacing } from '../theme';
+import { formatSolarDate } from '../i18n/solarHijri';
+import { colors, radius, spacing } from '../theme';
 import AppText from './AppText';
 import BottomSheet from './BottomSheet';
 import Button from './Button';
@@ -51,6 +53,16 @@ export default function FeedbackSheet({ visible, onClose, onSignIn }: Props) {
   const [category, setCategory] = useState<FeedbackCategory>('SUGGESTION');
   const [message, setMessage] = useState('');
   const [problem, setProblem] = useState<string | null>(null);
+
+  // The team's answers to what this person wrote before. A failed or slow load is not an error worth a toast: the form
+  // is what the sheet is for, and the answers also arrive as a push.
+  const signedInNow = status === 'signedIn';
+  const mine = useQuery({
+    queryKey: queryKeys.myFeedback,
+    queryFn: getMyFeedback,
+    enabled: visible && signedInNow,
+  });
+  const answered = (mine.data ?? []).filter(item => item.reply !== null).slice(0, 5);
 
   // The thank-you waits for the sheet to be gone (see above); `open` is read from the mutation's callback.
   const thanksPending = useRef(false);
@@ -125,6 +137,29 @@ export default function FeedbackSheet({ visible, onClose, onSignIn }: Props) {
   } else {
     body = (
       <KeyboardAwareScrollView contentContainerStyle={styles.content}>
+        {answered.length > 0 ? (
+          <View style={styles.answers} testID="feedback-answers">
+            <AppText variant="label" color={colors.primaryDark}>
+              {t('feedback.repliesTitle')}
+            </AppText>
+            {answered.map(item => (
+              <View key={item.id} style={styles.answer}>
+                <AppText variant="caption" color={colors.textMuted}>
+                  {t('feedback.yourMessage')}
+                </AppText>
+                <AppText variant="bodySm" numberOfLines={3}>
+                  {item.message}
+                </AppText>
+                <AppText variant="caption" color={colors.primaryDark}>
+                  {t('feedback.teamReply')}
+                  {item.reply ? ` · ${formatSolarDate(item.reply.replied_at, t)}` : ''}
+                </AppText>
+                <AppText variant="bodySm">{item.reply?.message}</AppText>
+              </View>
+            ))}
+          </View>
+        ) : null}
+
         <AppText color={colors.textMuted}>{t('feedback.intro')}</AppText>
 
         <AppText variant="label" color={colors.textSecondary}>
@@ -194,5 +229,12 @@ const styles = StyleSheet.create({
   content: { padding: spacing.lg, paddingBottom: spacing.xl, gap: spacing.md },
   wrap: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
   message: { minHeight: 140 },
+  answers: { gap: spacing.sm },
+  answer: {
+    gap: spacing.xs,
+    padding: spacing.md,
+    borderRadius: radius.md,
+    backgroundColor: colors.neutralSoft,
+  },
   main: { flex: 1 },
 });

@@ -5,7 +5,7 @@ import { Wallet as WalletIcon } from 'lucide-react';
 import { formatNumber } from '@/lib/format';
 import { useLabels } from '@/i18n/use-labels';
 import { useT } from '@/i18n/provider';
-import { useWallet } from '@/hooks/use-api';
+import { useMe, useWallet } from '@/hooks/use-api';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 
@@ -13,7 +13,10 @@ import { Skeleton } from '@/components/ui/skeleton';
 export function PlanBadge() {
   const t = useT();
   const labels = useLabels();
+  const { data: me } = useMe();
   const { data: wallet, error } = useWallet();
+  // The admin account buys no plan: a «no plan · buy one» badge would only be wrong.
+  if (me?.role === 'ADMIN') return null;
   if (!wallet && !error) return <Skeleton className="h-7 w-28 rounded-full" />;
   const sub = wallet?.subscription;
   if (sub?.is_active && sub.package_type) {

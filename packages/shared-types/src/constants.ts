@@ -5,26 +5,80 @@
 export const LANGUAGES = ['prs', 'ps'] as const;
 export const ROLES = ['USER', 'AGENCY', 'ADMIN'] as const;
 /**
- * The kinds of property, one each, in the order the apps list them (pickers, filters): house, apartment, shop,
- * office, land, garden, villa, garage, other. Enum values here MUST match the Prisma enum `PropertyType` exactly.
+ * The two markets the platform serves: AF = Afghanistan, IR = Iran. A market decides the currencies, the kinds of
+ * deal and property on offer, the places (provinces, map area) and how a customer pays the platform. Enum values here
+ * MUST match the Prisma enum `Market` exactly.
+ */
+export const MARKETS = ['AF', 'IR'] as const;
+/** The market of everything that existed before markets did (and of anyone who has not chosen). */
+export const DEFAULT_MARKET = 'AF' as const;
+/**
+ * The market a person starts in when their country cannot be told (location refused or unavailable). The apps and the
+ * website detect the country from the device's position; when that gives nothing they open in Iran.
+ */
+export const FALLBACK_MARKET = 'IR' as const;
+/**
+ * The kinds of property, one each. Enum values here MUST match the Prisma enum `PropertyType` exactly. Which of them a
+ * person is offered depends on the market (MARKET_CONFIG); this list is every value the API accepts and the apps can show.
+ *   HOUSE_HAWILI حویلی, APARTMENT آپارتمان, SHOP دکان, OFFICE دفتر, LAND زمین, GARDEN باغ, VILLA ویلا, GARAGE گاراج,
+ *   WAREHOUSE گدام, OTHER غیره        (Afghanistan)
+ *   APARTMENT آپارتمان, HOUSE_HAWILI خانه / ویلایی, VILLA_GARDEN باغ و ویلا, LAND زمین, LAND_OLD خانه کلنگی,
+ *   COMMERCIAL تجاری و اداری   (Iran; APARTMENT, HOUSE_HAWILI and LAND are shared with Afghanistan)
+ * DUPLEX (دوبلکس) was an Iranian type for a while and is now a feature (PROPERTY_FEATURES); the value stays so listings
+ * published as one keep working.
  */
 export const PROPERTY_TYPES = [
   'HOUSE_HAWILI',
   'APARTMENT',
+  'DUPLEX',
   'SHOP',
   'OFFICE',
+  'COMMERCIAL',
+  'WAREHOUSE',
   'LAND',
+  'LAND_OLD',
   'GARDEN',
   'VILLA',
+  'VILLA_GARDEN',
   'GARAGE',
   'OTHER',
 ] as const;
+/**
+ * Extra qualities of a property the owner ticks (tags), Iran's way of describing a flat or house. Which are offered
+ * depends on the market (MARKET_CONFIG.features). Enum values here MUST match the Prisma enum `PropertyFeature`.
+ *   DUPLEX دوبلکس, PENTHOUSE پنت‌هاوس, SINGLE_DEED سند تک‌برگ, MASTER_ROOM مستر روم, ELEVATOR آسانسور, PARKING پارکینگ,
+ *   STORAGE انباری
+ */
+export const PROPERTY_FEATURES = [
+  'DUPLEX',
+  'PENTHOUSE',
+  'SINGLE_DEED',
+  'MASTER_ROOM',
+  'ELEVATOR',
+  'PARKING',
+  'STORAGE',
+] as const;
+/**
+ * The kind of ownership paper in Afghanistan: SHARI قباله شرعی (a sharia deed) or ORFI عرفی (customary, an informal
+ * one). Enum values here MUST match the Prisma enum `DeedType`.
+ */
+export const DEED_TYPES = ['SHARI', 'ORFI'] as const;
 /**
  * Longest "unit" a listing may carry (واحد): free text such as "واحد ۳" or "طبقه دوم". It says which unit of a
  * building is for sale or rent; it has no fixed list.
  */
 export const PROPERTY_UNIT_MAX_LENGTH = 40;
-export const DEAL_TYPES = ['SALE', 'RENT', 'MORTGAGE_GROWI'] as const;
+/**
+ * SALE (فروشی / فروش), RENT (کرایه), MORTGAGE_GROWI, MORTGAGE_RENT (Iran's اجاره: a deposit and a monthly rent) and DAILY_RENT (اجاره
+ * روزانه: short stays, by the day).
+ * MORTGAGE_GROWI is one deal with two names: the owner holds a deposit and gives it back at the end. Afghanistan calls
+ * it گروی, Iran رهن کامل; the market picks the word, the value is the same.
+ * MORTGAGE_RENT is Iran's mix of the two: a smaller deposit (the listing's `price`) AND a rent every month
+ * (`monthly_rent`), both in the listing's currency.
+ */
+export const DEAL_TYPES = ['SALE', 'RENT', 'MORTGAGE_GROWI', 'MORTGAGE_RENT', 'DAILY_RENT'] as const;
+/** The kinds of property a daily rental may be (a villa or a garden let by the day). */
+export const DAILY_RENT_TYPES = ['VILLA', 'GARDEN', 'VILLA_GARDEN'] as const;
 /**
  * What the price of a listing means: FIXED ("مقطوع", the owner will not bargain) or NEGOTIABLE ("جورآمد", open to an
  * offer). A listing may say neither (null).
@@ -32,7 +86,8 @@ export const DEAL_TYPES = ['SALE', 'RENT', 'MORTGAGE_GROWI'] as const;
 export const PRICE_TERMS = ['FIXED', 'NEGOTIABLE'] as const;
 /** Longest mortgage (گروی) a listing may state, in months: fifty years. */
 export const MORTGAGE_MONTHS_MAX = 600;
-export const CURRENCIES = ['AFGHANI', 'USD'] as const;
+/** AFGHANI (AFN), TOMAN and RIAL (Iran: 1 toman = 10 rials; prices are said in toman, banks count in rials), USD. */
+export const CURRENCIES = ['AFGHANI', 'USD', 'TOMAN', 'RIAL'] as const;
 export const PROPERTY_STATUSES = ['ACTIVE', 'SOLD', 'ARCHIVED'] as const;
 export const SUBSCRIPTION_PACKAGES = [
   'MONTHLY',
@@ -188,9 +243,12 @@ export const PROPERTY_MAX_IMAGES = 20;
 
 export type Language = (typeof LANGUAGES)[number];
 export type Role = (typeof ROLES)[number];
+export type Market = (typeof MARKETS)[number];
 export type PropertyType = (typeof PROPERTY_TYPES)[number];
 export type DealType = (typeof DEAL_TYPES)[number];
 export type PriceTerms = (typeof PRICE_TERMS)[number];
+export type PropertyFeature = (typeof PROPERTY_FEATURES)[number];
+export type DeedType = (typeof DEED_TYPES)[number];
 export type Currency = (typeof CURRENCIES)[number];
 export type PropertyStatus = (typeof PROPERTY_STATUSES)[number];
 export type SubscriptionPackage = (typeof SUBSCRIPTION_PACKAGES)[number];
@@ -232,6 +290,20 @@ export const AFGHANISTAN_BOUNDS = {
   maxLat: 38.6,
   minLng: 60.4,
   maxLng: 75.0,
+} as const;
+/** Iran's bounding box, with the same meaning as Afghanistan's. */
+export const IRAN_BOUNDS = {
+  minLat: 25.0,
+  maxLat: 39.8,
+  minLng: 44.0,
+  maxLng: 63.4,
+} as const;
+/** One box around both markets: what a map view (a search, a viewport) may ask for. A pin is checked against its own market's box. */
+export const SUPPORTED_BOUNDS = {
+  minLat: Math.min(AFGHANISTAN_BOUNDS.minLat, IRAN_BOUNDS.minLat),
+  maxLat: Math.max(AFGHANISTAN_BOUNDS.maxLat, IRAN_BOUNDS.maxLat),
+  minLng: Math.min(AFGHANISTAN_BOUNDS.minLng, IRAN_BOUNDS.minLng),
+  maxLng: Math.max(AFGHANISTAN_BOUNDS.maxLng, IRAN_BOUNDS.maxLng),
 } as const;
 
 /**

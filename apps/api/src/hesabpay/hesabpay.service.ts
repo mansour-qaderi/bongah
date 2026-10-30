@@ -8,7 +8,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
-import type { Paginated, PaymentSummary, Receipt } from '@bongah/shared-types';
+import { DEFAULT_MARKET, type Market, type Paginated, type PaymentSummary, type Receipt } from '@bongah/shared-types';
 import type { PaginationQuery } from '@bongah/validation';
 import {
   Prisma,
@@ -31,7 +31,8 @@ import type {
 } from './dto/payment-response.dto.js';
 import { bundlePrice } from './featured-bundles.js';
 import { HesabPayGateway, type VerifiedWebhookEvent } from './gateway/hesabpay-gateway.js';
-import { HESABPAY_SETTINGS, type HesabPaySettings } from './hesabpay.config.js';
+import { ManualHesabPayGateway } from './gateway/manual-hesabpay.gateway.js';
+import { HESABPAY_SETTINGS, paymentSettingsFor, settlesByHand, type HesabPaySettings } from './hesabpay.config.js';
 import { fulfil } from './hesabpay.fulfilment.js';
 import { paymentInclude, toPaymentSummary } from './hesabpay.mapper.js';
 import { PricingService } from './pricing.service.js';
@@ -51,6 +52,8 @@ interface PaymentTarget {
 @Injectable()
 export class HesabpayService {
   private readonly logger = new Logger(HesabpayService.name);
+  /** Iran has no payment gateway: its payments get a plain row id, like manual mode, whatever HESABPAY_MODE is. */
+  private readonly handGateway = new ManualHesabPayGateway();
 
   constructor(
     private readonly prisma: PrismaService,
@@ -60,28 +63,42 @@ export class HesabpayService {
     @Inject(HESABPAY_SETTINGS) private readonly settings: HesabPaySettings,
   ) {}
 
-  /** Starts a payment: records it as PENDING and returns the URL where the user pays. */
+  /** The market an account works in (its payments are in that market's currency, at its prices, to its accounts). */
+  private async marketOf(userId: string): Promise<Market> {
+    const user = await this.prisma.user.findUnique({ where: { id: userId }, select: { market: true } });
+    if (!user) throw new UnauthorizedException();
+    return user.market;
+  }
+
+  /**
+   * Starts a payment: records it as PENDING and returns the URL where the user pays (Afghanistan, with the gateway), or
+   * where to send the money by hand (manual mode, and always Iran). The market is the payer's own, never the client's.
+   */
   async initiate(userId: string, input: InitiatePaymentDto): Promise<PaymentInitiatedDto> {
-    const target = await this.resolveTarget(userId, input);
+    const market = await this.marketOf(userId);
+    const pay = this.pricing.marketSettings(market);
+    const byHand = settlesByHand(this.settings, market);
+    const target = await this.resolveTarget(userId, input, market);
 
     // Our id goes to HesabPay as the reference, then the row is written with the session id it
     // returns. If the write fails the session is simply never paid, so nothing is lost.
     const transactionId = randomUUID();
-    const session = await this.gateway.createSession({
+    const session = await (market === DEFAULT_MARKET ? this.gateway : this.handGateway).createSession({
       reference: transactionId,
       amount: target.amount,
-      currency: this.settings.currency,
+      currency: pay.currency,
       description: target.description,
     });
 
-    const manual = this.settings.mode === 'manual';
+    const manual = byHand;
     const payment = await this.prisma.transaction.create({
       data: {
         id: transactionId,
         method: manual ? TransactionMethod.MANUAL : TransactionMethod.GATEWAY,
         userId,
+        market,
         amount: target.amount,
-        currency: this.settings.currency,
+        currency: pay.currency,
         hesabpayTxId: session.id,
         purpose: target.purpose,
         status: TransactionStatus.PENDING,
@@ -96,7 +113,8 @@ export class HesabpayService {
     // settle it now through the very delivery a real webhook uses. If that fails the error reaches the caller and the
     // payment stays PENDING; nothing is half-delivered, because delivery runs in one transaction.
     let status = payment.status;
-    if (this.settings.mockAutoSuccess) {
+    // (Never for a payment settled by hand: nobody has paid, and real money is only confirmed by a person.)
+    if (this.settings.mockAutoSuccess && !manual) {
       await this.settleSuccess(payment);
       const settled = await this.prisma.transaction.findUnique({ where: { id: payment.id }, select: { status: true } });
       status = settled?.status ?? payment.status;
@@ -107,12 +125,12 @@ export class HesabpayService {
       purpose: payment.purpose,
       status,
       amount: payment.amount.toNumber(),
-      currency: this.settings.currency,
+      currency: pay.currency,
       created_at: payment.createdAt.toISOString(),
       payment_url: session.paymentUrl,
       method: manual ? 'MANUAL' : 'GATEWAY',
-      // Manual: nowhere to be sent, so say where to send the money instead.
-      manual: manual ? this.settings.manual : null,
+      // Manual: nowhere to be sent, so say where to send the money instead (this market's accounts).
+      manual: manual ? pay.manual : null,
       receipt_uploaded: false,
       reference: null,
     };
@@ -127,7 +145,8 @@ export class HesabpayService {
     const now = new Date();
     return this.prisma.$transaction(async (db) => {
       await this.promotion.assertPromotable(db, userId, input.property_id);
-      const prices = await this.pricing.effective(db);
+      const user = await db.user.findUnique({ where: { id: userId }, select: { market: true } });
+      const prices = await this.pricing.effective(db, user?.market ?? DEFAULT_MARKET);
       const days = prices.FEATURED_AD.quantity ?? this.settings.featuredAdDays;
 
       // One statement checks there is a credit and takes it, so two simultaneous requests cannot spend the same one.
@@ -147,9 +166,12 @@ export class HesabpayService {
     });
   }
 
-  /** What each purchase costs right now. Public: the prices are not secret and the UI shows them before paying. */
-  async getPricing(): Promise<PricingDto> {
-    return this.pricing.toWire(await this.pricing.effective());
+  /**
+   * What each purchase costs right now, in a market (Afghanistan's unless asked). Public: the prices are not secret and
+   * the UI shows them before paying. An app asks for its account's market.
+   */
+  async getPricing(market: Market = DEFAULT_MARKET): Promise<PricingDto> {
+    return this.pricing.toWire(await this.pricing.effective(this.prisma, market), market);
   }
 
   /** The caller's own payments, newest first, with the receipt number of the ones that succeeded. */
@@ -225,11 +247,15 @@ export class HesabpayService {
       purpose: payment.purpose,
       status: payment.status,
       amount: payment.amount.toNumber(),
-      currency: this.settings.currency,
+      currency: payment.currency as PaymentStatusDto['currency'],
       created_at: payment.createdAt.toISOString(),
       method: payment.method,
-      // A customer who comes back to an unpaid manual payment still needs to see where to send the money.
-      manual: manual && payment.status === TransactionStatus.PENDING ? this.settings.manual : null,
+      // A customer who comes back to an unpaid manual payment still needs to see where to send the money: the accounts
+      // of the market the payment was made in.
+      manual:
+        manual && payment.status === TransactionStatus.PENDING
+          ? (paymentSettingsFor(this.settings, payment.market)?.manual ?? null)
+          : null,
       receipt_uploaded: payment.proofImageId !== null,
       reference: payment.paymentReference,
       review_note: payment.reviewNote,
@@ -316,9 +342,9 @@ export class HesabpayService {
     return null;
   }
 
-  private async resolveTarget(userId: string, input: InitiatePaymentDto): Promise<PaymentTarget> {
+  private async resolveTarget(userId: string, input: InitiatePaymentDto, market: Market): Promise<PaymentTarget> {
     // Read once: the price quoted below and the quantity recorded with it come from the same moment.
-    const prices = await this.pricing.effective();
+    const prices = await this.pricing.effective(this.prisma, market);
     switch (input.purpose) {
       case 'SUBSCRIPTION': {
         const user = await this.prisma.user.findUnique({

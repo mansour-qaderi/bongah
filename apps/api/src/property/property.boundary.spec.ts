@@ -78,7 +78,7 @@ describe('plotBoundarySchema', () => {
     ['a hole', { type: 'Polygon', coordinates: [square(60), square(10)] }],
     ['a crossing', { type: 'Polygon', coordinates: [[square(60)[0], square(60)[2], square(60)[1], square(60)[3]]] }],
     ['a speck (2 m)', { type: 'Polygon', coordinates: [square(2)] }],
-    ['a corner in Iran', { type: 'Polygon', coordinates: [[[59.5, 30.9], ...square(60).slice(1)]] }],
+    ['a corner in Iraq', { type: 'Polygon', coordinates: [[[40.5, 30.9], ...square(60).slice(1)]] }],
     ['a point', { type: 'Point', coordinates: [61.86, 30.96] }],
   ])('refuses %s', (_name, value) => {
     expect(plotBoundarySchema.safeParse(value).success).toBe(false);

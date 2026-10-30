@@ -18,6 +18,7 @@ import type {
   Wallet,
 } from '@bongah/shared-types';
 import { fetcher } from '@/lib/api';
+import { useActiveMarket } from './use-active-market';
 
 /**
  * How the panel stays in step with the phone app: both read and write the same API (and so the same database). The
@@ -36,7 +37,11 @@ const live: SWRConfiguration = {
 
 export const useMe = () => useSWR<User>('users/me', fetcher, { ...live, refreshInterval: 5 * 60_000 });
 export const useWallet = () => useSWR<Wallet>('wallet', fetcher, live);
-export const usePricing = () => useSWR<Pricing>('hesabpay/pricing', fetcher, { ...live, refreshInterval: 0 });
+/** The prices of the account's market (Iran's are in tomans and paid by card-to-card / Sheba; Afghanistan's in afghanis through HesabPay). */
+export const usePricing = () => {
+  const market = useActiveMarket();
+  return useSWR<Pricing>(`hesabpay/pricing?market=${market}`, fetcher, { ...live, refreshInterval: 0 });
+};
 export const useDashboard = () => useSWR<AgencyDashboard>('agencies/me/dashboard', fetcher, live);
 export const useAnalytics = (days: 7 | 30 | 90) =>
   useSWR<AgencyAnalytics>(`agencies/me/analytics?days=${days}`, fetcher, live);

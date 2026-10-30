@@ -6,6 +6,7 @@ import { propertyPlace } from '../components/PropertyFacts';
 import { formatCurrency } from '../i18n/format';
 import { useFormat } from '../i18n/useFormat';
 import { listingLink } from './listingLink';
+import { listingPriceText } from '../i18n/rentPrice';
 
 type ShareFields = Pick<
   Property,
@@ -13,6 +14,8 @@ type ShareFields = Pick<
   | 'title'
   | 'price'
   | 'currency'
+  | 'deal_type'
+  | 'monthly_rent'
   | 'province'
   | 'district'
   | 'neighborhood'
@@ -43,7 +46,7 @@ export function listingShareMessage(
       ...plain,
     }),
     t('property.sharePrice', {
-      price: formatCurrency(property.price, property.currency),
+      price: listingPriceText(property, formatCurrency, t),
       ...plain,
     }),
     // A listing with no place at all simply has no pin in its summary.

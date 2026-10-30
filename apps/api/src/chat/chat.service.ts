@@ -11,6 +11,7 @@ import {
 import { randomUUID } from 'node:crypto';
 import {
   AFGHANISTAN_BOUNDS,
+  IRAN_BOUNDS,
   CHAT_MAX_TEMPLATES,
   CHAT_MESSAGE_MAX_LENGTH,
   CHAT_TEMPLATE_MAX_LENGTH,
@@ -51,7 +52,9 @@ const conversationInclude = {
     select: {
       id: true,
       title: true,
+      dealType: true,
       price: true,
+      monthlyRent: true,
       currency: true,
       province: true,
       district: true,
@@ -170,7 +173,7 @@ export class ChatService {
    *
    *  - Safe to repeat: the same `client_id` from the same sender returns the stored message
    *    instead of a duplicate, and does not count against the rate limit.
-   *  - Map pins need the agency perks (403 PERKS_REQUIRED) and must be inside Afghanistan.
+   *  - Map pins need the agency perks (403 PERKS_REQUIRED) and must be inside Afghanistan or Iran.
    *  - A picture must have been uploaded by the sender, and can be sent once.
    *  - Nothing can be sent about an archived listing (409 LISTING_NOT_ACTIVE).
    *  - The first message from a buyer to an agency with the perks and an automatic reply is
@@ -349,10 +352,12 @@ export class ChatService {
             code: PERKS_REQUIRED_CODE,
           });
         }
-        const { minLat, maxLat, minLng, maxLng } = AFGHANISTAN_BOUNDS;
-        if (input.lat < minLat || input.lat > maxLat || input.lng < minLng || input.lng > maxLng) {
+        // A pin may be in either country the platform serves: the chat is not tied to one market.
+        const inside = (b: typeof AFGHANISTAN_BOUNDS | typeof IRAN_BOUNDS) =>
+          input.lat >= b.minLat && input.lat <= b.maxLat && input.lng >= b.minLng && input.lng <= b.maxLng;
+        if (!inside(AFGHANISTAN_BOUNDS) && !inside(IRAN_BOUNDS)) {
           throw new BadRequestException({
-            message: 'The location must be inside Afghanistan.',
+            message: 'The location must be inside Afghanistan or Iran.',
             code: 'LOCATION_OUT_OF_BOUNDS',
           });
         }
@@ -449,7 +454,9 @@ export class ChatService {
       property: {
         id: row.property.id,
         title: row.property.title,
+        deal_type: row.property.dealType,
         price: row.property.price.toNumber(),
+        monthly_rent: row.property.monthlyRent?.toNumber() ?? null,
         currency: row.property.currency,
         province: row.property.province,
         district: row.property.district,

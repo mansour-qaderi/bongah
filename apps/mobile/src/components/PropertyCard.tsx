@@ -72,7 +72,7 @@ export default function PropertyCard({ property, onPress }: Props) {
             </View>
           )}
           <View style={styles.badges} pointerEvents="none">
-            <DealBadge deal={property.deal_type} />
+            <DealBadge deal={property.deal_type} market={property.market} />
             {property.is_featured ? (
               <Badge label={t('property.featured')} tone={badgeTones.warning} />
             ) : null}

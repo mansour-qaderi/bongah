@@ -112,3 +112,8 @@ export function localizeLabels(map: LabelMap): number {
 
 /** Kabul, a street-level-ish start when the office has no listing on the map yet. */
 export const DEFAULT_CENTER: [number, number] = [69.1761, 34.5281];
+/** The same for Iran (Tehran). */
+export const IRAN_CENTER: [number, number] = [51.389, 35.6892];
+
+/** The capital a market's map starts on. */
+export const defaultCenter = (market: 'AF' | 'IR'): [number, number] => (market === 'IR' ? IRAN_CENTER : DEFAULT_CENTER);

@@ -4,7 +4,7 @@ import { ViewAnnotation } from '../map/native';
 import BaseMap from '../map/BaseMap';
 import {
   fromLngLat,
-  isInsideAfghanistan,
+  isInsideSupportedArea,
   toLngLat,
   type Coordinate,
   type MapCamera,
@@ -40,7 +40,7 @@ export default function LocationPicker({
         camera={camera}
         testID="location-picker-map"
         onPress={coordinate => {
-          if (isInsideAfghanistan(coordinate)) onChange(coordinate);
+          if (isInsideSupportedArea(coordinate)) onChange(coordinate);
           else onOutside?.();
         }}
       >
@@ -52,7 +52,7 @@ export default function LocationPicker({
             draggable
             onDragEnd={event => {
               const dropped = fromLngLat(event.nativeEvent.lngLat);
-              if (isInsideAfghanistan(dropped)) onChange(dropped);
+              if (isInsideSupportedArea(dropped)) onChange(dropped);
               else {
                 setReset(count => count + 1);
                 onOutside?.();

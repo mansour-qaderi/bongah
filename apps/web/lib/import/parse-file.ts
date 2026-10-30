@@ -1,13 +1,15 @@
-import type { Currency, DealType, PriceTerms, PropertyType } from '@bongah/shared-types';
+import type { Currency, DealType, DeedType, Market, PriceTerms, PropertyFeature, PropertyType } from '@bongah/shared-types';
+import { DEED_TYPES, PROPERTY_FEATURES } from '@bongah/shared-types';
 import { PROPERTY_TYPES } from '@bongah/shared-types';
 import { addressFrom } from '../address';
 import { provinceNameLabel } from '../provinces';
 import { currencyName, parseLooseNumber } from '../format';
 import { labelsFor, labelsNow } from '../labels';
 import { activeLanguage, tNow } from '@/i18n/active';
-import { translate } from '@/i18n/translate';
+import { translate, translateFor } from '@/i18n/translate';
 import type { Language } from '@/i18n/config';
-import { detectDeal, detectPriceTerms, detectType, findArea, findPrice, findProvince } from './parse-text';
+import { activeMarket } from '../market';
+import { adaptToMarket, detectDeal, detectDeed, detectFeatures, detectPriceTerms, detectType, findArea, findPrice, findProvince } from './parse-text';
 import { composeTitle } from './parse-text';
 import { flatten } from './text-utils';
 import { emptyDraft, NO_PIN, type DraftRow, type PinnedDefaults } from './types';
@@ -22,11 +24,14 @@ export const IMPORT_FIELD_KEYS = [
   'type',
   'deal_type',
   'price',
+  'monthly_rent',
   'currency',
   'price_terms',
   'area_sqm',
   'bedrooms',
   'bathrooms',
+  'features',
+  'deed_type',
   'province',
   'district',
   'neighborhood',
@@ -38,11 +43,13 @@ export const IMPORT_FIELD_KEYS = [
 
 export type ImportField = (typeof IMPORT_FIELD_KEYS)[number];
 
-/** The label of a column in the mapping step, in `language` (the one on screen by default). */
-export const importFieldLabel = (field: ImportField, language: Language = activeLanguage()): string => translate(language, `import.field.${field}`);
+/** The label of a column in the mapping step, in `language` (the one on screen by default) and the words of `market` (Iran: «استان / شهر», «منطقه»). */
+export const importFieldLabel = (field: ImportField, language: Language = activeLanguage(), market: Market = activeMarket()): string =>
+  translateFor(language, `import.field.${field}`, market);
 
-/** [key, label] for every column, in the language given. */
-export const importFields = (language: Language = activeLanguage()) => IMPORT_FIELD_KEYS.map((key) => [key, importFieldLabel(key, language)] as const);
+/** [key, label] for every column, in the language and market given. */
+export const importFields = (language: Language = activeLanguage(), market: Market = activeMarket()) =>
+  IMPORT_FIELD_KEYS.map((key) => [key, importFieldLabel(key, language, market)] as const);
 
 /** Header words (Dari, Pashto, English). They are compared after `normalizeHeader`, which also reduces the words below. */
 const RAW_SYNONYMS: Record<ImportField, string[]> = {
@@ -51,11 +58,14 @@ const RAW_SYNONYMS: Record<ImportField, string[]> = {
   type: ['نوع ملک', 'نوع ملکیت', 'د ملکیت ډول', 'ملکیت ډول', 'نوع', 'دسته', 'type', 'property type', 'category', 'kind'],
   deal_type: ['نوع معامله', 'نوع آگهی', 'د معاملې ډول', 'معاملې ډول', 'معامله', 'د اعلان ډول', 'deal', 'deal type', 'listing type', 'purpose'],
   price: ['قیمت', 'مبلغ', 'بها', 'نرخ', 'بیه', 'price', 'amount', 'cost'],
+  monthly_rent: ['اجاره ماهانه', 'اجاره ماهیانه', 'اجاره ی ماهانه', 'اجاره ماهی', 'کرایه ماهانه', 'میاشتنۍ اجاره', 'میاشتنی اجاره', 'monthly rent', 'rent per month', 'rent monthly'],
   currency: ['ارز', 'واحد پول', 'واحد', 'د پیسو واحد', 'پیسې', 'اسعار', 'currency', 'unit'],
   price_terms: ['شرایط قیمت', 'د بیې شرایط', 'شرایط', 'مقطوع', 'جورآمد', 'price terms', 'terms', 'negotiable'],
   area_sqm: ['متراژ', 'مساحت', 'متر', 'مترې', 'area', 'size', 'sqm', 'area sqm', 'square meters'],
   bedrooms: ['اتاق خواب', 'خوب خونې', 'خوبه', 'خونې', 'تعداد اتاق', 'اتاق', 'خواب', 'bedrooms', 'beds', 'rooms', 'bedroom'],
   bathrooms: ['حمام', 'حمامونه', 'تعداد حمام', 'bathrooms', 'baths', 'bathroom'],
+  features: ['ویژگی', 'ویژگی ها', 'ویژگیها', 'امکانات', 'برچسب', 'برچسب ها', 'ځانګړتیاوې', 'ځانګړتیا', 'features', 'tags', 'amenities'],
+  deed_type: ['نوع سند', 'سند', 'قباله', 'نوع قباله', 'د سند ډول', 'سند ډول', 'deed', 'deed type', 'title deed'],
   province: ['ولایت', 'استان', 'شهر', 'province', 'state', 'city'],
   district: ['ناحیه', 'ناحیه ولسوالی', 'ولسوالی', 'ولسوالي', 'منطقه', 'district', 'zone'],
   neighborhood: ['محله', 'شهرک', 'کارته', 'neighborhood', 'neighbourhood', 'locality'],
@@ -117,6 +127,11 @@ export function guessMapping(headers: readonly string[]): (ImportField | null)[]
 
 const TYPE_EN: [PropertyType, RegExp][] = [
   ['APARTMENT', /apartment|flat|condo/i],
+  ['DUPLEX', /duplex/i],
+  ['COMMERCIAL', /commercial/i],
+  ['VILLA_GARDEN', /villa.{0,6}garden|garden.{0,6}villa/i],
+  ['LAND_OLD', /old.{0,8}(?:building|house)|kolangi|teardown|tear.?down/i],
+  ['WAREHOUSE', /warehouse|godam|godown|storehouse/i],
   ['VILLA', /villa/i],
   ['GARDEN', /garden|orchard/i],
   ['SHOP', /shop|store|kiosk/i],
@@ -140,20 +155,44 @@ export function normalizeType(cell: string): PropertyType | null {
 
 export function normalizeDeal(cell: string): DealType | null {
   const raw = cell.trim().toUpperCase();
-  if (raw === 'SALE' || raw === 'RENT' || raw === 'MORTGAGE_GROWI') return raw;
+  if (raw === 'SALE' || raw === 'RENT' || raw === 'MORTGAGE_GROWI' || raw === 'MORTGAGE_RENT' || raw === 'DAILY_RENT') return raw;
   const flat = flatten(cell);
   const fa = detectDeal(flat);
   if (fa) return fa;
+  if (/daily|short.?term/i.test(flat) && /rent|lease/i.test(flat)) return 'DAILY_RENT';
+  if (/(mortgage|deposit|rahn).{0,12}(rent|ejare|lease)|(rent|lease).{0,12}(mortgage|deposit|rahn)/i.test(flat)) return 'MORTGAGE_RENT';
   if (/\b(sale|sell|buy)\b/i.test(flat)) return 'SALE';
   if (/\b(rent|lease)\b/i.test(flat)) return 'RENT';
   if (/mortgage|pledge|growi|gravi/i.test(flat)) return 'MORTGAGE_GROWI';
   return null;
 }
 
+/** One cell of tags: «آسانسور، پارکینگ» or «ELEVATOR;PARKING» → the tags it names, once each. */
+export function normalizeFeatures(cell: string): PropertyFeature[] {
+  const out = new Set<PropertyFeature>();
+  for (const part of cell.split(/[,;|،؛\n/]+/)) {
+    const word = part.trim().toUpperCase().replace(/[\s-]+/g, '_');
+    if ((PROPERTY_FEATURES as readonly string[]).includes(word)) out.add(word as PropertyFeature);
+  }
+  for (const feature of detectFeatures(flatten(cell))) out.add(feature);
+  return PROPERTY_FEATURES.filter((feature) => out.has(feature));
+}
+
+export function normalizeDeed(cell: string): DeedType | null {
+  const raw = cell.trim().toUpperCase();
+  if ((DEED_TYPES as readonly string[]).includes(raw)) return raw as DeedType;
+  const flat = flatten(cell);
+  if (/shari|sharia|sharai/i.test(flat)) return 'SHARI';
+  if (/orfi|urfi|customary/i.test(flat)) return 'ORFI';
+  return detectDeed(flat);
+}
+
 export function normalizeCurrency(cell: string): Currency | null {
   const flat = flatten(cell).toLowerCase();
   if (/^(afghani|afn|afs|افغانی|افغانیه|افغانۍ|؋|af)$/u.test(flat.trim()) || flat.includes('افغانی') || flat.includes('افغانۍ')) return 'AFGHANI';
   if (/^(usd|us\$|\$|dollar|dollars|دالر|دلار|ډالر)$/u.test(flat.trim()) || flat.includes('دالر') || flat.includes('دلار') || flat.includes('ډالر')) return 'USD';
+  if (/^(toman|tomans|تومان|تومن)$/u.test(flat.trim()) || flat.includes('تومان') || flat.includes('تومن')) return 'TOMAN';
+  if (/^(rial|rials|irr|ریال)$/u.test(flat.trim()) || flat.includes('ریال')) return 'RIAL';
   return null;
 }
 
@@ -210,7 +249,7 @@ export function rowsFromTable(table: FileTable, mapping: readonly (ImportField |
       skipped += 1;
       continue;
     }
-    const row = emptyDraft('file');
+    const row = emptyDraft('file', defaults.market ? { market: defaults.market } : {});
     const notes: string[] = [];
     const bad = (field: ImportField, value: string) => notes.push(tNow('import.note.badCell', { field: importFieldLabel(field), value }));
 
@@ -253,6 +292,25 @@ export function rowsFromTable(table: FileTable, mapping: readonly (ImportField |
       notes.push(tNow('import.note.currencyBlank', { currency: currencyName(defaults.currency) }));
     }
     if (currency) row.currency = currency;
+
+    const rentCell = get('monthly_rent');
+    if (rentCell) {
+      const n = parseLooseNumber(rentCell) ?? findPrice(flatten(rentCell))?.value ?? null;
+      if (n !== null && n > 0) row.monthly_rent = String(n);
+      else bad('monthly_rent', rentCell);
+    }
+    const featuresCell = get('features');
+    if (featuresCell) {
+      const list = normalizeFeatures(featuresCell);
+      if (list.length) row.features = list;
+      else bad('features', featuresCell);
+    }
+    const deedCell = get('deed_type');
+    if (deedCell) {
+      const d = normalizeDeed(deedCell);
+      if (d) row.deed_type = d;
+      else bad('deed_type', deedCell);
+    }
 
     const termsCell = get('price_terms');
     if (termsCell) {
@@ -299,8 +357,14 @@ export function rowsFromTable(table: FileTable, mapping: readonly (ImportField |
     const imageCell = get('images');
     if (imageCell) row.images = [...new Set(imageCell.split(/[\s,;|]+/).filter((u) => /^https?:\/\//i.test(u)))].slice(0, 20);
 
+    // What does not exist in the listing's country is moved to what does, or cleared with a note (see adaptToMarket).
+    const market = row.market ?? activeMarket();
+    adaptToMarket(row, market, notes);
+    if (market === 'IR' && row.deal_type === 'MORTGAGE_RENT' && !row.monthly_rent) notes.push(tNow('import.note.rentMissing'));
+
     if (!row.title.trim()) {
       row.title = composeTitle({
+        market,
         type: row.type,
         deal: row.deal_type,
         bedrooms: row.bedrooms ? Number(row.bedrooms) : null,
@@ -316,19 +380,28 @@ export function rowsFromTable(table: FileTable, mapping: readonly (ImportField |
 }
 
 /**
- * The CSV the agent can download, fill and upload, written in `language` (its column names are the ones the mapping
- * step shows, so the file is recognised again). UTF-8 with a BOM so Excel shows Dari and Pashto correctly.
+ * The CSV the agent can download, fill and upload, written in `language` and with the examples of `market` (a house in
+ * Kabul and a flat in Herat; a flat in Tehran and one in Mashhad), so the file is recognised again. Its column names are
+ * the ones the mapping step shows. UTF-8 with a BOM so Excel shows Dari and Pashto correctly.
  */
-export function templateCsv(language: Language = activeLanguage()): string {
-  const t = (key: Parameters<typeof translate>[1]) => translate(language, key);
-  const labels = labelsFor(language);
-  const columns: ImportField[] = ['title', 'type', 'deal_type', 'price', 'currency', 'area_sqm', 'bedrooms', 'bathrooms', 'province', 'district', 'neighborhood', 'address', 'description'];
-  const header = columns.map((field) => importFieldLabel(field, language));
+export function templateCsv(language: Language = activeLanguage(), market: Market = activeMarket()): string {
+  const t = (key: Parameters<typeof translate>[1]) => translateFor(language, key, market);
+  const labels = labelsFor(language, market);
+  const iran = market === 'IR';
+  const columns: ImportField[] = iran
+    ? ['title', 'type', 'deal_type', 'price', 'monthly_rent', 'currency', 'area_sqm', 'bedrooms', 'bathrooms', 'province', 'district', 'neighborhood', 'address', 'description']
+    : ['title', 'type', 'deal_type', 'price', 'currency', 'area_sqm', 'bedrooms', 'bathrooms', 'province', 'district', 'neighborhood', 'address', 'description'];
+  const header = columns.map((field) => importFieldLabel(field, language, market));
   const provinceName = (name: string) => provinceNameLabel(name, language);
-  const sample = [
-    [t('import.template.title1'), labels.type.HOUSE_HAWILI, labels.deal.SALE, '85000', labels.currency.USD, '200', '3', '2', provinceName('کابل'), t('import.template.district1'), t('import.template.hood1'), t('import.template.near1'), t('import.template.note1')],
-    [t('import.template.title2'), labels.type.APARTMENT, labels.deal.RENT, '12000', labels.currency.AFGHANI, '90', '2', '1', provinceName('هرات'), '', '', t('import.template.near2'), ''],
-  ];
+  const sample = iran
+    ? [
+        [t('import.template.title1'), labels.type.APARTMENT, labels.deal.SALE, '8000000000', '', labels.currency.TOMAN, '90', '3', '2', provinceName('تهران'), t('import.template.district1'), t('import.template.hood1'), t('import.template.near1'), t('import.template.note1')],
+        [t('import.template.title2'), labels.type.APARTMENT, labels.deal.MORTGAGE_RENT, '200000000', '8000000', labels.currency.TOMAN, '70', '2', '1', provinceName('خراسان رضوی'), '', '', t('import.template.near2'), ''],
+      ]
+    : [
+        [t('import.template.title1'), labels.type.HOUSE_HAWILI, labels.deal.SALE, '85000', labels.currency.USD, '200', '3', '2', provinceName('کابل'), t('import.template.district1'), t('import.template.hood1'), t('import.template.near1'), t('import.template.note1')],
+        [t('import.template.title2'), labels.type.APARTMENT, labels.deal.RENT, '12000', labels.currency.AFGHANI, '90', '2', '1', provinceName('هرات'), '', '', t('import.template.near2'), ''],
+      ];
   const esc = (c: string) => (/[",\n]/.test(c) ? `"${c.replace(/"/g, '""')}"` : c);
   return `\ufeff${[header, ...sample].map((r) => r.map(esc).join(',')).join('\r\n')}\r\n`;
 }

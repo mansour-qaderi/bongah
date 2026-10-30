@@ -535,9 +535,9 @@ describe("the plan's listing limit", () => {
 });
 
 describe('the version', () => {
-  it('is 1.2.4 in the package, in app.json and in the app', () => {
-    expect(pkg.version).toBe('1.2.4');
-    expect(app.version).toBe('1.2.4');
-    expect(APP_VERSION).toBe('1.2.4');
+  it('is 2.1.4 in the package, in app.json and in the app', () => {
+    expect(pkg.version).toBe('2.1.4');
+    expect(app.version).toBe('2.1.4');
+    expect(APP_VERSION).toBe('2.1.4');
   });
 });

@@ -1,11 +1,11 @@
-import { BadRequestException, Inject, Injectable } from '@nestjs/common';
-import type { Pricing, PricingEntry } from '@bongah/shared-types';
-import { PRICING_KEYS, SUBSCRIPTION_PACKAGES, SUBSCRIPTION_PLAN_BENEFITS } from '@bongah/shared-types';
+import { BadRequestException, ConflictException, Inject, Injectable } from '@nestjs/common';
+import type { Market, Pricing, PricingEntry } from '@bongah/shared-types';
+import { DEFAULT_MARKET, PRICING_KEYS, SUBSCRIPTION_PACKAGES, SUBSCRIPTION_PLAN_BENEFITS } from '@bongah/shared-types';
 import type { SetPricingInput } from '@bongah/validation';
 import { recordAudit } from '../audit/admin-audit.js';
 import { Prisma, PricingKey } from '../generated/prisma/client.js';
 import { PrismaService } from '../prisma/prisma.service.js';
-import { HESABPAY_SETTINGS, type HesabPaySettings } from './hesabpay.config.js';
+import { HESABPAY_SETTINGS, paymentSettingsFor, type HesabPaySettings } from './hesabpay.config.js';
 import { featuredBundles } from './featured-bundles.js';
 import { listPriceOf } from './subscription-prices.js';
 
@@ -37,9 +37,26 @@ export class PricingService {
     @Inject(HESABPAY_SETTINGS) private readonly settings: HesabPaySettings,
   ) {}
 
-  /** The environment defaults. */
-  defaults(): EffectivePricing {
-    const { prices, featuredAdDays, contactCreditsPerPack } = this.settings;
+  /**
+   * A market's payment settings. Iran's exist only when an Iranian account is configured (see readIranPayments); until then
+   * an Iranian account cannot be priced or pay, and says so (409), instead of being charged Afghan afghani.
+   */
+  marketSettings(market: Market) {
+    const found = paymentSettingsFor(this.settings, market);
+    if (!found) {
+      throw new ConflictException({
+        message: 'Payments are not available in this market yet.',
+        code: 'MARKET_PAYMENTS_UNAVAILABLE',
+        market,
+      });
+    }
+    return found;
+  }
+
+  /** The environment defaults of a market (Afghanistan's unless asked). */
+  defaults(market: Market = DEFAULT_MARKET): EffectivePricing {
+    const { prices } = this.marketSettings(market);
+    const { featuredAdDays, contactCreditsPerPack } = this.settings;
     return {
       SUBSCRIPTION_MONTHLY: { price: prices.subscription.MONTHLY, quantity: null },
       SUBSCRIPTION_QUARTERLY: { price: prices.subscription.QUARTERLY, quantity: null },
@@ -52,9 +69,13 @@ export class PricingService {
     };
   }
 
-  /** Defaults with the admin's overrides on top. */
-  async effective(db: Prisma.TransactionClient = this.prisma): Promise<EffectivePricing> {
-    const result = this.defaults();
+  /**
+   * Defaults with the admin's overrides on top. The overrides are Afghanistan's (the price list in the admin panel is in
+   * the HesabPay account's currency); another market's prices are its settings, as they are.
+   */
+  async effective(db: Prisma.TransactionClient = this.prisma, market: Market = DEFAULT_MARKET): Promise<EffectivePricing> {
+    const result = this.defaults(market);
+    if (market !== DEFAULT_MARKET) return result;
     for (const row of await db.pricingOverride.findMany()) {
       result[row.key] = {
         price: row.price.toFixed(2),
@@ -65,15 +86,17 @@ export class PricingService {
   }
 
   /** The public price list (GET /hesabpay/pricing). */
-  toWire(pricing: EffectivePricing): Pricing {
+  toWire(pricing: EffectivePricing, market: Market = DEFAULT_MARKET): Pricing {
     const price = (key: PricingKey) => Number(pricing[key].price);
+    const settings = this.marketSettings(market);
     return {
-      currency: this.settings.currency,
+      market,
+      currency: settings.currency,
       subscription: Object.fromEntries(
         SUBSCRIPTION_PACKAGES.map((pkg) => [pkg, price(`SUBSCRIPTION_${pkg}` as PricingKey)]),
       ) as Pricing['subscription'],
       subscription_list: Object.fromEntries(
-        SUBSCRIPTION_PACKAGES.map((pkg) => [pkg, listPriceOf(Number(this.settings.prices.subscriptionListMonthly), pkg)]),
+        SUBSCRIPTION_PACKAGES.map((pkg) => [pkg, listPriceOf(Number(settings.prices.subscriptionListMonthly), pkg)]),
       ) as Pricing['subscription'],
       ladder: price('LADDER'),
       featured_ad: price('FEATURED_AD'),

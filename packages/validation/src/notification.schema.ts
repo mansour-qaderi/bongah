@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { LANGUAGES, PUSH_PLATFORMS, QUOTE_CATEGORIES, QUOTE_MAX_LENGTH } from '@bongah/shared-types';
+import { LANGUAGES, MARKETS, PUSH_PLATFORMS, QUOTE_CATEGORIES, QUOTE_MAX_LENGTH } from '@bongah/shared-types';
 import { cleanText } from './common';
 import { booleanQuery, searchQuery } from './moderation.schema';
 import { paginationShape } from './property.schema';
@@ -57,6 +57,8 @@ export const updatePreferencesSchema = z
   .strictObject({
     enable_daily_motivation: z.boolean(),
     has_seen_welcome: z.literal(true),
+    /** The market the account works in (Afghanistan or Iran): see MARKETS in @bongah/shared-types. */
+    market: z.enum(MARKETS),
   })
   .partial()
   .refine((value) => Object.keys(value).length > 0, 'Send at least one field to update');

@@ -10,6 +10,8 @@ import FeedbackSheet from '../../components/FeedbackSheet';
 import Logo from '../../components/Logo';
 import { ScrollScreen } from '../../components/Screen';
 import { toPersianDigits } from '../../i18n/format';
+import { marketText } from '../../i18n/market';
+import { useActiveMarket } from '../../market/marketStore';
 import type { RootStackParamList } from '../../navigation/types';
 import { colors, spacing } from '../../theme';
 
@@ -36,6 +38,8 @@ type Props = NativeStackScreenProps<RootStackParamList, 'About'>;
 export default function AboutScreen({ navigation }: Props) {
   const { t } = useTranslation();
   const [feedbackOpen, setFeedbackOpen] = useState(false);
+  // In Iran the app is in Persian only and speaks of no other country: the mission and the languages are worded for it.
+  const market = useActiveMarket();
 
   return (
     <ScrollScreen edges={['left', 'right']}>
@@ -43,11 +47,11 @@ export default function AboutScreen({ navigation }: Props) {
         {/* The app's own mark, drawn as it is everywhere else (the splash screen, the app icon). */}
         <Logo size={96} testID="about-logo" style={styles.logo} />
         <AppText variant="title">{t('app.name')}</AppText>
-        <AppText color={colors.textMuted}>{t('app.tagline')}</AppText>
+        <AppText color={colors.textMuted}>{marketText(t, 'app.tagline', market)}</AppText>
       </View>
 
       <Card title={t('about.missionTitle')}>
-        <AppText>{t('about.mission')}</AppText>
+        <AppText>{marketText(t, 'about.mission', market)}</AppText>
       </Card>
 
       <Card title={t('about.whatTitle')}>
@@ -67,7 +71,7 @@ export default function AboutScreen({ navigation }: Props) {
         />
         <Detail
           label={t('about.languages')}
-          value={t('about.languagesValue')}
+          value={marketText(t, 'about.languagesValue', market)}
         />
       </Card>
 

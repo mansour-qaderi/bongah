@@ -48,14 +48,15 @@ const urls = () => fetchMock.mock.calls.map(([url]) => String(url));
 describe('places', () => {
   beforeAll(() => initI18n());
 
-  it('reads Photon rows inside Afghanistan with the wide parts as the subtitle', () => {
+  it('reads Photon rows inside Afghanistan or Iran with the wide parts as the subtitle', () => {
     const options = optionsFromPhoton({
       features: [
         {
           geometry: { coordinates: [61.862, 30.958] },
           properties: { osm_type: 'N', osm_id: 1, osm_key: 'amenity', osm_value: 'hospital', name: 'شفاخانه ملکی', city: 'زرنج', state: 'نیمروز' },
         },
-        { geometry: { coordinates: [59.6, 36.3] }, properties: { osm_type: 'N', osm_id: 2, name: 'Mashhad' } },
+        { geometry: { coordinates: [77.2, 28.6] }, properties: { osm_type: 'N', osm_id: 2, name: 'Delhi' } },
+        { geometry: { coordinates: [59.6, 36.3] }, properties: { osm_type: 'N', osm_id: 4, name: 'Mashhad' } },
         { geometry: { coordinates: [69.1, 34.5] }, properties: { osm_type: 'W', osm_id: 3, type: 'street', street: 'جاده میوند' } },
       ],
     });
@@ -68,6 +69,8 @@ describe('places', () => {
         category: 'hospital',
         coordinate: { latitude: 30.958, longitude: 61.862 },
       },
+      // Iran is served too, so a row there stays; Delhi is in neither country and is dropped.
+      expect.objectContaining({ id: 'N4', title: 'Mashhad' }),
       expect.objectContaining({ id: 'W3', title: 'جاده میوند', category: 'street' }),
     ]);
     expect(optionsFromPhoton(null)).toEqual([]);
@@ -101,7 +104,7 @@ describe('places', () => {
     const result = await suggestPlaces('زرنج');
     expect(result.status === 'ok' && result.options.map(o => o.title)).toEqual(['زرنج']);
     expect(urls()[1]).toContain('photon.komoot.io');
-    expect(urls()[1]).toContain('bbox=60.4,29.3,75,38.6');
+    expect(urls()[1]).toContain('bbox=44,25,75,39.8');
 
     setAuthToken(null);
     fetchMock.mockReset();

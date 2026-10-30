@@ -17,7 +17,12 @@ import {
 import type { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
-import type { AgencyMapPin, DealType, Property } from '@bongah/shared-types';
+import type {
+  AgencyMapPin,
+  DealType,
+  Market,
+  Property,
+} from '@bongah/shared-types';
 import { errorMessage } from '../../api/errors';
 import {
   flattenPages,
@@ -53,9 +58,12 @@ import { useFormat } from '../../i18n/useFormat';
 import type { MapViewChange } from '../../map/BaseMap';
 import { useMapStyle } from '../../map/mapStyleStore';
 import { useAreaName, type AreaView } from '../../map/useAreaName';
+import { marketText } from '../../i18n/market';
+import { useActiveMarket } from '../../market/marketStore';
 import { centroid, zoomToSeparate } from '../../map/cluster';
 import {
-  AFGHANISTAN_CAMERA,
+  isInsideMarket,
+  marketCamera,
   fromLngLat,
   provinceCamera,
   toLngLat,
@@ -103,6 +111,12 @@ type Selection =
   | { kind: 'agency'; agency: AgencyMapPin }
   | null;
 
+/**
+ * The size of the pin in the card that stands where the map will be while the phone looks for its position: a compact
+ * marker with its soft ring, level with the line of words under it, not a big mark in the middle of an empty screen.
+ */
+export const WAITING_PIN_SIZE = 40;
+
 /** The map keeps fetching pages (50 listings each) until it has this many; the markers drawn are capped anyway. */
 const MAP_MAX_PAGES = 3;
 /**
@@ -118,9 +132,12 @@ const SELECT_ZOOM = 13;
 const PROPERTY_CARD_PADDING = 360;
 const AGENCY_CARD_PADDING = 170;
 
-const cameraForProvince = (value: string | undefined): MapCamera => {
+const cameraForProvince = (
+  value: string | undefined,
+  market: Market,
+): MapCamera => {
   const province = findProvince(value);
-  return province ? provinceCamera(province) : AFGHANISTAN_CAMERA;
+  return province ? provinceCamera(province) : marketCamera(market);
 };
 
 function activeFilterCount(filters: PropertyFilters): number {
@@ -129,6 +146,8 @@ function activeFilterCount(filters: PropertyFilters): number {
     filters.district,
     filters.types?.length ? filters.types : undefined,
     filters.deal_type,
+    filters.features?.length ? filters.features : undefined,
+    filters.deed_type,
     filters.min_price ?? filters.max_price,
   ].filter(value => value !== undefined).length;
 }
@@ -164,7 +183,11 @@ export default function HomeScreen({ navigation }: Props) {
   const [filterOpen, setFilterOpen] = useState(false);
   const [selection, setSelection] = useState<Selection>(null);
   const [clusterItems, setClusterItems] = useState<MapItem[] | null>(null);
-  const [camera, setCamera] = useState<MapCamera>(AFGHANISTAN_CAMERA);
+  // The country the person works in: its listings, its money and kinds of deal, and the map opening on it.
+  const market = useActiveMarket();
+  const marketRef = useRef(market);
+  marketRef.current = market;
+  const [camera, setCamera] = useState<MapCamera>(() => marketCamera(market));
   const [me, setMe] = useState<Coordinate | null>(null);
   const [locating, setLocating] = useState(false);
   // The first answer to "where is the phone?" (a fix, a refusal, or nothing) has come. Until it has, the map has no
@@ -177,19 +200,19 @@ export default function HomeScreen({ navigation }: Props) {
   const [area, setArea] = useState<Area>(() =>
     areaFor(
       boundsFromCamera(
-        AFGHANISTAN_CAMERA.center,
-        AFGHANISTAN_CAMERA.zoom,
+        marketCamera(market).center,
+        marketCamera(market).zoom,
         width,
         height,
       ),
     ),
   );
-  const zoom = useRef(AFGHANISTAN_CAMERA.zoom);
+  const zoom = useRef(marketCamera(market).zoom);
   // What the screen shows right now, exactly (no margin): the count under the map and the list are made from it.
   const [viewBounds, setViewBounds] = useState<Bounds>(() =>
     boundsFromCamera(
-      AFGHANISTAN_CAMERA.center,
-      AFGHANISTAN_CAMERA.zoom,
+      marketCamera(market).center,
+      marketCamera(market).zoom,
       width,
       height,
     ),
@@ -220,8 +243,8 @@ export default function HomeScreen({ navigation }: Props) {
 
   // On the map the viewport is the filter, so the province (which only moves the camera there) is not sent.
   const mapFilters = useMemo<PropertyFilters>(
-    () => ({ ...filters, province: undefined }),
-    [filters],
+    () => ({ ...filters, province: undefined, market }),
+    [filters, market],
   );
   const mapQuery = useMapProperties(
     mapFilters,
@@ -232,8 +255,10 @@ export default function HomeScreen({ navigation }: Props) {
   // only moves the map, is not sent), so the rows and their count are exactly the pins that were in view.
   const listFilters = useMemo<PropertyFilters>(
     () =>
-      listArea ? { ...filters, province: undefined, ...listArea } : filters,
-    [filters, listArea],
+      listArea
+        ? { ...filters, province: undefined, market, ...listArea }
+        : { ...filters, market },
+    [filters, listArea, market],
   );
   const listQuery = usePropertyList(listFilters, mode === 'list');
   const listReveal = useReveal(listQuery.isPending);
@@ -290,7 +315,7 @@ export default function HomeScreen({ navigation }: Props) {
   const lookAtProvince = (value: string | undefined) => {
     steered.current = true;
     setCamera(current => ({
-      ...cameraForProvince(value),
+      ...cameraForProvince(value, marketRef.current),
       nonce: (current.nonce ?? 0) + 1,
     }));
   };
@@ -322,7 +347,10 @@ export default function HomeScreen({ navigation }: Props) {
     setLocating(false);
     if (result.status === 'ok') {
       setMe(result.coordinate);
-      if (!(auto && steered.current)) {
+      // A phone in the other country than the one being browsed (an Afghan in Iran looking at Afghan listings) does not
+      // pull the map away: the country stays on screen, like when the phone is outside both.
+      const here = isInsideMarket(result.coordinate, marketRef.current);
+      if (here && !(auto && steered.current)) {
         steered.current = true;
         // The camera is set before `located` is, so the map (which is only drawn once the first answer is in) opens
         // on the phone and never on the country.
@@ -338,7 +366,7 @@ export default function HomeScreen({ navigation }: Props) {
         setArea(areaFor(target));
       }
     } else if (result.status === 'outside') {
-      // The phone is outside Afghanistan: the map keeps showing the country and says nothing. A banner about it only
+      // The phone is outside Afghanistan and Iran: the map keeps showing the country and says nothing. A banner about it only
       // worried people who were simply travelling, and there is nothing for them to do.
     } else {
       setProblem(result.status);
@@ -351,6 +379,34 @@ export default function HomeScreen({ navigation }: Props) {
   useEffect(() => {
     findMe(true);
   }, [findMe]);
+
+  // Another country was chosen: its listings replace the old ones, so what was filtered for the old country (its
+  // deals, currency, provinces) and what was open over its map are dropped, and the map goes to the new country (or
+  // to the phone, when the phone is in it).
+  const shownMarket = useRef(market);
+  useEffect(() => {
+    if (shownMarket.current === market) return;
+    shownMarket.current = market;
+    setFilters({});
+    setSelection(null);
+    setClusterItems(null);
+    setListArea(null);
+    const country = marketCamera(market);
+    const target =
+      me && isInsideMarket(me, market)
+        ? { center: toLngLat(me), zoom: LOCATION_ZOOM }
+        : country;
+    steered.current = true;
+    setCamera(current => ({
+      center: target.center,
+      zoom: target.zoom,
+      nonce: (current.nonce ?? 0) + 1,
+    }));
+    const bounds = boundsFromCamera(target.center, target.zoom, width, height);
+    setViewBounds(bounds);
+    setArea(areaFor(bounds));
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only a change of country moves the map
+  }, [market]);
 
   // Back from the phone's settings: try again, the person may have just switched it on.
   useEffect(() => {
@@ -656,8 +712,8 @@ export default function HomeScreen({ navigation }: Props) {
         locating={locating}
         message={
           inView === 0
-            ? t('home.noMapResults')
-            : t('home.mapShowing', {
+            ? marketText(t, 'home.noMapResults', market)
+            : marketText(t, 'home.mapShowing', market, {
                 count: `${formatNumber(inView, 0)}${
                   mapQuery.hasNextPage ? '+' : ''
                 }`,
@@ -692,7 +748,7 @@ export default function HomeScreen({ navigation }: Props) {
           // The map is not drawn until the phone has said where it is, so it opens on the phone: drawing the country
           // first and then flying across it to the person's street is what this replaces.
           <View style={styles.waiting} testID="map-waiting">
-            <MapLoader size={88} />
+            <MapLoader size={WAITING_PIN_SIZE} />
             <AppText variant="bodySm" color={colors.textSecondary}>
               {t('home.locating')}
             </AppText>

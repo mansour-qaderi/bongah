@@ -7,7 +7,7 @@ import {
   NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
-import { SUBSCRIPTION_PLAN_BENEFITS } from '@bongah/shared-types';
+import { DEFAULT_MARKET, SUBSCRIPTION_PLAN_BENEFITS, type Market, type PropertyType } from '@bongah/shared-types';
 import { normalizePlaceName, type MyListingSort } from '@bongah/validation';
 import { findActiveSubscription } from '../agencies/subscription.js';
 import { AGENCY_TRIAL_SETTINGS, type AgencyTrialSettings } from '../agencies/trial.config.js';
@@ -18,6 +18,7 @@ import type { CreatePropertyDto } from './dto/create-property.dto.js';
 import type { ListPropertiesDto, MyListingsDto, PaginationDto } from './dto/list-properties.dto.js';
 import type { PropertyDto, PropertyPageDto } from './dto/property-response.dto.js';
 import type { UpdatePropertyDto } from './dto/update-property.dto.js';
+import { assertFitsMarket } from './property.market.js';
 import { kabulDayKey } from '../contact/contact.time.js';
 import { FREE_LISTINGS_PER_MONTH } from './property.constants.js';
 import { toOwnPropertyDto, toPropertyDto, WITH_PARTIES } from './property.mapper.js';
@@ -81,6 +82,8 @@ function myListingsWhere(userId: string, query: MyListingsDto, now: Date): Prism
     status: query.status,
     type: query.type,
     dealType: query.deal_type,
+    ...(query.features ? { features: { hasEvery: query.features } } : {}),
+    deedType: query.deed_type,
     // The schema guarantees a currency whenever a price bound is present.
     currency: query.currency,
     ...(hasPriceRange ? { price: { gte: query.min_price, lte: query.max_price } } : {}),
@@ -103,11 +106,16 @@ export class PropertyService {
     const where: Prisma.PropertyWhereInput = {
       status: PropertyStatus.ACTIVE,
       user: { bannedAt: null },
+      // One market's listings: the one asked for, else Afghanistan (what apps that predate markets always saw).
+      market: query.market ?? DEFAULT_MARKET,
       province: query.province,
       district: query.district,
       // One kind (`type`, older apps) or any of several (`types`); the schema refuses both together.
       type: query.types ? { in: query.types } : query.type,
       dealType: query.deal_type,
+      // Only listings that carry ALL the tags asked for, and the deed asked for.
+      ...(query.features ? { features: { hasEvery: query.features } } : {}),
+      deedType: query.deed_type,
       // true: listings with an exact pin (the map); false: those without; omitted: all.
       ...(query.has_location === undefined ? {} : { lat: query.has_location ? { not: null } : null }),
       // The part of the map on screen (all four are given together; the schema guarantees it). Only listings with a
@@ -204,12 +212,24 @@ export class PropertyService {
     const now = new Date();
 
     const row = await this.prisma.$transaction(async (tx) => {
-      const users = await tx.$queryRaw<{ role: Role; credits: number; bonus: number }[]>`
-        SELECT role::text AS role, welcome_listing_credits AS credits, bonus_listing_credits AS bonus
+      const users = await tx.$queryRaw<{ role: Role; credits: number; bonus: number; market: Market }[]>`
+        SELECT role::text AS role, welcome_listing_credits AS credits, bonus_listing_credits AS bonus, market::text AS market
           FROM users WHERE id = ${userId}::uuid FOR UPDATE`;
       if (users.length === 0) {
         throw new UnauthorizedException(); // valid token, but the account no longer exists
       }
+      // The listing's market: the one chosen on the form, else the account's own. Currency, deal, kind of property and
+      // map pin must all fit it. Checked before anything is spent (a quota slot, a gift credit).
+      const market: Market = input.market ?? users[0].market;
+      assertFitsMarket(market, {
+        currency: input.currency,
+        deal_type: input.deal_type,
+        type: input.type,
+        features: input.features,
+        deed_type: input.deed_type,
+        lat: input.lat,
+        lng: input.lng,
+      });
 
       let agencyId: string | null = null;
       let usedWelcomeCredit = false;
@@ -302,13 +322,21 @@ export class PropertyService {
         address,
         unit,
         mortgage_months,
+        monthly_rent,
+        features,
+        deed_type,
         price_terms,
         boundary,
+        market: _chosenMarket,
+        province,
         ...rest
       } = input;
       const created = await tx.property.create({
         data: {
           ...rest,
+          market,
+          // An Iranian listing may come without one (the form does not ask); the column is plain text.
+          province: province ?? '',
           // A Json column takes "no value" as Prisma.DbNull, not null: an outline is stored only when one was drawn.
           ...(boundary ? { boundary } : {}),
           description,
@@ -320,6 +348,9 @@ export class PropertyService {
           unit: unit || null,
           dealType: deal_type,
           mortgageMonths: mortgage_months ?? null,
+          monthlyRent: monthly_rent ?? null,
+          features: features ?? [],
+          deedType: deed_type ?? null,
           priceTerms: price_terms ?? null,
           areaSqm: area_sqm,
           bedrooms: bedrooms ?? null,
@@ -345,12 +376,25 @@ export class PropertyService {
    */
   async update(userId: string, id: string, input: UpdatePropertyDto): Promise<PropertyDto> {
     const now = new Date();
-    const { deal_type, area_sqm, unit, mortgage_months, price_terms, boundary, ...rest } = input;
+    const { deal_type, area_sqm, unit, mortgage_months, monthly_rent, features, deed_type, price_terms, boundary, ...rest } =
+      input;
+    // A blank province never replaces a stored one (an Iranian form may not know it).
+    if (rest.province === '') delete rest.province;
 
     const row = await this.prisma.$transaction(async (tx) => {
       const locked = await tx.$queryRaw<
-        { user_id: string; removed_by_admin_at: Date | null; deal_type: DealType; lat: number | null }[]
-      >`SELECT user_id, removed_by_admin_at, deal_type, lat FROM properties WHERE id = ${id}::uuid FOR UPDATE`;
+        {
+          user_id: string;
+          removed_by_admin_at: Date | null;
+          deal_type: DealType;
+          lat: number | null;
+          market: Market;
+          type: PropertyType;
+          has_monthly_rent: boolean;
+        }[]
+      >`SELECT user_id, removed_by_admin_at, deal_type, lat, market::text AS market, type::text AS type,
+               monthly_rent IS NOT NULL AS has_monthly_rent
+          FROM properties WHERE id = ${id}::uuid FOR UPDATE`;
       if (locked.length === 0) throw new NotFoundException('Property not found.');
       const actorRole = await this.assertCanModify(tx, userId, locked[0].user_id);
       // A listing an admin took down stays down: only an admin can touch it (restore it, say).
@@ -363,6 +407,18 @@ export class PropertyService {
 
       // A mortgage duration belongs to a mortgage listing: the deal after this edit decides. Moving a listing to
       // another deal drops the duration it had; naming one for a deal that has none is refused.
+      // The listing keeps its market. What this edit changes must still fit it (a field the edit leaves alone is not
+      // re-checked, so an old listing can always be edited for something else), and a daily rental must stay a villa or
+      // a garden whichever of the two the edit touches.
+      assertFitsMarket(locked[0].market, {
+        currency: rest.currency,
+        deal_type: deal_type ?? (rest.type !== undefined ? locked[0].deal_type : undefined),
+        type: rest.type ?? (deal_type === 'DAILY_RENT' ? locked[0].type : undefined),
+        features,
+        deed_type,
+        lat: rest.lat,
+        lng: rest.lng,
+      });
       const dealAfter = deal_type ?? locked[0].deal_type;
       if (mortgage_months != null && dealAfter !== DealType.MORTGAGE_GROWI) {
         throw new BadRequestException({
@@ -371,6 +427,21 @@ export class PropertyService {
         });
       }
       const clearsMonths = dealAfter !== DealType.MORTGAGE_GROWI;
+      // The monthly rent belongs to a mortgage-and-rent listing (رهن و اجاره), and that deal cannot be without one: the
+      // deal after this edit decides, as with the duration above.
+      const rentAfter = dealAfter === DealType.MORTGAGE_RENT;
+      if (monthly_rent != null && !rentAfter) {
+        throw new BadRequestException({
+          message: 'A monthly rent is only for a mortgage-and-rent listing.',
+          errors: [{ field: 'monthly_rent', message: 'A monthly rent is only for a mortgage-and-rent listing' }],
+        });
+      }
+      if (rentAfter && (monthly_rent === null || (monthly_rent === undefined && !locked[0].has_monthly_rent))) {
+        throw new BadRequestException({
+          message: 'A mortgage-and-rent listing needs its monthly rent.',
+          errors: [{ field: 'monthly_rent', message: 'A mortgage-and-rent listing needs its monthly rent' }],
+        });
+      }
       // An outline needs a pin, the one sent with it or the one the listing already has (the map finds listings by
       // their pin). The pin itself cannot be removed by an edit, so a stored one stays.
       if (boundary && rest.lat === undefined && locked[0].lat === null) {
@@ -386,6 +457,10 @@ export class PropertyService {
           ...rest,
           ...(price_terms !== undefined ? { priceTerms: price_terms } : {}),
           ...(mortgage_months !== undefined || clearsMonths ? { mortgageMonths: clearsMonths ? null : mortgage_months } : {}),
+          ...(monthly_rent !== undefined || !rentAfter ? { monthlyRent: rentAfter ? monthly_rent : null } : {}),
+          // The tags are replaced as a set; a deed of null clears it.
+          ...(features !== undefined ? { features } : {}),
+          ...(deed_type !== undefined ? { deedType: deed_type } : {}),
           // A blank unit clears it, like null does.
           ...(unit !== undefined ? { unit: unit || null } : {}),
           ...(deal_type !== undefined ? { dealType: deal_type } : {}),

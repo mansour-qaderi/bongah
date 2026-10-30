@@ -295,7 +295,7 @@ export function ManualPaymentDialog() {
 
 function AccountRow({ account }: { account: ManualPaymentAccount }) {
   const t = useT();
-  const Icon = account.kind === 'CARD' ? Landmark : Smartphone;
+  const Icon = account.kind === 'HESABPAY' ? Smartphone : Landmark;
 
   async function copy() {
     try {

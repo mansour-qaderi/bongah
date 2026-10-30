@@ -7,6 +7,7 @@ import { NotificationModule } from '../notification/notification.module.js';
 import { PromotionModule } from '../promotion/promotion.module.js';
 import { AdminAgenciesService } from './admin-agencies.service.js';
 import { AdminAnalyticsService } from './admin-analytics.service.js';
+import { AdminFeedbackService } from './admin-feedback.service.js';
 import { AdminPropertiesService } from './admin-properties.service.js';
 import { AdminTransactionsService } from './admin-transactions.service.js';
 import { AdminUsersService } from './admin-users.service.js';
@@ -15,6 +16,7 @@ import {
   AdminAnalyticsController,
   AdminAuditController,
   AdminBannersController,
+  AdminFeedbackController,
   AdminNotificationsController,
   AdminPricingController,
   AdminPropertiesController,
@@ -36,6 +38,7 @@ import {
     AdminTransactionsController,
     AdminAuditController,
     AdminBannersController,
+    AdminFeedbackController,
     AdminPricingController,
     AdminQuotesController,
     AdminNotificationsController,
@@ -46,6 +49,7 @@ import {
     AdminPropertiesService,
     AdminTransactionsService,
     AdminAnalyticsService,
+    AdminFeedbackService,
   ],
 })
 export class AdminModule {}

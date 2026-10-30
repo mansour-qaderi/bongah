@@ -10,7 +10,7 @@ import { ArrowDown, ArrowUp, Eye, FilePlus2, Frame, MapPin, MoreHorizontal, Penc
 import { moneyAmount } from '@bongah/validation';
 import type { Paginated, Property, PropertyStatus } from '@bongah/shared-types';
 import { errorMessage, fetcher } from '@/lib/api';
-import { formatMoney, formatNumber, formatShortDate, parseLooseNumber } from '@/lib/format';
+import { formatNumber, formatShortDate, parseLooseNumber } from '@/lib/format';
 import { tNow } from '@/i18n/active';
 import { useLanguage, useT } from '@/i18n/provider';
 import { provinceNameLabel } from '@/lib/provinces';
@@ -45,6 +45,7 @@ import { FeaturedDialog } from './featured-dialog';
 import { ListingFilters } from './filters';
 import { InlineEdit } from './inline-edit';
 import { PriceTermsTag } from './price-terms-tag';
+import { listingPrice } from '@/lib/price';
 import { ProgressDialog, type RunState } from './progress-dialog';
 import { StatusActions, StatusBadge, useStatusChange } from './status-toggle';
 
@@ -227,8 +228,8 @@ export function ListingsView() {
               inputClassName="w-36"
               display={
                 <span className="flex flex-col items-start gap-0.5">
-                  <span className="tabular whitespace-nowrap text-sm font-semibold text-ink-2">{formatMoney(p.price, p.currency)}</span>
-                  <PriceTermsTag terms={p.price_terms} />
+                  <span className="tabular whitespace-nowrap text-sm font-semibold text-ink-2">{listingPrice(p)}</span>
+                  <PriceTermsTag terms={p.price_terms} market={p.market} />
                 </span>
               }
               validate={(d) => {

@@ -179,15 +179,20 @@ afterEach(async () => {
 // ───────────────────────────── 3. the unit (sub-type) ─────────────────────────────
 
 describe('property types: the shared list', () => {
-  it('has the nine independent types, none of them grouped', () => {
+  it('has the fourteen independent types, none of them grouped', () => {
     expect([...PROPERTY_TYPES]).toEqual([
       'HOUSE_HAWILI',
       'APARTMENT',
+      'DUPLEX',
       'SHOP',
       'OFFICE',
+      'COMMERCIAL',
+      'WAREHOUSE',
       'LAND',
+      'LAND_OLD',
       'GARDEN',
       'VILLA',
+      'VILLA_GARDEN',
       'GARAGE',
       'OTHER',
     ]);
@@ -487,6 +492,8 @@ describe('placeholders carry no "for example" word', () => {
   ])('has none in the %s texts that go into a text box', (_name, locale) => {
     const offenders = strings(locale, '')
       .filter(([key]) => /placeholder|titleExamples/i.test(key))
+      // Iran's address example is worded by the product owner: «مثلاً سعادت‌آباد، خیابان فرهنگ» (the form and the filter).
+      .filter(([key]) => key !== 'add.placePlaceholderIR' && key !== 'homeIR.districtPlaceholder')
       .filter(([, text]) => words.some(word => text.includes(word)))
       .map(([key]) => key);
     expect(offenders).toEqual([]);
@@ -548,6 +555,25 @@ describe('FeedbackSheet', () => {
     expect(
       inputLabelled(tree.root, prs.feedback.messageLabel).props.placeholder,
     ).toBe(prs.feedback.messagePlaceholder);
+  });
+
+  it('shows the team’s answers to what the person wrote before, above the form', async () => {
+    mockApi(fetchMock, {
+      'GET /feedback/mine': {
+        status: 200,
+        body: [
+          { id: 'f1', category: 'PROBLEM', message: 'نقشه باز نمی‌شود', created_at: '2026-10-20T08:00:00Z', reply: { message: 'درست شد؛ نسخهٔ تازه را بگیرید', replied_at: '2026-10-21T08:00:00Z' } },
+          { id: 'f2', category: 'SUGGESTION', message: 'هنوز پاسخ نگرفته', created_at: '2026-10-22T08:00:00Z', reply: null },
+        ],
+      },
+    });
+    const { tree } = await open();
+    const text = allText(tree.root);
+    expect(text).toContain(prs.feedback.repliesTitle);
+    expect(text).toContain('درست شد؛ نسخهٔ تازه را بگیرید');
+    expect(text).toContain('نقشه باز نمی‌شود');
+    // A message nobody has answered yet is not listed as an answer.
+    expect(text).not.toContain('هنوز پاسخ نگرفته');
   });
 
   it('refuses a message that is too short and sends nothing', async () => {

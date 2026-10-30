@@ -71,7 +71,10 @@ import { Reveal, useReveal } from '../../components/Reveal';
 import { ChatThreadSkeleton } from '../../components/SkeletonLoader';
 import { ErrorView } from '../../components/States';
 import { TYPING_IDLE_MS } from '../../config';
-import { AFGHANISTAN_CAMERA, type Coordinate } from '../../map/geo';
+import { marketCamera, type Coordinate } from '../../map/geo';
+import { marketText } from '../../i18n/market';
+import { useActiveMarket } from '../../market/marketStore';
+import { listingPriceText } from '../../i18n/rentPrice';
 import { useFormat } from '../../i18n/useFormat';
 import type { RootStackParamList } from '../../navigation/types';
 import { colors, fonts, radius, spacing } from '../../theme';
@@ -86,6 +89,7 @@ export default function ChatScreen({ navigation, route }: Props) {
   const format = useFormat();
   const queryClient = useQueryClient();
   const { user } = useAuth();
+  const market = useActiveMarket();
   const { typing, send, setTyping } = useChat();
   const myId = user?.id;
 
@@ -311,9 +315,12 @@ export default function ChatScreen({ navigation, route }: Props) {
       : notice
       ? errorMessage(notice, t)
       : null;
-  // What went wrong with a picture, and a pin outside Afghanistan, are said in a toast; the chat stays as it was.
+  // What went wrong with a picture, and a pin outside the country, are said in a toast; the chat stays as it was.
   useErrorToast(noticeText, notice);
-  useErrorToast(pinOutside ? t('chat.locationOutside') : null, pinOutside);
+  useErrorToast(
+    pinOutside ? marketText(t, 'chat.locationOutside', market) : null,
+    pinOutside,
+  );
 
   const reveal = useReveal(history.isPending);
 
@@ -351,7 +358,7 @@ export default function ChatScreen({ navigation, route }: Props) {
             {property.title}
           </AppText>
           <AppText variant="caption" color={colors.primaryDark}>
-            {format.price(property.price, property.currency)}
+            {listingPriceText(property, format.price, t)}
           </AppText>
           <AppText variant="caption" color={colors.textMuted} numberOfLines={1}>
             {[format.province(property.province), property.district]
@@ -514,7 +521,7 @@ export default function ChatScreen({ navigation, route }: Props) {
             </AppText>
             <LocationPicker
               value={pin}
-              camera={AFGHANISTAN_CAMERA}
+              camera={marketCamera(market)}
               onChange={coordinate => {
                 setPinOutside(false);
                 setPin(coordinate);

@@ -1,5 +1,7 @@
 import type { TFunction } from 'i18next';
+import type { Market } from '@bongah/shared-types';
 import { ApiError } from '../../api/client';
+import { marketName } from '../../i18n/market';
 
 /** The error text under each field of the listing form, by field. */
 export type FieldErrors = Partial<Record<string, string>>;
@@ -16,8 +18,11 @@ export const FORM_FIELDS = [
   'type',
   'unit',
   'deal_type',
+  'features',
+  'deed_type',
   'price',
   'currency',
+  'monthly_rent',
   'mortgage_months',
   'price_terms',
   'area_sqm',
@@ -36,6 +41,9 @@ const LABEL_KEYS = {
   deal_type: 'add.deal',
   price: 'add.price',
   currency: 'add.currency',
+  features: 'listingFeature.label',
+  deed_type: 'deed.label',
+  monthly_rent: 'add.monthlyRent',
   mortgage_months: 'mortgage.label',
   price_terms: 'priceTerms.label',
   area_sqm: 'add.area',
@@ -66,6 +74,9 @@ export function formFieldFor(name: string): FormField | null {
     case 'title':
     case 'price':
     case 'currency':
+    case 'features':
+    case 'deed_type':
+    case 'monthly_rent':
     case 'mortgage_months':
     case 'price_terms':
     case 'bedrooms':
@@ -97,6 +108,7 @@ export function fieldMessage(
   field: FormField,
   problem: Problem,
   t: TFunction,
+  market?: Market,
 ): string {
   if (problem === 'required') {
     if (field === 'location') return t('add.addressRequired');
@@ -121,6 +133,11 @@ export function fieldMessage(
       return t('add.error.price');
     case 'currency':
       return t('add.error.currency');
+    case 'features':
+    case 'deed_type':
+      return t('add.error.notSupported');
+    case 'monthly_rent':
+      return t('add.error.monthlyRent');
     case 'mortgage_months':
       return t('mortgage.error');
     case 'price_terms':
@@ -131,7 +148,7 @@ export function fieldMessage(
     case 'bathrooms':
       return t('add.error.rooms');
     case 'location':
-      return t('map.outside');
+      return t('map.outside', { market: marketName(market, t) });
     case 'province':
       return t('add.error.province');
     case 'address':
@@ -160,6 +177,7 @@ function problemOf(message: string): Problem {
 export function serverFieldErrors(
   error: unknown,
   t: TFunction,
+  market?: Market,
 ): FieldErrors | null {
   if (!(error instanceof ApiError)) return null;
   if (error.status !== 400 && error.status !== 422) return null;
@@ -176,7 +194,7 @@ export function serverFieldErrors(
     }
     const field = formFieldFor(name);
     if (!field || found[field]) continue;
-    found[field] = fieldMessage(field, problem, t);
+    found[field] = fieldMessage(field, problem, t, market);
   }
   return Object.keys(found).length > 0 ? found : null;
 }

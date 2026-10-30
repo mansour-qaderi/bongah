@@ -7,7 +7,8 @@ import { ArrowRight, Bot, Check, CheckCheck, ImageIcon, MapPin, MessageSquare, S
 import type { ChatConversation, ChatMessage } from '@bongah/shared-types';
 import { errorMessage } from '@/lib/api';
 import { fetchOlder, inFilter, matchesQuery, markRead, sendText, sortConversations, threadKey, threadOrder, chatImageSrc, osmLink, CHAT_FILTERS, type ChatFilter } from '@/lib/chat';
-import { formatDateTime, formatMoney, formatNumber, formatRelative } from '@/lib/format';
+import { formatDateTime, formatNumber, formatRelative } from '@/lib/format';
+import { listingPrice } from '@/lib/price';
 import { provinceNameLabel } from '@/lib/provinces';
 import { useConversations, useThread } from '@/hooks/use-api';
 import { useLanguage, useT } from '@/i18n/provider';
@@ -217,7 +218,7 @@ function Thread({ conversation: c, onBack }: { conversation: ChatConversation; o
             {place ? ` · ${place}` : ''}
           </p>
         </div>
-        <span className="tabular hidden shrink-0 text-[13px] font-bold text-ink-2 sm:block">{formatMoney(p.price, p.currency)}</span>
+        <span className="tabular hidden shrink-0 text-[13px] font-bold text-ink-2 sm:block">{listingPrice({ ...p, deal_type: p.deal_type ?? 'SALE', monthly_rent: p.monthly_rent ?? null })}</span>
       </header>
 
       <div

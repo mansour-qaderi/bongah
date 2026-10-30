@@ -9,7 +9,10 @@ import {
 } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { PROVINCES, type Province } from '../constants/provinces';
+import { provincesFor, type Province } from '../constants/provinces';
+import type { Market } from '@bongah/shared-types';
+import { placeText } from '../i18n/market';
+import { useActiveMarket } from '../market/marketStore';
 import { useFormat } from '../i18n/useFormat';
 import { colors, fonts, radius, spacing } from '../theme';
 import AppText from './AppText';
@@ -20,6 +23,8 @@ interface Props {
   selectedId: string | null;
   /** Adds an "all provinces" row (for filters; the add-property form needs a real province). */
   allowAll?: boolean;
+  /** Whose provinces to list. Default: the market in use (a listing form for the other country passes its own). */
+  market?: Market;
   onSelect: (province: Province | null) => void;
   onClose: () => void;
 }
@@ -28,22 +33,26 @@ export default function ProvincePicker({
   visible,
   selectedId,
   allowAll,
+  market,
   onSelect,
   onClose,
 }: Props) {
   const { t } = useTranslation();
   const { language } = useFormat();
   const [query, setQuery] = useState('');
+  const active = useActiveMarket();
+  const where = market ?? active;
+  const provinces = provincesFor(where);
 
   const items = useMemo(() => {
     const q = query.trim();
-    if (!q) return PROVINCES;
-    return PROVINCES.filter(p =>
+    if (!q) return provinces;
+    return provinces.filter(p =>
       [p.name.prs, p.name.ps, p.capital?.prs, p.capital?.ps].some(name =>
         name?.includes(q),
       ),
     );
-  }, [query]);
+  }, [query, provinces]);
 
   const choose = (province: Province | null) => {
     setQuery('');
@@ -55,7 +64,7 @@ export default function ProvincePicker({
       <SafeAreaView style={styles.screen}>
         <KeyboardAvoider>
           <View style={styles.header}>
-            <AppText variant="heading">{t('home.selectProvince')}</AppText>
+            <AppText variant="heading">{placeText('selectProvince', where, t)}</AppText>
             <Pressable
               accessibilityRole="button"
               onPress={onClose}
@@ -69,7 +78,7 @@ export default function ProvincePicker({
           <TextInput
             value={query}
             onChangeText={setQuery}
-            placeholder={t('home.searchProvince')}
+            placeholder={placeText('searchProvince', where, t)}
             placeholderTextColor={colors.placeholder}
             style={styles.search}
           />
@@ -80,7 +89,7 @@ export default function ProvincePicker({
             ListHeaderComponent={
               allowAll && !query ? (
                 <Row
-                  label={t('home.allProvinces')}
+                  label={placeText('allProvinces', where, t)}
                   selected={selectedId === null}
                   onPress={() => choose(null)}
                 />

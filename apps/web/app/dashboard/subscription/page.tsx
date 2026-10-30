@@ -11,18 +11,23 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { errorMessage } from '@/lib/api';
 import { usePricing, useReferrals, useWallet } from '@/hooks/use-api';
 import { useT } from '@/i18n/provider';
+import { useActiveMarket } from '@/hooks/use-active-market';
 
 export default function SubscriptionPage() {
   const t = useT();
   const wallet = useWallet();
   const pricing = usePricing();
   const referrals = useReferrals();
+  const market = useActiveMarket();
 
   return (
     <div className="mx-auto max-w-7xl space-y-6">
       <div>
         <h1 className="text-xl font-extrabold text-ink">{t('sub.page.title')}</h1>
         <p className="mt-1 text-[13px] text-muted">{t('sub.page.subtitle')}</p>
+        <p className="mt-1 text-[13px] font-semibold text-ink-2" data-testid="pay-market-note">
+          {t(market === 'IR' ? 'sub.pay.IR' : 'sub.pay.AF')}
+        </p>
       </div>
 
       {wallet.data ? (

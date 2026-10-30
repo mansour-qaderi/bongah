@@ -113,7 +113,7 @@ export default function PropertyPreviewCard({
 
           {/* The deal's tag at the far end (the top-left corner), the "featured" badge under it. */}
           <View style={styles.tags} testID="preview-tags">
-            <DealBadge deal={property.deal_type} />
+            <DealBadge deal={property.deal_type} market={property.market} />
             {property.is_featured ? (
               <Badge label={t('property.featured')} tone={badgeTones.warning} />
             ) : null}

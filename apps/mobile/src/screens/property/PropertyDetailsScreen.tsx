@@ -26,6 +26,7 @@ import FeaturedFrameButton from '../../components/FeaturedFrameButton';
 import Icon from '../../components/Icon';
 import LocationPermissionModal from '../../components/LocationPermissionModal';
 import NavigationModal from '../../components/NavigationModal';
+import { MonthlyRent } from '../../components/PriceLine';
 import Price from '../../components/Price';
 import PropertyFacts, { propertyPlace } from '../../components/PropertyFacts';
 import PropertyLocationMap from '../../components/PropertyLocationMap';
@@ -37,6 +38,7 @@ import { DETAILS_GALLERY_HEIGHT } from '../../components/layoutSizes';
 import { PropertyDetailsSkeleton } from '../../components/SkeletonLoader';
 import { ErrorView } from '../../components/States';
 import { formatPhone } from '../../i18n/format';
+import { dealPriceLabel, marketText, priceTermsLabel } from '../../i18n/market';
 import { useFormat } from '../../i18n/useFormat';
 import { useSellerLabel } from '../../map/markers';
 import { useApproxLocation } from '../../map/useApproxLocation';
@@ -210,7 +212,7 @@ function PropertyBody({
             <View style={styles.priceMain}>
               {/* What the price is for: the monthly rent, the sale price, the amount of a mortgage. */}
               <AppText variant="caption" color={colors.textMuted}>
-                {t(`dealPrice.${property.deal_type}`)}
+                {dealPriceLabel(property.deal_type, property.market, t)}
               </AppText>
               {/* The price with its terms («مقطوع» / «جورآمد») beside it on the same line, sat on the same baseline. */}
               <View style={styles.priceLine} testID="price-line">
@@ -223,18 +225,19 @@ function PropertyBody({
                 />
                 {property.price_terms ? (
                   <Badge
-                    label={t(`priceTerms.${property.price_terms}`)}
+                    label={priceTermsLabel(property.price_terms, property.market, t)}
                     tone={badgeTones.neutral}
                   />
                 ) : null}
               </View>
+              <MonthlyRent property={property} variant="body" />
               {property.mortgage_months ? (
                 <AppText
                   variant="bodySm"
                   color={colors.textSecondary}
                   testID="mortgage-duration"
                 >
-                  {`${t('mortgage.forDuration')}: ${durationLabel(
+                  {`${marketText(t, 'mortgage.forDuration', property.market)}: ${durationLabel(
                     property.mortgage_months,
                     t,
                   )}`}
@@ -260,7 +263,7 @@ function PropertyBody({
             </View>
             {/* The deal's tag at the far end (the left, in Dari and Pashto), the "featured" badge under it. */}
             <View style={styles.tags} testID="deal-tags">
-              <DealBadge deal={property.deal_type} />
+              <DealBadge deal={property.deal_type} market={property.market} />
               {property.is_featured ? (
                 <Badge
                   label={t('property.featured')}

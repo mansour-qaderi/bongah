@@ -4,6 +4,8 @@ import {
   type ContactLimitReachedBody,
 } from '@bongah/shared-types';
 import { formatNumber } from '../i18n/format';
+import { marketText } from '../i18n/market';
+import { getMarket } from '../market/marketStore';
 import { formatSolarDate } from '../i18n/solarHijri';
 import { ApiError } from './client';
 
@@ -71,6 +73,10 @@ export function errorMessage(
       return t('chat.perksRequired');
     case 'CANNOT_CHAT_WITH_SELF':
       return t('chat.ownListing');
+    case 'MARKET_MISMATCH':
+      return t('errors.marketMismatch');
+    case 'MARKET_PAYMENTS_UNAVAILABLE':
+      return t('errors.marketPaymentsUnavailable');
     case 'LISTING_NOT_ACTIVE':
       return t('chat.listingClosed');
     case 'CHAT_RATE_LIMITED':
@@ -84,7 +90,7 @@ export function errorMessage(
     case 'IMAGE_UNREADABLE':
       return t('chat.imageUnsupported');
     case 'LOCATION_OUT_OF_BOUNDS':
-      return t('chat.locationOutside');
+      return marketText(t, 'chat.locationOutside', getMarket());
     case 'TEMPLATE_LIMIT_REACHED':
       return t('chat.templateLimit');
   }

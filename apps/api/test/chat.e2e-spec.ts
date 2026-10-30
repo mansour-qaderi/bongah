@@ -259,11 +259,12 @@ describe.skipIf(!hasDb)('Chat (e2e)', () => {
       }
     });
 
-    it('keeps pins inside Afghanistan and valid', async () => {
+    it('keeps pins inside the countries served (Afghanistan and Iran) and valid', async () => {
       const agency = await ctx.agency(true);
       const { id } = await world(agency);
       const pinAt = (lat: number, lng: number) => send(agency, id, { type: 'LOCATION', client_id: randomUUID(), lat, lng });
       expect((await pinAt(48.85, 2.35).expect(400)).body.code).toBe('LOCATION_OUT_OF_BOUNDS');
+      await pinAt(35.69, 51.39).expect(201); // Tehran: an Iranian agency may share a pin too
       await pinAt(95, 69).expect(400);
       await pinAt(34.5, 200).expect(400);
       await ctx.post(`/chat/conversations/${id}/messages`, { type: 'LOCATION', client_id: randomUUID(), lat: 34.5 }, agency.token).expect(400);

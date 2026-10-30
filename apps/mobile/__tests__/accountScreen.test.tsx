@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { initI18n } from '../src/i18n';
 import { formatNumber } from '../src/i18n/format';
 import prs from '../src/i18n/locales/prs.json';
+import { resetMarketForTests } from '../src/market/marketStore';
 import {
   allText,
   callsTo,
@@ -86,6 +87,22 @@ beforeEach(() => {
 afterEach(async () => {
   await ReactTestRenderer.act(async () => {
     mounted.splice(0).forEach(tree => tree.unmount());
+  });
+});
+
+describe('AccountScreen: the language choice', () => {
+  it('offers Dari and Pashto in Afghanistan', async () => {
+    resetMarketForTests('AF');
+    const { tree } = await mount();
+    expect(tree.root.findAll(n => n.props.testID === 'language-setting').length).toBeGreaterThan(0);
+    expect(allText(tree.root)).toContain(prs.account.language);
+  });
+
+  it('has no language choice in Iran, where the app is in Persian', async () => {
+    resetMarketForTests('IR');
+    const { tree } = await mount();
+    expect(tree.root.findAll(n => n.props.testID === 'language-setting')).toHaveLength(0);
+    expect(allText(tree.root)).not.toContain(prs.account.language);
   });
 });
 

@@ -6,6 +6,8 @@ export const AUDIT_ACTIONS = [
   'ADMIN_DEMOTED',
   'USER_BANNED',
   'USER_UNBANNED',
+  'USER_GIFTED',
+  'FEEDBACK_REPLIED',
   'AGENCY_VERIFIED',
   'AGENCY_REJECTED',
   'REPORT_DISMISSED',
@@ -28,7 +30,7 @@ export const AUDIT_ACTIONS = [
 ] as const;
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];
 
-export type AuditTargetType = 'user' | 'agency' | 'property' | 'report' | 'banner' | 'pricing' | 'quote' | 'payment';
+export type AuditTargetType = 'user' | 'agency' | 'property' | 'report' | 'banner' | 'pricing' | 'quote' | 'payment' | 'feedback';
 
 export interface AuditEntry {
   /** The admin who did it; null for the command line. */

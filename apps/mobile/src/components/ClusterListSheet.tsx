@@ -20,6 +20,8 @@ import AppText from './AppText';
 import Badge, { badgeTones, DealBadge } from './Badge';
 import { propertyPlace } from './PropertyFacts';
 import Price from './Price';
+import { MonthlyRent } from './PriceLine';
+import { priceTermsLabel } from '../i18n/market';
 
 interface Props {
   /** The things found in one spot; null keeps the sheet closed. */
@@ -111,10 +113,18 @@ export default function ClusterListSheet({ items, onPick, onClose }: Props) {
                       variant="label"
                       color={colors.primaryDark}
                     />
-                    <DealBadge deal={item.property.deal_type} />
+                    <DealBadge
+                      deal={item.property.deal_type}
+                      market={item.property.market}
+                    />
+                    <MonthlyRent property={item.property} />
                     {item.property.price_terms ? (
                       <Badge
-                        label={t(`priceTerms.${item.property.price_terms}`)}
+                        label={priceTermsLabel(
+                          item.property.price_terms,
+                          item.property.market,
+                          t,
+                        )}
                         tone={badgeTones.neutral}
                       />
                     ) : null}
@@ -128,7 +138,7 @@ export default function ClusterListSheet({ items, onPick, onClose }: Props) {
                     numberOfLines={1}
                   >
                     {[
-                      propertyTypeLabel(item.property.type, t),
+                      propertyTypeLabel(item.property.type, t, item.property.market),
                       propertyPlace(item.property, format.province),
                     ]
                       .filter(Boolean)
